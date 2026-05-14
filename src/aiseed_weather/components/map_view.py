@@ -102,6 +102,29 @@ def MapView(settings: UserSettings):
         )
         return await asyncio.to_thread(_figure_to_png_bytes, fig)
 
+    MAX_STEP = max(STEP_OPTIONS)
+
+    async def _resolve_run_time(service, *, force: bool):
+        """Pick the IFS cycle every frame must come from.
+
+        Probes with the LARGEST step so we always lock onto a run that has
+        published its full forecast horizon. Probing with a smaller step
+        would give the absolute latest cycle, but that cycle may not yet
+        have its long-range fields out — leading to 404s deep into the
+        animation preload. The trade-off is that the frame at T+0 is a
+        few hours older than the strictly-newest analysis.
+
+        Reuses the cached holder unless force=True (Refresh button) or no
+        cycle has been resolved yet.
+        """
+        if run_time_holder is not None and not force:
+            return run_time_holder, False  # (run_time, did_probe)
+        set_progress(
+            f"Probing latest fully-published ECMWF run (need T+{MAX_STEP}h)…"
+        )
+        new_run = await service.latest_run(step_hours=MAX_STEP, param="msl")
+        return new_run, True
+
     async def load(*, step: int, force: bool = False):
         """Fetch + render a single step. Caches the resulting PNG."""
         set_state("loading")
@@ -116,13 +139,25 @@ def MapView(settings: UserSettings):
 
         try:
             t0 = time.perf_counter()
-            set_progress("Probing latest ECMWF run…")
-            run_time = await service.latest_run(step_hours=step, param="msl")
+            run_time, did_probe = await _resolve_run_time(service, force=force)
             t_probe = time.perf_counter()
+            # If we just locked onto a different cycle, drop the frame
+            # cache so the animation stays internally consistent.
+            cycle_changed = (
+                run_time_holder is not None and run_time != run_time_holder
+            )
+            if cycle_changed:
+                set_frames({})
+            set_run_time_holder(run_time)
+
             label = f"{run_time:%Y%m%d %Hz} IFS · {_step_label(step)}"
-            set_progress(f"Fetching MSL grid · step={step}h · {run_time:%Y%m%d %Hz}…")
             request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
-            ds = await service.fetch(request)
+            hit_cache = service.is_cached(request)
+            set_progress(
+                f"Fetching MSL · {run_time:%Y%m%d %Hz} · {_step_label(step)}"
+                f"{' (cached)' if hit_cache and not force else ''}…"
+            )
+            ds = await service.fetch(request, force=force)
             t_fetch = time.perf_counter()
             set_progress("Rendering chart (matplotlib + cartopy)…")
             fig = await asyncio.to_thread(
@@ -135,19 +170,19 @@ def MapView(settings: UserSettings):
 
             set_image_bytes(png_bytes)
             set_run_label(label)
-            set_run_time_holder(run_time)
-            # If the cycle changed, invalidate the frame cache.
-            set_frames(lambda prev: (
-                {**prev, step: png_bytes}
-                if run_time_holder == run_time or run_time_holder is None
-                else {step: png_bytes}
-            ))
+            # Cache this frame; cycle invariance is preserved because we
+            # just dropped the dict above if the cycle changed.
+            if cycle_changed:
+                set_frames({step: png_bytes})
+            else:
+                set_frames(lambda prev: {**prev, step: png_bytes})
             set_progress("")
             set_state("ready")
             logger.info(
-                "Map load timing (step=%dh): probe=%.2fs fetch+decode=%.2fs "
-                "render=%.2fs encode=%.2fs total=%.2fs",
+                "Map load timing (step=%dh, probed=%s): probe=%.2fs "
+                "fetch+decode=%.2fs render=%.2fs encode=%.2fs total=%.2fs",
                 step,
+                did_probe,
                 t_probe - t0,
                 t_fetch - t_probe,
                 t_render - t_fetch,
@@ -171,13 +206,16 @@ def MapView(settings: UserSettings):
             set_state("disabled")
             return
 
-        run_time = run_time_holder
-        new_frames = dict(frames)
         try:
-            if run_time is None:
-                set_progress("Probing latest ECMWF run…")
-                run_time = await service.latest_run(step_hours=0, param="msl")
-                set_run_time_holder(run_time)
+            run_time, _ = await _resolve_run_time(service, force=False)
+            # New cycle → drop the dict so half-cached old-run frames
+            # don't get mixed in.
+            if run_time_holder is not None and run_time != run_time_holder:
+                set_frames({})
+                new_frames = {}
+            else:
+                new_frames = dict(frames)
+            set_run_time_holder(run_time)
 
             for i, step in enumerate(STEP_OPTIONS):
                 if step in new_frames:

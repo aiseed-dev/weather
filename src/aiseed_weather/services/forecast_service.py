@@ -100,10 +100,14 @@ class ForecastService:
         self._cache_dir = resolved_data_dir(settings) / "ecmwf"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
-    async def fetch(self, request: ForecastRequest) -> xr.Dataset:
-        """Download (if needed) and decode a single forecast field."""
+    async def fetch(self, request: ForecastRequest, *, force: bool = False) -> xr.Dataset:
+        """Download (if needed) and decode a single forecast field.
+
+        With ``force=True`` the cached GRIB2 is re-downloaded even if it
+        already exists on disk — used by the UI Refresh button.
+        """
         path = self._cache_path(request)
-        if not path.exists() or path.stat().st_size == 0:
+        if force or not path.exists() or path.stat().st_size == 0:
             await asyncio.to_thread(self._download, request, path)
         return await asyncio.to_thread(self._decode, path)
 
