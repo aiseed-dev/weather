@@ -159,6 +159,7 @@ def MapView(settings: UserSettings):
     data_source_key, set_data_source_key = ft.use_state(
         _initial_source_for("ecmwf_hres")
     )
+    show_source_dialog, set_show_source_dialog = ft.use_state(False)
 
     async def _render_step(service, run_time, step: int, region_: Region) -> bytes:
         request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
@@ -490,15 +491,6 @@ def MapView(settings: UserSettings):
         # planned product, we update the display and the chart area
         # explains why nothing changed. No silent failure.
 
-    def _change_source_for_active_product(new_source: str):
-        if new_source == data_source_key:
-            return
-        set_data_source_key(new_source)
-        # Different mirror → next fetch reaches a different endpoint.
-        # GRIB files are byte-identical across mirrors (same s3 bucket
-        # content, just different transport), but we drop the in-memory
-        # PNG cache to keep state consistent.
-        set_frames({})
 
     def _build_product_card(p) -> ft.Control:
         # One row in the catalog dialog: status icon + name + spec + meta
@@ -516,51 +508,20 @@ def MapView(settings: UserSettings):
         else:
             accent = ft.Colors.OUTLINE
 
-        # Source dropdown: for the active product, changing it commits
-        # immediately and reaches the next fetch. For inactive products
-        # it's informational only (the catalog tells the user what paths
-        # exist; switching products is the way to commit).
+        # Sources are picked in a separate dialog. Here we just list
+        # the available source labels so the user can scan what paths
+        # this product offers without leaving the model picker.
         if p.sources:
-            current_source_for_card = (
-                data_source_key if is_current else p.default_source_key
+            sources_summary = ft.Text(
+                "取得元 / Sources: " + ", ".join(s.key for s in p.sources)
+                + f"  (default: {p.default_source_key})",
+                size=10, color=ft.Colors.GREY,
             )
-            source_dropdown = ft.Dropdown(
-                label="データ取得 / Data source",
-                value=current_source_for_card,
-                dense=True,
-                disabled=not is_current,
-                options=[
-                    ft.dropdown.Option(
-                        key=s.key,
-                        text=(
-                            f"{s.label}"
-                            f"{'  ✓' if s.status == Status.IMPLEMENTED else '  ◐'}"
-                        ),
-                    )
-                    for s in p.sources
-                ],
-                on_select=(
-                    (lambda e: _change_source_for_active_product(e.control.value))
-                    if is_current else None
-                ),
-            )
-            # Show endpoint/transport/region for the currently-selected
-            # source so the user can verify what's being hit.
-            try:
-                sel_src = p.source_by_key(current_source_for_card)
-                source_detail = ft.Text(
-                    f"{sel_src.transport} · {sel_src.region} · {sel_src.endpoint}"
-                    + (f"\n{sel_src.notes}" if sel_src.notes else ""),
-                    size=10, color=ft.Colors.GREY,
-                )
-            except KeyError:
-                source_detail = ft.Container()
         else:
-            source_dropdown = ft.Text(
-                "(データ取得元未登録 / no sources registered)",
+            sources_summary = ft.Text(
+                "取得元未登録 / no sources registered",
                 size=10, color=ft.Colors.GREY, italic=True,
             )
-            source_detail = ft.Container()
 
         return ft.Container(
             padding=ft.Padding.all(10),
@@ -603,9 +564,7 @@ def MapView(settings: UserSettings):
                         p.notes, size=10, color=ft.Colors.GREY, italic=True,
                         visible=bool(p.notes),
                     ),
-                    ft.Container(height=4),
-                    source_dropdown,
-                    source_detail,
+                    sources_summary,
                     ft.Row(
                         alignment=ft.MainAxisAlignment.END,
                         controls=[
@@ -654,6 +613,93 @@ def MapView(settings: UserSettings):
                 "閉じる / Close",
                 on_click=lambda _: set_show_catalog_dialog(False),
             ),
+        ],
+    )
+
+    # ----- Source dialog (sibling concern, separate from product) -----
+    # Draft state so cancel doesn't mutate the committed source.
+    draft_source_key, set_draft_source_key = ft.use_state(data_source_key)
+
+    def _open_source_dialog():
+        set_draft_source_key(data_source_key)
+        set_show_source_dialog(True)
+
+    def _commit_source(_):
+        if draft_source_key != data_source_key:
+            set_data_source_key(draft_source_key)
+            # Different mirror → drop in-memory rendered PNGs. GRIB
+            # files on disk are byte-identical across mirrors so the
+            # next fetch finds them cached and re-renders quickly.
+            set_frames({})
+        set_show_source_dialog(False)
+
+    source_radios = []
+    for s in selected_product.sources:
+        source_radios.append(
+            ft.Container(
+                padding=ft.Padding.symmetric(horizontal=4, vertical=2),
+                content=ft.Column(
+                    spacing=1,
+                    controls=[
+                        ft.Radio(
+                            value=s.key,
+                            label=f"{s.label}  {STATUS_LABELS[s.status]}",
+                        ),
+                        ft.Container(
+                            padding=ft.Padding.only(left=32),
+                            content=ft.Text(
+                                f"{s.transport} · {s.region} · {s.endpoint}"
+                                + (f"\n{s.notes}" if s.notes else ""),
+                                size=10, color=ft.Colors.GREY,
+                            ),
+                        ),
+                    ],
+                ),
+            ),
+        )
+
+    source_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("データ取得元 / Data source"),
+        content=ft.Container(
+            width=560,
+            content=ft.Column(
+                tight=True,
+                spacing=6,
+                scroll=ft.ScrollMode.ADAPTIVE,
+                controls=[
+                    ft.Text(
+                        f"プロダクト: {selected_product.bilingual_label()}",
+                        size=12, weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Text(
+                        "ミラー / 提供元の違いで配信レイテンシと帯域が変わります。"
+                        "GRIB バイト列は同一のため、切替えてもデータ内容は変わりません。",
+                        size=11, color=ft.Colors.GREY,
+                    ),
+                    ft.Divider(height=8),
+                    ft.RadioGroup(
+                        value=draft_source_key,
+                        on_change=lambda e: set_draft_source_key(e.control.value),
+                        content=ft.Column(
+                            tight=True,
+                            spacing=4,
+                            controls=source_radios,
+                        ),
+                    ),
+                    ft.Text(
+                        f"既定 / Default: {selected_product.default_source_key}",
+                        size=10, color=ft.Colors.GREY,
+                    ),
+                ],
+            ),
+        ),
+        actions=[
+            ft.TextButton(
+                "キャンセル",
+                on_click=lambda _: set_show_source_dialog(False),
+            ),
+            ft.FilledButton("適用 / Apply", on_click=_commit_source),
         ],
     )
 
@@ -795,6 +841,7 @@ def MapView(settings: UserSettings):
     # updated draft state preserves cursor / focus.
     ft.use_dialog(
         catalog_dialog if show_catalog_dialog
+        else source_dialog if show_source_dialog
         else region_dialog if show_region_dialog
         else time_dialog if show_time_dialog
         else None
@@ -944,18 +991,38 @@ def MapView(settings: UserSettings):
                     selected_product.spec,
                     size=10, color=ft.Colors.GREY,
                 ),
-                ft.Text(
-                    (
-                        f"取得: {selected_product.source_by_key(data_source_key).label}"
-                        if data_source_key in {s.key for s in selected_product.sources}
-                        else "取得: —"
-                    ),
-                    size=10, color=ft.Colors.GREY,
-                ),
                 ft.TextButton(
                     content=ft.Text("モデル変更 / Change…", size=12),
                     icon=ft.Icons.LIST_ALT,
                     on_click=lambda _: set_show_catalog_dialog(True),
+                ),
+
+                ft.Divider(height=14),
+                ft.Text(
+                    "データ取得 / Data acquisition", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    (
+                        selected_product.source_by_key(data_source_key).label
+                        if data_source_key in {s.key for s in selected_product.sources}
+                        else "—"
+                    ),
+                    size=12, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    (
+                        f"{selected_product.source_by_key(data_source_key).transport} · "
+                        f"{selected_product.source_by_key(data_source_key).region}"
+                        if data_source_key in {s.key for s in selected_product.sources}
+                        else ""
+                    ),
+                    size=10, color=ft.Colors.GREY,
+                ),
+                ft.TextButton(
+                    content=ft.Text("取得元変更 / Change source…", size=12),
+                    icon=ft.Icons.CLOUD_DOWNLOAD,
+                    on_click=lambda _: _open_source_dialog(),
                 ),
 
                 ft.Divider(height=14),
