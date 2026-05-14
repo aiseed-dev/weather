@@ -12,25 +12,23 @@ import logging
 import os
 import sys
 
+# Configure logging at module import time, BEFORE the App tree is imported.
+# forecast_service installs a multiurl monkey-patch at module import and
+# logs a confirmation that we want to see in the dev terminal. If we wait
+# until main() to configure logging, that patch message gets swallowed.
+_LOG_LEVEL = os.environ.get("AISEED_WEATHER_LOG", "INFO").upper()
+logging.basicConfig(
+    level=_LOG_LEVEL,
+    stream=sys.stderr,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+
 import flet as ft
 
 from aiseed_weather.components.app import App
 
 
-def _configure_logging() -> None:
-    # Flet swallows exceptions raised inside components and only surfaces a
-    # short string to the UI. Without logging to stderr the user has no way
-    # to see tracebacks. Default to INFO; override with AISEED_WEATHER_LOG.
-    level = os.environ.get("AISEED_WEATHER_LOG", "INFO").upper()
-    logging.basicConfig(
-        level=level,
-        stream=sys.stderr,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-
-
 def main(page: ft.Page):
-    _configure_logging()
     page.title = "AIseed Weather"
     page.theme_mode = ft.ThemeMode.SYSTEM
     page.padding = 0

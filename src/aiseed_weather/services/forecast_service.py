@@ -44,26 +44,35 @@ logger = logging.getLogger(__name__)
 # Down" pauses everything for 2 minutes, and S3 is happy to issue several
 # of those when we hammer one bucket prefix.
 #
-# Patch multiurl.http.robust() so it uses exponential backoff
-# (5s → 60s, ×2 per attempt) and caps retries at 10. Worst-case retry
-# budget per frame is now ~6 min instead of >16 hours.
+# Patch HTTPDownloaderBase.__init__ to force shorter retry settings on
+# every downloader instance:
+#   * retry_after = (5, 60, 2)  → exponential backoff 5s → 60s, ×2/attempt
+#   * maximum_retries = 10      → worst-case ~6 min instead of >16 hours
+#
+# We override the instance attributes after the original __init__ runs,
+# so it doesn't matter whether the caller passed retry_after explicitly
+# or not. This is more robust than patching the module-level robust()
+# function (which can be bypassed by direct `from .http import robust`).
 def _install_multiurl_backoff_patch() -> None:
     import multiurl.http as _mh
     if getattr(_mh, "_aiseed_patched", False):
         return
-    _orig = _mh.robust
+    _orig_init = _mh.HTTPDownloaderBase.__init__
 
-    def _patched(call, maximum_tries=500, retry_after=120, mirrors=None):
-        if not isinstance(retry_after, (list, tuple)):
-            retry_after = (5, 60, 2)
-        if maximum_tries > 10:
-            maximum_tries = 10
-        return _orig(call, maximum_tries, retry_after, mirrors)
+    def _patched_init(self, *args, **kwargs):
+        _orig_init(self, *args, **kwargs)
+        # Force the policy onto every instance regardless of multiurl's
+        # default or what ecmwf-opendata passed.
+        self.retry_after = (5, 60, 2)
+        self.maximum_retries = 10
 
-    _mh.robust = _patched
+    _mh.HTTPDownloaderBase.__init__ = _patched_init
     _mh._aiseed_patched = True
-    logger.info(
-        "Patched multiurl.http.robust: retry_after=(5, 60, 2) max_tries=10"
+    # Use warning() so this shows up even before main() configures the
+    # root logger — patch is critical and we want to know it ran.
+    logger.warning(
+        "Installed multiurl backoff patch: retry_after=(5, 60, 2) "
+        "max_tries=10 (was 120s / 500)",
     )
 
 
