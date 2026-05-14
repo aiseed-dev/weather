@@ -49,6 +49,7 @@ from aiseed_weather.products.catalog import (
     grouped_by_category,
 )
 from aiseed_weather.services.forecast_service import (
+    _CLIENT_SOURCE,
     ForecastDisabledError,
     ForecastRequest,
     ForecastService,
@@ -143,6 +144,22 @@ def MapView(settings: UserSettings):
     show_catalog_dialog, set_show_catalog_dialog = ft.use_state(False)
     selected_product = product_by_key(product_key)
 
+    # Selected data source per product. Initial value for ECMWF HRES
+    # comes from config.toml (settings.forecast_source) so the user's
+    # config-time preference is honoured before they touch the dialog.
+    def _initial_source_for(p_key: str) -> str:
+        if p_key == "ecmwf_hres":
+            # Map ForecastSource enum → ecmwf-opendata Client source string.
+            try:
+                return _CLIENT_SOURCE[settings.forecast_source]
+            except KeyError:
+                pass  # NONE etc. — fall through to catalog default
+        return product_by_key(p_key).default_source_key
+
+    data_source_key, set_data_source_key = ft.use_state(
+        _initial_source_for("ecmwf_hres")
+    )
+
     async def _render_step(service, run_time, step: int, region_: Region) -> bytes:
         request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
         ds = await service.fetch(request)
@@ -188,7 +205,7 @@ def MapView(settings: UserSettings):
         set_error(None)
         set_progress("Initializing forecast service…")
         try:
-            service = ForecastService(settings)
+            service = ForecastService(settings, override_source=data_source_key)
         except ForecastDisabledError as e:
             set_error(str(e))
             set_state("disabled")
@@ -263,7 +280,7 @@ def MapView(settings: UserSettings):
         set_error(None)
         set_is_playing(False)
         try:
-            service = ForecastService(settings)
+            service = ForecastService(settings, override_source=data_source_key)
         except ForecastDisabledError as e:
             set_error(str(e))
             set_state("disabled")
@@ -458,14 +475,34 @@ def MapView(settings: UserSettings):
         apply_region(new_region)
 
     def _select_product(key: str):
+        # Picking a product also picks its default source unless the
+        # user has already locked in a non-default for that product.
+        # For the active product we keep the current source choice;
+        # otherwise we reset to the product's default (or, for HRES,
+        # the config.toml-derived initial value).
         set_product_key(key)
+        if key != product_key:
+            set_data_source_key(_initial_source_for(key))
+            # Different product → its frames are not comparable. Drop.
+            set_frames({})
         set_show_catalog_dialog(False)
         # Today only ECMWF HRES is wired through. If the user picks a
         # planned product, we update the display and the chart area
         # explains why nothing changed. No silent failure.
 
+    def _change_source_for_active_product(new_source: str):
+        if new_source == data_source_key:
+            return
+        set_data_source_key(new_source)
+        # Different mirror → next fetch reaches a different endpoint.
+        # GRIB files are byte-identical across mirrors (same s3 bucket
+        # content, just different transport), but we drop the in-memory
+        # PNG cache to keep state consistent.
+        set_frames({})
+
     def _build_product_card(p) -> ft.Control:
-        # One row in the catalog dialog: status icon + name + spec + meta.
+        # One row in the catalog dialog: status icon + name + spec + meta
+        # + per-product data-source dropdown.
         is_selectable = p.status == Status.IMPLEMENTED
         is_current = p.key == product_key
         # Status-tinted accent so the user can scan implemented vs planned
@@ -478,6 +515,53 @@ def MapView(settings: UserSettings):
             accent = ft.Colors.BLUE_GREY
         else:
             accent = ft.Colors.OUTLINE
+
+        # Source dropdown: for the active product, changing it commits
+        # immediately and reaches the next fetch. For inactive products
+        # it's informational only (the catalog tells the user what paths
+        # exist; switching products is the way to commit).
+        if p.sources:
+            current_source_for_card = (
+                data_source_key if is_current else p.default_source_key
+            )
+            source_dropdown = ft.Dropdown(
+                label="データ取得 / Data source",
+                value=current_source_for_card,
+                dense=True,
+                disabled=not is_current,
+                options=[
+                    ft.dropdown.Option(
+                        key=s.key,
+                        text=(
+                            f"{s.label}"
+                            f"{'  ✓' if s.status == Status.IMPLEMENTED else '  ◐'}"
+                        ),
+                    )
+                    for s in p.sources
+                ],
+                on_select=(
+                    (lambda e: _change_source_for_active_product(e.control.value))
+                    if is_current else None
+                ),
+            )
+            # Show endpoint/transport/region for the currently-selected
+            # source so the user can verify what's being hit.
+            try:
+                sel_src = p.source_by_key(current_source_for_card)
+                source_detail = ft.Text(
+                    f"{sel_src.transport} · {sel_src.region} · {sel_src.endpoint}"
+                    + (f"\n{sel_src.notes}" if sel_src.notes else ""),
+                    size=10, color=ft.Colors.GREY,
+                )
+            except KeyError:
+                source_detail = ft.Container()
+        else:
+            source_dropdown = ft.Text(
+                "(データ取得元未登録 / no sources registered)",
+                size=10, color=ft.Colors.GREY, italic=True,
+            )
+            source_detail = ft.Container()
+
         return ft.Container(
             padding=ft.Padding.all(10),
             border=ft.Border.all(
@@ -506,9 +590,7 @@ def MapView(settings: UserSettings):
                         ],
                         spacing=8,
                     ),
-                    ft.Text(
-                        p.spec, size=11,
-                    ),
+                    ft.Text(p.spec, size=11),
                     ft.Text(
                         f"{p.agency} · {p.backend}",
                         size=10, color=ft.Colors.GREY,
@@ -521,6 +603,9 @@ def MapView(settings: UserSettings):
                         p.notes, size=10, color=ft.Colors.GREY, italic=True,
                         visible=bool(p.notes),
                     ),
+                    ft.Container(height=4),
+                    source_dropdown,
+                    source_detail,
                     ft.Row(
                         alignment=ft.MainAxisAlignment.END,
                         controls=[
@@ -859,6 +944,14 @@ def MapView(settings: UserSettings):
                     selected_product.spec,
                     size=10, color=ft.Colors.GREY,
                 ),
+                ft.Text(
+                    (
+                        f"取得: {selected_product.source_by_key(data_source_key).label}"
+                        if data_source_key in {s.key for s in selected_product.sources}
+                        else "取得: —"
+                    ),
+                    size=10, color=ft.Colors.GREY,
+                ),
                 ft.TextButton(
                     content=ft.Text("モデル変更 / Change…", size=12),
                     icon=ft.Icons.LIST_ALT,
@@ -1075,7 +1168,7 @@ def MapView(settings: UserSettings):
                             size=11, color=ft.Colors.GREY,
                         ),
                         ft.Text(
-                            f"Source: {settings.forecast_source.value}",
+                            f"Source: {data_source_key}",
                             size=11, color=ft.Colors.GREY,
                         ),
                     ],

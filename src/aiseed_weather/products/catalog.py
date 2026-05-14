@@ -100,6 +100,170 @@ STATUS_LABELS: dict[Status, str] = {
 
 
 @dataclass(frozen=True)
+class DataSource:
+    """One way to acquire a Product's data.
+
+    A Product typically has multiple sources (an "official" path plus
+    one or more cloud mirrors). The default chosen by each product is
+    usually the fastest public mirror; users can override at runtime
+    through the catalog dialog.
+    """
+
+    key: str            # stable identifier; ecmwf-opendata Client source name when applicable
+    label: str          # short bilingual label for dropdown display
+    endpoint: str       # URL or S3 bucket path
+    transport: str      # "s3" | "http" | "zarr" | "opendap" | "websocket" | "ftp"
+    region: str         # AWS region or geographic hint; empty if N/A
+    status: Status
+    notes: str = ""
+
+
+# ECMWF Open Data sources are shared by every product served via the
+# ecmwf-opendata Python client (HRES, AIFS Single, ENS, AIFS Ensemble).
+# Source keys match the strings ecmwf-opendata's Client(source=...) accepts.
+_ECMWF_OPENDATA_SOURCES: tuple[DataSource, ...] = (
+    DataSource(
+        key="aws",
+        label="AWS (s3://ecmwf-forecasts, eu-central-1)",
+        endpoint="s3://ecmwf-forecasts",
+        transport="s3",
+        region="eu-central-1",
+        status=Status.IMPLEMENTED,
+        notes="ecmwf-opendata の既定。低レイテンシ・広帯域。",
+    ),
+    DataSource(
+        key="azure",
+        label="Azure (Microsoft mirror, West Europe)",
+        endpoint="https://ai4edataeuwest.blob.core.windows.net",
+        transport="http",
+        region="west-europe",
+        status=Status.IMPLEMENTED,
+        notes="ecmwf-opendata Client(source='azure')",
+    ),
+    DataSource(
+        key="google",
+        label="GCP (Google Cloud mirror, europe-west)",
+        endpoint="gs://ecmwf-open-data",
+        transport="http",
+        region="europe-west",
+        status=Status.IMPLEMENTED,
+        notes="ecmwf-opendata Client(source='google')",
+    ),
+    DataSource(
+        key="ecmwf",
+        label="ECMWF Direct (data.ecmwf.int)",
+        endpoint="https://data.ecmwf.int/forecasts",
+        transport="http",
+        region="reading-uk",
+        status=Status.IMPLEMENTED,
+        notes="本家サーバー。ミラーへの分散前段。混雑時は遅い。",
+    ),
+)
+
+
+_NCEP_SOURCES: tuple[DataSource, ...] = (
+    DataSource(
+        key="aws_s3",
+        label="AWS (s3://noaa-gfs-bdp-pds, us-east-1)",
+        endpoint="s3://noaa-gfs-bdp-pds",
+        transport="s3",
+        region="us-east-1",
+        status=Status.PLANNED,
+        notes="NOAA Big Data Program ミラー。Requester pays では無い。",
+    ),
+    DataSource(
+        key="nomads",
+        label="NOMADS Direct (nomads.ncep.noaa.gov)",
+        endpoint="https://nomads.ncep.noaa.gov",
+        transport="http",
+        region="us-east",
+        status=Status.PLANNED,
+    ),
+    DataSource(
+        key="gcp",
+        label="GCP (gs://global-forecast-system)",
+        endpoint="gs://global-forecast-system",
+        transport="http",
+        region="us-central",
+        status=Status.PLANNED,
+    ),
+)
+
+
+_ERA5_SOURCES: tuple[DataSource, ...] = (
+    DataSource(
+        key="aws_zarr",
+        label="AWS Zarr (s3://ecmwf-era5)",
+        endpoint="s3://ecmwf-era5",
+        transport="zarr",
+        region="eu-central-1",
+        status=Status.PLANNED,
+        notes="ECMWF 公式の Zarr ミラー。xarray + fsspec[s3] で直接読み込み可能。",
+    ),
+    DataSource(
+        key="cds_api",
+        label="Copernicus CDS API (要アカウント)",
+        endpoint="https://cds.climate.copernicus.eu/api/v2",
+        transport="http",
+        region="reading-uk",
+        status=Status.EXTERNAL_DEP,
+        notes="個人アカウント必須。レート制限あり。",
+    ),
+    DataSource(
+        key="planetary_computer",
+        label="Microsoft Planetary Computer",
+        endpoint="https://planetarycomputer.microsoft.com",
+        transport="http",
+        region="west-europe",
+        status=Status.PLANNED,
+    ),
+)
+
+
+_JMA_BOSAI_SOURCE = DataSource(
+    key="jma_bosai",
+    label="JMA bosai (www.jma.go.jp/bosai/...)",
+    endpoint="https://www.jma.go.jp/bosai",
+    transport="http",
+    region="japan",
+    status=Status.IMPLEMENTED,
+    notes="気象庁の公式ナウキャスト/防災情報 REST。",
+)
+
+
+_JMA_SUPPORT_CENTER_SOURCES: tuple[DataSource, ...] = (
+    DataSource(
+        key="kishou_center",
+        label="気象業務支援センター",
+        endpoint="http://www.jmbsc.or.jp/",
+        transport="http",
+        region="japan",
+        status=Status.EXTERNAL_DEP,
+        notes="JMA メソモデル等の公式配信元。契約必要。",
+    ),
+    DataSource(
+        key="kyoto_db",
+        label="京大 生存圏研究所 GPV データベース",
+        endpoint="http://database.rish.kyoto-u.ac.jp/arch/jmadata/",
+        transport="http",
+        region="japan",
+        status=Status.EXTERNAL_DEP,
+        notes="アカデミック向け再配布。MSM など。要確認。",
+    ),
+)
+
+
+_OPEN_METEO_SOURCE = DataSource(
+    key="open_meteo_api",
+    label="Open-Meteo API (api.open-meteo.com)",
+    endpoint="https://api.open-meteo.com",
+    transport="http",
+    region="europe",
+    status=Status.IMPLEMENTED,
+)
+
+
+@dataclass(frozen=True)
 class Product:
     key: str
     label_ja: str
@@ -113,12 +277,23 @@ class Product:
     license_info: str
     status: Status
     notes: str = ""
+    # Possible data acquisition paths. The first entry is the catalog-
+    # level default; UI may override (e.g. ECMWF HRES picks up the
+    # initial source from config.toml's forecast_source instead).
+    sources: tuple[DataSource, ...] = ()
+    default_source_key: str = ""
 
     def bilingual_label(self) -> str:
         # Display "日本語 / English" while we don't have language settings.
         if self.label_ja == self.label_en:
             return self.label_ja
         return f"{self.label_ja} / {self.label_en}"
+
+    def source_by_key(self, key: str) -> DataSource:
+        for s in self.sources:
+            if s.key == key:
+                return s
+        raise KeyError(f"Product {self.key!r} has no source {key!r}")
 
 
 CATALOG: tuple[Product, ...] = (
@@ -136,6 +311,8 @@ CATALOG: tuple[Product, ...] = (
         backend="ecmwf-opendata client → GRIB2 from s3://ecmwf-forecasts",
         license_info="CC-BY-4.0",
         status=Status.IMPLEMENTED,
+        sources=_ECMWF_OPENDATA_SOURCES,
+        default_source_key="aws",
     ),
     Product(
         key="ecmwf_aifs_single",
@@ -150,6 +327,8 @@ CATALOG: tuple[Product, ...] = (
         license_info="CC-BY-4.0",
         status=Status.PLANNED,
         notes="Same Open Data backend as HRES — mostly an integration story.",
+        sources=_ECMWF_OPENDATA_SOURCES,
+        default_source_key="aws",
     ),
     Product(
         key="ncep_gfs",
@@ -163,6 +342,8 @@ CATALOG: tuple[Product, ...] = (
         backend="nomads.ncep.noaa.gov or s3://noaa-gfs-bdp-pds",
         license_info="public domain (U.S. government work)",
         status=Status.PLANNED,
+        sources=_NCEP_SOURCES,
+        default_source_key="aws_s3",
     ),
     Product(
         key="dwd_icon",
@@ -176,6 +357,17 @@ CATALOG: tuple[Product, ...] = (
         backend="DWD Open Data, GRIB2",
         license_info="DL-DE→BY-2.0",
         status=Status.PLANNED,
+        sources=(
+            DataSource(
+                key="dwd_opendata",
+                label="DWD Open Data (opendata.dwd.de)",
+                endpoint="https://opendata.dwd.de/weather/nwp/icon-eu",
+                transport="http",
+                region="germany",
+                status=Status.PLANNED,
+            ),
+        ),
+        default_source_key="dwd_opendata",
     ),
 
     # ── Short range / regional forecasts ──
@@ -192,6 +384,8 @@ CATALOG: tuple[Product, ...] = (
         license_info="出典: 気象庁ホームページ",
         status=Status.EXTERNAL_DEP,
         notes="Open Data 配信が無いため、京大データベース・大学経由配信・GPV/気象データサイト 等の検討が必要。",
+        sources=_JMA_SUPPORT_CENTER_SOURCES,
+        default_source_key="kyoto_db",
     ),
     Product(
         key="jma_lfm",
@@ -205,6 +399,8 @@ CATALOG: tuple[Product, ...] = (
         backend="気象業務支援センター 経由",
         license_info="出典: 気象庁ホームページ",
         status=Status.EXTERNAL_DEP,
+        sources=_JMA_SUPPORT_CENTER_SOURCES,
+        default_source_key="kyoto_db",
     ),
     Product(
         key="ncep_hrrr",
@@ -218,6 +414,17 @@ CATALOG: tuple[Product, ...] = (
         backend="s3://noaa-hrrr-bdp-pds",
         license_info="public domain",
         status=Status.PLANNED,
+        sources=(
+            DataSource(
+                key="aws_s3",
+                label="AWS (s3://noaa-hrrr-bdp-pds, us-east-1)",
+                endpoint="s3://noaa-hrrr-bdp-pds",
+                transport="s3",
+                region="us-east-1",
+                status=Status.PLANNED,
+            ),
+        ),
+        default_source_key="aws_s3",
     ),
 
     # ── Extended / ensemble ──
@@ -234,6 +441,8 @@ CATALOG: tuple[Product, ...] = (
         license_info="CC-BY-4.0",
         status=Status.PLANNED,
         notes="Mean / spread / probability-of-exceedance / plume などの集約 view 必要。",
+        sources=_ECMWF_OPENDATA_SOURCES,
+        default_source_key="aws",
     ),
     Product(
         key="ecmwf_aifs_ens",
@@ -247,6 +456,8 @@ CATALOG: tuple[Product, ...] = (
         backend="ecmwf-opendata client with AIFS ensemble streams",
         license_info="CC-BY-4.0",
         status=Status.PLANNED,
+        sources=_ECMWF_OPENDATA_SOURCES,
+        default_source_key="aws",
     ),
 
     # ── Reanalysis ──
@@ -263,6 +474,8 @@ CATALOG: tuple[Product, ...] = (
         license_info="CC-BY-4.0",
         status=Status.PLANNED,
         notes="絶対日時軸（run+step ではない）。日時ピッカー UI が要る。気候値・偏差計算のベース。",
+        sources=_ERA5_SOURCES,
+        default_source_key="aws_zarr",
     ),
     Product(
         key="era5_land",
@@ -276,6 +489,17 @@ CATALOG: tuple[Product, ...] = (
         backend="Copernicus CDS API (要アカウント)",
         license_info="CC-BY-4.0",
         status=Status.EXTERNAL_DEP,
+        sources=(
+            DataSource(
+                key="cds_api",
+                label="Copernicus CDS API (要アカウント)",
+                endpoint="https://cds.climate.copernicus.eu/api/v2",
+                transport="http",
+                region="reading-uk",
+                status=Status.EXTERNAL_DEP,
+            ),
+        ),
+        default_source_key="cds_api",
     ),
     Product(
         key="jra3q",
@@ -289,6 +513,8 @@ CATALOG: tuple[Product, ...] = (
         backend="気象業務支援センター, アカデミック向け配布",
         license_info="JMA license",
         status=Status.EXTERNAL_DEP,
+        sources=_JMA_SUPPORT_CENTER_SOURCES,
+        default_source_key="kishou_center",
     ),
 
     # ────────────────────────── NOWCAST tab ──────────────────────────
@@ -305,6 +531,8 @@ CATALOG: tuple[Product, ...] = (
         license_info="出典: 気象庁ホームページ",
         status=Status.IMPLEMENTED,
         notes="現状はサービス骨組みのみ。タイル合成と地図描画は TODO。",
+        sources=(_JMA_BOSAI_SOURCE,),
+        default_source_key="jma_bosai",
     ),
     Product(
         key="jma_analysis_precip",
@@ -318,6 +546,8 @@ CATALOG: tuple[Product, ...] = (
         backend="JMA tile server",
         license_info="出典: 気象庁ホームページ",
         status=Status.PLANNED,
+        sources=(_JMA_BOSAI_SOURCE,),
+        default_source_key="jma_bosai",
     ),
     Product(
         key="himawari",
@@ -331,6 +561,27 @@ CATALOG: tuple[Product, ...] = (
         backend="JMA imagery server, or s3://noaa-himawari9",
         license_info="出典: 気象庁ホームページ (NOAA 配信は public domain)",
         status=Status.PLANNED,
+        sources=(
+            DataSource(
+                key="aws_noaa",
+                label="AWS (s3://noaa-himawari9, us-east-1)",
+                endpoint="s3://noaa-himawari9",
+                transport="s3",
+                region="us-east-1",
+                status=Status.PLANNED,
+                notes="NOAA Big Data Program ミラー。",
+            ),
+            DataSource(
+                key="jma_msc",
+                label="JMA MSC (data.jma.go.jp/mscweb)",
+                endpoint="https://www.data.jma.go.jp/mscweb/data/himawari/",
+                transport="http",
+                region="japan",
+                status=Status.PLANNED,
+                notes="JMA 公式配信。レート制限あり。",
+            ),
+        ),
+        default_source_key="aws_noaa",
     ),
     Product(
         key="goes",
@@ -344,6 +595,33 @@ CATALOG: tuple[Product, ...] = (
         backend="s3://noaa-goes16, s3://noaa-goes18",
         license_info="public domain",
         status=Status.PLANNED,
+        sources=(
+            DataSource(
+                key="aws_east",
+                label="AWS (s3://noaa-goes16, GOES-East, us-east-1)",
+                endpoint="s3://noaa-goes16",
+                transport="s3",
+                region="us-east-1",
+                status=Status.PLANNED,
+            ),
+            DataSource(
+                key="aws_west",
+                label="AWS (s3://noaa-goes18, GOES-West, us-east-1)",
+                endpoint="s3://noaa-goes18",
+                transport="s3",
+                region="us-east-1",
+                status=Status.PLANNED,
+            ),
+            DataSource(
+                key="gcp",
+                label="GCP (gs://gcp-public-data-goes-16)",
+                endpoint="gs://gcp-public-data-goes-16",
+                transport="http",
+                region="us-central",
+                status=Status.PLANNED,
+            ),
+        ),
+        default_source_key="aws_east",
     ),
     Product(
         key="dwd_radar",
@@ -357,6 +635,17 @@ CATALOG: tuple[Product, ...] = (
         backend="DWD Open Data",
         license_info="DL-DE→BY-2.0",
         status=Status.PLANNED,
+        sources=(
+            DataSource(
+                key="dwd_opendata",
+                label="DWD Open Data (opendata.dwd.de)",
+                endpoint="https://opendata.dwd.de/weather/radar",
+                transport="http",
+                region="germany",
+                status=Status.PLANNED,
+            ),
+        ),
+        default_source_key="dwd_opendata",
     ),
     Product(
         key="blitzortung",
@@ -370,6 +659,17 @@ CATALOG: tuple[Product, ...] = (
         backend="WebSocket / HTTP stream (community)",
         license_info="non-commercial, attribution required",
         status=Status.PLANNED,
+        sources=(
+            DataSource(
+                key="ws_community",
+                label="Blitzortung WebSocket (community)",
+                endpoint="wss://ws.blitzortung.org/",
+                transport="websocket",
+                region="global",
+                status=Status.PLANNED,
+            ),
+        ),
+        default_source_key="ws_community",
     ),
 
     # ────────────────────────── POINTS tab ──────────────────────────
@@ -386,6 +686,8 @@ CATALOG: tuple[Product, ...] = (
         license_info="出典: 気象庁ホームページ",
         status=Status.IMPLEMENTED,
         notes="現状はサービス骨組みのみ。地図描画と変数切替は TODO。",
+        sources=(_JMA_BOSAI_SOURCE,),
+        default_source_key="jma_bosai",
     ),
     Product(
         key="metar",
@@ -399,6 +701,17 @@ CATALOG: tuple[Product, ...] = (
         backend="aviationweather.gov REST API",
         license_info="public domain",
         status=Status.PLANNED,
+        sources=(
+            DataSource(
+                key="awc",
+                label="NOAA Aviation Weather Center (aviationweather.gov)",
+                endpoint="https://aviationweather.gov/data/api",
+                transport="http",
+                region="us",
+                status=Status.PLANNED,
+            ),
+        ),
+        default_source_key="awc",
     ),
     Product(
         key="synop",
@@ -412,6 +725,25 @@ CATALOG: tuple[Product, ...] = (
         backend="OGIMET, NOAA, etc.",
         license_info="public domain / various",
         status=Status.PLANNED,
+        sources=(
+            DataSource(
+                key="ogimet",
+                label="OGIMET (ogimet.com)",
+                endpoint="https://www.ogimet.com/",
+                transport="http",
+                region="europe",
+                status=Status.PLANNED,
+            ),
+            DataSource(
+                key="noaa_isd",
+                label="NOAA ISD (s3://noaa-global-hourly-pds)",
+                endpoint="s3://noaa-global-hourly-pds",
+                transport="s3",
+                region="us-east-1",
+                status=Status.PLANNED,
+            ),
+        ),
+        default_source_key="ogimet",
     ),
     Product(
         key="radiosonde",
@@ -425,6 +757,25 @@ CATALOG: tuple[Product, ...] = (
         backend="Univ. of Wyoming archive, IGRA (NOAA)",
         license_info="public domain",
         status=Status.PLANNED,
+        sources=(
+            DataSource(
+                key="wyoming",
+                label="Univ. of Wyoming (weather.uwyo.edu)",
+                endpoint="https://weather.uwyo.edu/upperair/sounding.html",
+                transport="http",
+                region="us-west",
+                status=Status.PLANNED,
+            ),
+            DataSource(
+                key="igra",
+                label="NOAA IGRA v2 (ncei.noaa.gov)",
+                endpoint="https://www.ncei.noaa.gov/data/integrated-global-radiosonde-archive",
+                transport="http",
+                region="us-east",
+                status=Status.PLANNED,
+            ),
+        ),
+        default_source_key="wyoming",
     ),
     Product(
         key="open_meteo",
@@ -439,6 +790,8 @@ CATALOG: tuple[Product, ...] = (
         license_info="CC-BY-4.0",
         status=Status.IMPLEMENTED,
         notes="現状サービス層は実装済み、UI 統合が次のステップ。",
+        sources=(_OPEN_METEO_SOURCE,),
+        default_source_key="open_meteo_api",
     ),
     Product(
         key="ecmwf_ens_plume",
@@ -452,6 +805,18 @@ CATALOG: tuple[Product, ...] = (
         backend="dynamical.org Zarr (s3://dynamical-ecmwf-ifs-ens) 経由",
         license_info="CC-BY-4.0",
         status=Status.PLANNED,
+        sources=(
+            DataSource(
+                key="dynamical_zarr",
+                label="dynamical.org Zarr (s3://dynamical-ecmwf-ifs-ens)",
+                endpoint="s3://dynamical-ecmwf-ifs-ens",
+                transport="zarr",
+                region="us-east-1",
+                status=Status.PLANNED,
+                notes="dynamical.org がメンテするアンサンブル Zarr ミラー。",
+            ),
+        ),
+        default_source_key="dynamical_zarr",
     ),
 )
 

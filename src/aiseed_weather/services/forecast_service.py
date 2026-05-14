@@ -131,15 +131,32 @@ class ForecastDisabledError(RuntimeError):
 
 
 class ForecastService:
-    def __init__(self, settings: UserSettings):
-        if settings.forecast_source == ForecastSource.NONE:
+    def __init__(
+        self,
+        settings: UserSettings,
+        *,
+        override_source: str | None = None,
+    ):
+        """Build a service against an ECMWF Open Data mirror.
+
+        ``override_source``, when set, takes precedence over
+        ``settings.forecast_source``. It must be one of the strings
+        ecmwf-opendata's ``Client(source=...)`` accepts: 'aws',
+        'azure', 'google', or 'ecmwf'. The UI passes this when the user
+        picks a non-default mirror in the catalog dialog.
+        """
+        if override_source is None and settings.forecast_source == ForecastSource.NONE:
             raise ForecastDisabledError(
                 "Forecast source is not configured. User opted into historical-only mode."
             )
-        client_source = _CLIENT_SOURCE[settings.forecast_source]
+        if override_source is not None:
+            client_source = override_source
+        else:
+            client_source = _CLIENT_SOURCE[settings.forecast_source]
         self._client = Client(source=client_source)
         self._cache_dir = resolved_data_dir(settings) / "ecmwf"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self.client_source = client_source  # for logging / display
 
     async def fetch(self, request: ForecastRequest, *, force: bool = False) -> xr.Dataset:
         """Download (if needed) and decode a single forecast field.
