@@ -126,11 +126,33 @@ mamba activate ./.venv
 `--prefix` で作った環境は、名前ではなくパスでアクティブにします。プロンプトに
 `(/path/to/aiseed-weather/.venv)` のように表示されれば成功です。
 
-### Step 5: 起動
+### Step 5: プロジェクトを editable install (初回のみ)
 
 ```bash
-python -m aiseed_weather.main
+pip install -e .
 ```
+
+`src/aiseed_weather/` 配下のパッケージを Python から `import` できるように
+します。`-e` (editable) なのでファイル編集は再インストール不要でそのまま
+反映されます。`src/` レイアウト (PyPA 推奨) を採用しているため、この一手間が
+必要です。
+
+### Step 6: 起動
+
+プロジェクトルートで:
+
+```bash
+flet run
+```
+
+開発中はホットリロード付きで:
+
+```bash
+flet run -r
+```
+
+`pyproject.toml` の `[tool.flet.app] path` 設定により、`flet run` はプロジェクト
+ルートから `src/aiseed_weather/main.py` を自動的に見つけます。
 
 ### 環境の更新と削除
 
