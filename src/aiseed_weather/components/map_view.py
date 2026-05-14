@@ -9,7 +9,8 @@ Pipeline (only after the user presses 取得 / Fetch):
 
 Animation:
 - After the first single-step fetch, the user can press
-  ▶ アニメーション to pre-load every step in STEP_OPTIONS.
+  ▶ アニメーション to pre-load every step the user chose in the Data
+  dialog (horizon × cadence → step_options).
 - Each rendered PNG is cached in component state under its step_hours
   key, so flipping back and forth or playing is instant after the
   initial pre-load.
@@ -54,6 +55,7 @@ from aiseed_weather.services.forecast_service import (
     ForecastDisabledError,
     ForecastRequest,
     ForecastService,
+    is_grib_cached,
 )
 
 
@@ -61,16 +63,63 @@ logger = logging.getLogger(__name__)
 
 
 # HRES 0p25 oper publishes step=0..144 every 3h and step=150..240 every 6h.
-# The full 3h cadence (65 frames) makes a smooth synoptic animation but
-# is heavy to preload — figure roughly 10 min cold, 5 min cache-warm for
-# all frames on a typical laptop.
-STEP_OPTIONS = tuple(list(range(0, 145, 3)) + list(range(150, 241, 6)))
+# We let the user trade animation smoothness for preload time by picking
+# both a max horizon and a cadence; the full 3h × T+240h corresponds to
+# 65 frames and roughly 10 min cold preload on a typical laptop.
 FRAME_INTERVAL_SEC = 0.9  # animation playback frame duration
 # Spacing between consecutive S3 fetches during preload. S3's per-prefix
 # rate limit triggers "503 Slow Down" if we hammer one bucket prefix; a
 # small pause between requests keeps the rate below that threshold and
 # spares us from multi-second retry backoffs.
 PRELOAD_SPACING_SEC = 0.5
+
+# Choices we expose in the Data dialog. Horizon caps where the animation
+# stops; cadence is the spacing between frames. ECMWF only publishes 6h
+# after T+144h, so a 3h cadence past 144h actually yields 6h there.
+HORIZON_CHOICES_H: tuple[int, ...] = (24, 48, 72, 120, 168, 240)
+CADENCE_CHOICES_H: tuple[int, ...] = (3, 6, 12, 24)
+
+
+def _compute_steps(max_h: int, cadence_h: int) -> tuple[int, ...]:
+    """Build the (sorted, unique) step list for the slider/animation.
+
+    Honours ECMWF Open Data's publication cadence: every 3h up to T+144h,
+    every 6h thereafter. A user-requested 3h cadence past 144h is clamped
+    to 6h since smaller is not published. A user-requested 24h cadence
+    just snaps to the nearest available step.
+    """
+    steps: list[int] = []
+    # Pre-144 stretch uses user's cadence (but at least 1h).
+    h = 0
+    upper_short = min(144, max_h)
+    while h <= upper_short:
+        steps.append(h)
+        h += max(cadence_h, 1)
+    # Post-144 stretch: 6h minimum from upstream.
+    if max_h > 144:
+        post_cadence = max(cadence_h, 6)
+        h = 150 if 150 <= max_h else max_h + 1
+        while h <= max_h:
+            steps.append(h)
+            h += post_cadence
+    # Always include max_h as the final frame if it's not already there.
+    if steps and steps[-1] != max_h and max_h <= 240:
+        steps.append(max_h)
+    return tuple(sorted(set(steps)))
+
+
+def _recent_base_times(n: int = 20):
+    """Compute the last `n` synoptic cycles (00/06/12/18 UTC) ending now.
+
+    Doesn't probe the server — these are theoretical cycle stamps. Some
+    may not yet be published; the user finds out at fetch time. Listing
+    them all is more useful than guessing publication status here.
+    """
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(tz=timezone.utc)
+    cycle_hour = (now.hour // 6) * 6
+    latest = now.replace(hour=cycle_hour, minute=0, second=0, microsecond=0)
+    return [latest - timedelta(hours=6 * i) for i in range(n)]
 
 
 def _step_label(h: int) -> str:
@@ -164,6 +213,14 @@ def MapView(settings: UserSettings):
     # When set, we use this exact datetime as the run, skipping the probe.
     manual_cycle, set_manual_cycle = ft.use_state(None)
 
+    # Forecast horizon and cadence (drive both the slider and the
+    # animation preload size). Defaults match the previous hard-coded
+    # 65-frame setup; user can shorten to make preload less painful.
+    max_step_h, set_max_step_h = ft.use_state(240)
+    cadence_h, set_cadence_h = ft.use_state(3)
+    step_options = _compute_steps(max_step_h, cadence_h)
+    MAX_STEP = max(step_options) if step_options else 0
+
     async def _render_step(service, run_time, step: int, region_: Region) -> bytes:
         request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
         ds = await service.fetch(request)
@@ -172,8 +229,6 @@ def MapView(settings: UserSettings):
             render_msl, ds, region=region_, run_id=label,
         )
         return await asyncio.to_thread(_figure_to_png_bytes, fig)
-
-    MAX_STEP = max(STEP_OPTIONS)
 
     async def _resolve_run_time(service, *, force: bool):
         """Pick the IFS cycle every frame must come from.
@@ -275,7 +330,7 @@ def MapView(settings: UserSettings):
             set_state("error")
 
     async def load_all_steps_and_play():
-        """Pre-fetch every step in STEP_OPTIONS, then start animation.
+        """Pre-fetch every step in step_options, then start animation.
 
         Stays in "ready" state throughout so the chart, slider, and label
         stay visible. Each frame's display update happens AFTER its image
@@ -303,7 +358,7 @@ def MapView(settings: UserSettings):
                 new_frames = dict(frames)
             set_run_time_holder(run_time)
 
-            for i, step in enumerate(STEP_OPTIONS):
+            for i, step in enumerate(step_options):
                 if step in new_frames:
                     # Already loaded — sweep through visually so the user
                     # sees the timeline progress for cached frames too.
@@ -316,7 +371,7 @@ def MapView(settings: UserSettings):
                 req = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
                 hit_cache = service.is_cached(req)
                 set_progress(
-                    f"Loading frame {i + 1}/{len(STEP_OPTIONS)} · "
+                    f"Loading frame {i + 1}/{len(step_options)} · "
                     f"{_step_label(step)}{' (cached)' if hit_cache else ''}…"
                 )
                 png = await _render_step(service, run_time, step, region)
@@ -332,7 +387,7 @@ def MapView(settings: UserSettings):
                 )
                 # Polite spacing only after frames we actually downloaded —
                 # cache hits don't touch S3, no need to slow them down.
-                if not hit_cache and i + 1 < len(STEP_OPTIONS):
+                if not hit_cache and i + 1 < len(step_options):
                     await asyncio.sleep(PRELOAD_SPACING_SEC)
 
             set_progress("")
@@ -349,10 +404,10 @@ def MapView(settings: UserSettings):
         except asyncio.CancelledError:
             return
         try:
-            idx = STEP_OPTIONS.index(step_hours)
+            idx = step_options.index(step_hours)
         except ValueError:
             return
-        next_step = STEP_OPTIONS[(idx + 1) % len(STEP_OPTIONS)]
+        next_step = step_options[(idx + 1) % len(step_options)]
         next_png = frames.get(next_step)
         if next_png is None:
             # Missing frame — stop rather than stall.
@@ -391,7 +446,7 @@ def MapView(settings: UserSettings):
 
     def handle_slider_change(e):
         idx = int(e.control.value)
-        new_step = STEP_OPTIONS[idx]
+        new_step = step_options[idx]
         if new_step == step_hours:
             return
         set_is_playing(False)
@@ -407,8 +462,8 @@ def MapView(settings: UserSettings):
             ft.context.page.run_task(load, step=new_step)
 
     def step_by(delta: int):
-        idx = STEP_OPTIONS.index(step_hours)
-        new_step = STEP_OPTIONS[(idx + delta) % len(STEP_OPTIONS)]
+        idx = step_options.index(step_hours)
+        new_step = step_options[(idx + delta) % len(step_options)]
         set_is_playing(False)
         set_step_hours(new_step)
         cached = frames.get(new_step)
@@ -443,7 +498,7 @@ def MapView(settings: UserSettings):
         if is_playing:
             set_is_playing(False)
             return
-        missing = [s for s in STEP_OPTIONS if s not in frames]
+        missing = [s for s in step_options if s not in frames]
         if missing:
             ft.context.page.run_task(load_all_steps_and_play)
         else:
@@ -827,58 +882,60 @@ def MapView(settings: UserSettings):
 
     # Draft state for the time dialog. Initialised from the committed
     # state every time the dialog opens, so Cancel never mutates the
-    # live cycle.
+    # live values.
     from datetime import datetime, timezone, timedelta
-    _today_utc = datetime.now(tz=timezone.utc)
-    _default_date = (
-        manual_cycle.strftime("%Y-%m-%d") if manual_cycle
-        else (run_time_holder or _today_utc).strftime("%Y-%m-%d")
-    )
-    _default_hour = (
-        manual_cycle.hour if manual_cycle
-        else (run_time_holder.hour if run_time_holder else 0)
+
+    _BASE_TIME_CHOICES = _recent_base_times(20)
+    _current_base_iso = (
+        manual_cycle.isoformat() if manual_cycle is not None
+        else (run_time_holder.isoformat() if run_time_holder is not None else "auto")
     )
 
-    draft_cycle_mode, set_draft_cycle_mode = ft.use_state(
-        "manual" if manual_cycle is not None else "auto"
+    draft_base_choice, set_draft_base_choice = ft.use_state(
+        "auto" if manual_cycle is None else manual_cycle.isoformat()
     )
-    draft_cycle_date, set_draft_cycle_date = ft.use_state(_default_date)
-    draft_cycle_hour, set_draft_cycle_hour = ft.use_state(str(_default_hour))
-    draft_cycle_error, set_draft_cycle_error = ft.use_state("")
+    draft_horizon_h, set_draft_horizon_h = ft.use_state(max_step_h)
+    draft_cadence_h, set_draft_cadence_h = ft.use_state(cadence_h)
 
     def _open_time_dialog():
-        # Reset draft to the committed values on open.
-        set_draft_cycle_mode("manual" if manual_cycle is not None else "auto")
-        set_draft_cycle_date(_default_date)
-        set_draft_cycle_hour(str(_default_hour))
-        set_draft_cycle_error("")
+        set_draft_base_choice(
+            "auto" if manual_cycle is None else manual_cycle.isoformat()
+        )
+        set_draft_horizon_h(max_step_h)
+        set_draft_cadence_h(cadence_h)
         set_show_time_dialog(True)
 
     def _commit_cycle(_):
-        if draft_cycle_mode == "auto":
-            if manual_cycle is not None:
-                set_manual_cycle(None)
-                set_frames({})
-                # Drop the cached holder too so the next fetch re-probes.
+        # ---- base time ----
+        new_manual: datetime | None
+        if draft_base_choice == "auto":
+            new_manual = None
+        else:
+            try:
+                new_manual = datetime.fromisoformat(draft_base_choice)
+            except ValueError:
+                new_manual = None
+        cycle_changed = (new_manual != manual_cycle)
+        # ---- horizon / cadence ----
+        horizon_changed = (
+            draft_horizon_h != max_step_h or draft_cadence_h != cadence_h
+        )
+        # Apply
+        if cycle_changed:
+            set_manual_cycle(new_manual)
+            if new_manual is None:
+                # Drop the cached holder so the next fetch re-probes.
                 set_run_time_holder(None)
-            set_show_time_dialog(False)
-            return
-        # Manual: parse the inputs.
-        try:
-            d = datetime.strptime(draft_cycle_date, "%Y-%m-%d").date()
-            h = int(draft_cycle_hour)
-            if h not in (0, 6, 12, 18):
-                raise ValueError("hour must be 00, 06, 12, or 18 (UTC)")
-            new_cycle = datetime(d.year, d.month, d.day, h, 0, tzinfo=timezone.utc)
-        except (ValueError, TypeError) as e:
-            set_draft_cycle_error(f"入力エラー: {e}")
-            return
-        # Don't accept future cycles.
-        if new_cycle > _today_utc + timedelta(hours=6):
-            set_draft_cycle_error("未来の cycle は指定できません。")
-            return
-        if new_cycle != manual_cycle:
-            set_manual_cycle(new_cycle)
+        if horizon_changed:
+            set_max_step_h(draft_horizon_h)
+            set_cadence_h(draft_cadence_h)
+            # Snap step_hours to the new option set if needed.
+            new_options = _compute_steps(draft_horizon_h, draft_cadence_h)
+            if step_hours not in new_options and new_options:
+                nearest = min(new_options, key=lambda s: abs(s - step_hours))
+                set_step_hours(nearest)
+        if cycle_changed or horizon_changed:
+            # Different cycle or different frame set → drop in-memory PNGs.
             set_frames({})
         set_show_time_dialog(False)
 
@@ -890,11 +947,48 @@ def MapView(settings: UserSettings):
         )
     )
 
+    # Preview the frame count for the draft horizon/cadence so the user
+    # can see how much they'd save before applying.
+    _preview_steps = _compute_steps(draft_horizon_h, draft_cadence_h)
+    _preview_frame_count = len(_preview_steps)
+
+    # Build base-time radio rows. Mark the currently-committed cycle.
+    def _base_time_label(dt: datetime) -> str:
+        # Mark in-progress cycles (within ~5h of "now") informally so
+        # the user knows they may 404.
+        in_progress = (datetime.now(tz=timezone.utc) - dt) < timedelta(hours=5)
+        tag = "  (公開中の可能性) / in progress" if in_progress else ""
+        current = (
+            "  ← 現在 / current"
+            if (
+                manual_cycle is not None and dt == manual_cycle
+            ) or (
+                manual_cycle is None and run_time_holder is not None
+                and dt == run_time_holder
+            )
+            else ""
+        )
+        return f"{dt:%Y-%m-%d %H:%M UTC} ({dt:%Hz}){tag}{current}"
+
+    base_time_radios = [
+        ft.Radio(
+            value="auto",
+            label="Auto: 全予報範囲が公開済みの最新 base time を自動選択 (推奨)",
+        ),
+    ] + [
+        ft.Radio(
+            value=dt.isoformat(),
+            label=_base_time_label(dt),
+        )
+        for dt in _BASE_TIME_CHOICES
+    ]
+
     time_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("データ / Data (base time)"),
+        title=ft.Text("データ / Data (base time + 範囲)"),
         content=ft.Container(
-            width=480,
+            width=560,
+            height=540,
             content=ft.Column(
                 tight=True,
                 spacing=8,
@@ -910,86 +1004,86 @@ def MapView(settings: UserSettings):
                     ),
                     ft.Text(
                         "Base time は予報の初期値時刻 (model initialization)。"
-                        "Lead time / step を変えても base time は変わりません。",
+                        "Lead time / step を変えても base time は変わりません。"
+                        "ECMWF Open Data は直近 ~5 日分のみ保持。",
                         size=10, color=ft.Colors.GREY,
                     ),
                     ft.Divider(height=10),
+
+                    ft.Text(
+                        "Base time の選択 / Choose base time",
+                        size=11, color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                    ),
                     ft.RadioGroup(
-                        value=draft_cycle_mode,
-                        on_change=lambda e: set_draft_cycle_mode(e.control.value),
+                        value=draft_base_choice,
+                        on_change=lambda e: set_draft_base_choice(e.control.value),
                         content=ft.Column(
                             tight=True,
-                            spacing=4,
-                            controls=[
-                                ft.Radio(
-                                    value="auto",
-                                    label="Auto: 全予報範囲が公開済みの最新 base time を自動選択",
-                                ),
-                                ft.Radio(
-                                    value="manual",
-                                    label="Manual: 特定の base time を指定",
-                                ),
-                            ],
+                            spacing=2,
+                            controls=base_time_radios,
                         ),
                     ),
-                    ft.Container(
-                        visible=(draft_cycle_mode == "manual"),
-                        padding=ft.Padding.only(left=32, top=4),
-                        content=ft.Column(
-                            spacing=8,
-                            controls=[
-                                ft.Row(
-                                    spacing=10,
-                                    controls=[
-                                        ft.TextField(
-                                            label="日付 (UTC) / Date",
-                                            value=draft_cycle_date,
-                                            hint_text="YYYY-MM-DD",
-                                            width=160,
-                                            dense=True,
-                                            on_change=lambda e: set_draft_cycle_date(
-                                                e.control.value,
-                                            ),
-                                        ),
-                                        ft.Dropdown(
-                                            label="時刻 (UTC)",
-                                            value=draft_cycle_hour,
-                                            width=120,
-                                            dense=True,
-                                            options=[
-                                                ft.dropdown.Option(key="0", text="00z"),
-                                                ft.dropdown.Option(key="6", text="06z"),
-                                                ft.dropdown.Option(key="12", text="12z"),
-                                                ft.dropdown.Option(key="18", text="18z"),
-                                            ],
-                                            on_select=lambda e: set_draft_cycle_hour(
-                                                e.control.value,
-                                            ),
-                                        ),
-                                    ],
-                                ),
-                                ft.Text(
-                                    "注: ECMWF Open Data は直近 ~5 日分のみ保持。"
-                                    "それ以上古い base time は 404 になります。",
-                                    size=10, color=ft.Colors.GREY,
-                                ),
-                                ft.Text(
-                                    draft_cycle_error,
-                                    size=11, color=ft.Colors.RED,
-                                    visible=bool(draft_cycle_error),
-                                ),
-                            ],
-                        ),
-                    ),
+
                     ft.Divider(height=10),
-                    ft.Text("予報範囲 / Range", size=11, color=ft.Colors.GREY),
                     ft.Text(
-                        f"T+0h .. T+{MAX_STEP}h, 3h cadence  "
-                        f"({len(STEP_OPTIONS)} frames)",
-                        size=12,
+                        "予報範囲 / Forecast range",
+                        size=11, color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                     ),
                     ft.Text(
-                        "範囲・粒度のカスタマイズは将来。",
+                        "範囲を短くすると取得時間が大幅に縮みます。"
+                        "粒度を粗くしてもフレーム数を減らせます。",
+                        size=10, color=ft.Colors.GREY,
+                    ),
+                    ft.Row(
+                        spacing=10,
+                        controls=[
+                            ft.Dropdown(
+                                label="最大予報時刻 / Horizon",
+                                value=str(draft_horizon_h),
+                                width=200,
+                                dense=True,
+                                options=[
+                                    ft.dropdown.Option(
+                                        key=str(h),
+                                        text=(
+                                            f"T+{h}h"
+                                            + (f" (D+{h // 24})" if h % 24 == 0 else "")
+                                        ),
+                                    )
+                                    for h in HORIZON_CHOICES_H
+                                ],
+                                on_select=lambda e: set_draft_horizon_h(
+                                    int(e.control.value),
+                                ),
+                            ),
+                            ft.Dropdown(
+                                label="粒度 / Cadence",
+                                value=str(draft_cadence_h),
+                                width=140,
+                                dense=True,
+                                options=[
+                                    ft.dropdown.Option(
+                                        key=str(c), text=f"{c}h",
+                                    )
+                                    for c in CADENCE_CHOICES_H
+                                ],
+                                on_select=lambda e: set_draft_cadence_h(
+                                    int(e.control.value),
+                                ),
+                            ),
+                        ],
+                    ),
+                    ft.Text(
+                        f"= {_preview_frame_count} frames"
+                        + (
+                            "  (デフォルト 65 と同じ)"
+                            if _preview_frame_count == 65 else ""
+                        ),
+                        size=12, weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Text(
+                        "注: ECMWF は T+144h 以降は 6h 粒度のみ。3h を指定しても"
+                        "後半は 6h になります。",
                         size=10, color=ft.Colors.GREY, italic=True,
                     ),
                 ],
@@ -1043,11 +1137,11 @@ def MapView(settings: UserSettings):
         )
 
     try:
-        current_idx = STEP_OPTIONS.index(step_hours)
+        current_idx = step_options.index(step_hours)
     except ValueError:
         current_idx = 0
     loaded_count = len(frames)
-    total_count = len(STEP_OPTIONS)
+    total_count = len(step_options)
     all_loaded = loaded_count >= total_count
     has_image = image_bytes is not None
     is_working = bool(progress)
@@ -1104,6 +1198,51 @@ def MapView(settings: UserSettings):
         product_status_color = ft.Colors.AMBER
         product_status_text = "閲覧のみ / catalog only"
 
+    # Per-step cache status for the bar in the Data section.
+    # green = rendered PNG in memory; amber = GRIB on disk, not yet
+    # rendered; grey = nothing. ECMWF service is only used to check
+    # the on-disk state, which is a path existence check.
+    _base_for_status = manual_cycle if manual_cycle is not None else run_time_holder
+    if _base_for_status is not None:
+        cache_rendered = sum(1 for s in step_options if s in frames)
+        cache_grib = sum(
+            1 for s in step_options
+            if s not in frames and is_grib_cached(settings, _base_for_status, s)
+        )
+        cache_none = len(step_options) - cache_rendered - cache_grib
+        cache_cells = []
+        for s in step_options:
+            if s in frames:
+                color = ft.Colors.GREEN
+            elif is_grib_cached(settings, _base_for_status, s):
+                color = ft.Colors.AMBER
+            else:
+                color = ft.Colors.OUTLINE_VARIANT
+            cache_cells.append(
+                ft.Container(
+                    width=3, height=12, bgcolor=color, border_radius=1,
+                    tooltip=f"{_step_label(s)}",
+                )
+            )
+        cache_bar = ft.Column(
+            spacing=2,
+            controls=[
+                ft.Row(spacing=1, controls=cache_cells, wrap=False),
+                ft.Text(
+                    f"描画 {cache_rendered} · GRIB {cache_grib} · 未取得 {cache_none}  "
+                    f"/ 全 {len(step_options)}",
+                    size=10, color=ft.Colors.GREY,
+                ),
+            ],
+        )
+    else:
+        cache_rendered = cache_grib = 0
+        cache_none = len(step_options)
+        cache_bar = ft.Text(
+            "未取得 / not loaded yet",
+            size=10, color=ft.Colors.GREY, italic=True,
+        )
+
     control_panel = ft.Container(
         width=240,
         bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
@@ -1148,7 +1287,7 @@ def MapView(settings: UserSettings):
                     on_click=lambda _: set_show_catalog_dialog(True),
                 ),
 
-                # ── Data: which BASE TIME forecast to fetch from the model ──
+                # ── Data: base time + acquisition status + range ──
                 ft.Divider(height=14),
                 ft.Text(
                     "データ / Data (base time)", size=11,
@@ -1169,6 +1308,16 @@ def MapView(settings: UserSettings):
                     "manual" if manual_cycle else "auto (latest available)",
                     size=10, color=ft.Colors.GREY,
                 ),
+                ft.Text(
+                    f"範囲: T+0..T+{MAX_STEP}h, 粒度 {cadence_h}h "
+                    f"({len(step_options)} frames)",
+                    size=10, color=ft.Colors.GREY,
+                ),
+                ft.Text(
+                    "取得状況 / Cache status:",
+                    size=10, color=ft.Colors.GREY,
+                ),
+                cache_bar,
                 ft.TextButton(
                     content=ft.Text("データ変更 / Change data…", size=12),
                     icon=ft.Icons.SCHEDULE,

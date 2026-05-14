@@ -173,6 +173,36 @@ class ForecastService:
         path = self._cache_path(request)
         return path.exists() and path.stat().st_size > 0
 
+
+def grib_cache_path(
+    settings: UserSettings,
+    run_time: datetime,
+    step_hours: int,
+    param: str = "msl",
+) -> Path:
+    """Compute the on-disk cache path for an ECMWF GRIB2 frame.
+
+    Mirrors ForecastService._cache_path but is a free function so UI
+    code can inspect cache state without going through the (potentially
+    expensive, requires-network-ready settings) full service object.
+    """
+    return (
+        resolved_data_dir(settings) / "ecmwf"
+        / run_time.strftime("%Y%m%d")
+        / run_time.strftime("%Hz")
+        / f"{param}_{step_hours}h.grib2"
+    )
+
+
+def is_grib_cached(
+    settings: UserSettings,
+    run_time: datetime,
+    step_hours: int,
+    param: str = "msl",
+) -> bool:
+    p = grib_cache_path(settings, run_time, step_hours, param)
+    return p.exists() and p.stat().st_size > 0
+
     async def latest_run(self, *, step_hours: int, param: str) -> datetime:
         """Return the run datetime of the most recent publicly available run
         that contains the requested field. Probes the server.
