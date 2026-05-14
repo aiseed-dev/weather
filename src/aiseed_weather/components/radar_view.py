@@ -3,9 +3,9 @@
 
 """Rainfall radar nowcast view.
 
-Implements the standard fetch-on-open pattern described in the
-user-action-fetch skill: mount triggers a fetch, cache is reused if fresh,
-no background polling, explicit Refresh button.
+Stays idle on mount; fetches only when the user presses 取得 / Fetch.
+Explicit Refresh forces a re-fetch ignoring cache. See the
+`user-action-fetch` skill.
 """
 
 from __future__ import annotations
@@ -25,29 +25,50 @@ def RadarView(settings: UserSettings):
     state, set_state = ft.use_state("idle")  # idle | loading | ready | error
     snapshot, set_snapshot = ft.use_state(None)
     error, set_error = ft.use_state(None)
+    progress, set_progress = ft.use_state("")
 
     service = JmaRadarService(data_dir=resolved_data_dir(settings))
 
     async def load(force: bool = False):
         set_state("loading")
+        set_error(None)
+        set_progress("Fetching radar tiles from JMA…")
         try:
             s = await service.fetch(force=force)
             set_snapshot(s)
+            set_progress("")
             set_state("ready")
         except Exception as e:
             logger.exception("Radar view failed to fetch JMA snapshot")
             set_error(str(e))
             set_state("error")
 
-    # Mount-time fetch. Runs once per RadarView instance.
-    ft.use_effect(lambda: ft.context.page.run_task(load), deps=[])
-
-    if state in ("idle", "loading"):
+    if state == "idle":
         return ft.Column(
             controls=[
                 ft.Text("Rainfall Nowcast (JMA)", size=18, weight=ft.FontWeight.BOLD),
-                ft.ProgressRing(),
-                ft.Text("Fetching radar tiles…", color=ft.Colors.GREY),
+                ft.Text(
+                    "Composite radar mosaic for Japan from JMA tiles.",
+                    color=ft.Colors.GREY,
+                ),
+                ft.FilledButton(
+                    content=ft.Text("取得 / Fetch"),
+                    on_click=lambda _: ft.context.page.run_task(load),
+                ),
+            ],
+        )
+
+    if state == "loading":
+        return ft.Column(
+            controls=[
+                ft.Text("Rainfall Nowcast (JMA)", size=18, weight=ft.FontWeight.BOLD),
+                ft.Row(
+                    controls=[
+                        ft.ProgressRing(width=20, height=20),
+                        ft.Text(progress or "Loading…", color=ft.Colors.GREY),
+                    ],
+                    spacing=12,
+                ),
             ],
         )
 
@@ -57,7 +78,7 @@ def RadarView(settings: UserSettings):
                 ft.Text("Rainfall Nowcast (JMA)", size=18, weight=ft.FontWeight.BOLD),
                 ft.Text(f"Could not fetch radar: {error}", color=ft.Colors.RED),
                 ft.FilledButton(
-                    text="再取得 / Retry",
+                    content=ft.Text("再取得 / Retry"),
                     on_click=lambda _: ft.context.page.run_task(load, force=True),
                 ),
             ],
@@ -70,7 +91,7 @@ def RadarView(settings: UserSettings):
                 controls=[
                     ft.Text("Rainfall Nowcast (JMA)", size=18, weight=ft.FontWeight.BOLD),
                     ft.FilledButton(
-                        text="再取得",
+                        content=ft.Text("再取得"),
                         on_click=lambda _: ft.context.page.run_task(load, force=True),
                     ),
                 ],
@@ -83,7 +104,7 @@ def RadarView(settings: UserSettings):
             ),
             # TODO(agent): render the composited radar image here.
             # Use the figures/ layer to build a Japan basemap with the radar
-            # tiles overlaid, then embed via ft.MatplotlibChart.
+            # tiles overlaid, then embed as PNG bytes via ft.Image(src=...).
             ft.Text("Radar image will render here", color=ft.Colors.GREY),
             ft.Text(
                 "出典: 気象庁ホームページ\n編集・加工を行った旨と編集責任が利用者にあります",

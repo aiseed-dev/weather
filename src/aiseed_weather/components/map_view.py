@@ -3,10 +3,12 @@
 
 """Map view: ECMWF synoptic chart.
 
-Pipeline: pick latest published run → download MSL field via ForecastService
-→ decode GRIB2 → render matplotlib figure → embed in Flet via
-MatplotlibChart. Mount-time fetch + explicit Refresh, no polling
-(`user-action-fetch` skill).
+Pipeline (only after the user presses 取得 / Fetch):
+  probe latest run via ForecastService.latest_run → download GRIB2 →
+  decode via cfgrib → render matplotlib figure → embed as PNG bytes.
+
+No mount-time fetch — the view stays idle until the user asks. See the
+`user-action-fetch` skill.
 """
 
 from __future__ import annotations
@@ -47,9 +49,12 @@ def MapView(settings: UserSettings):
     image_bytes, set_image_bytes = ft.use_state(None)
     error, set_error = ft.use_state(None)
     run_label, set_run_label = ft.use_state("")
+    progress, set_progress = ft.use_state("")
 
     async def load(force: bool = False):
         set_state("loading")
+        set_error(None)
+        set_progress("Initializing forecast service…")
         try:
             service = ForecastService(settings)
         except ForecastDisabledError as e:
@@ -59,20 +64,25 @@ def MapView(settings: UserSettings):
 
         try:
             t0 = time.perf_counter()
+            set_progress("Probing latest ECMWF run…")
             run_time = await service.latest_run(step_hours=0, param="msl")
             t_probe = time.perf_counter()
             label = f"{run_time:%Y%m%d %Hz} IFS"
+            set_progress(f"Fetching MSL grid · {label}…")
             request = ForecastRequest(run_time=run_time, step_hours=0, param="msl")
             ds = await service.fetch(request)
             t_fetch = time.perf_counter()
+            set_progress("Rendering chart (matplotlib + cartopy)…")
             fig = await asyncio.to_thread(
                 render_msl, ds, projection="robinson", run_id=label,
             )
             t_render = time.perf_counter()
+            set_progress("Encoding PNG…")
             png_bytes = await asyncio.to_thread(_figure_to_png_bytes, fig)
             t_encode = time.perf_counter()
             set_image_bytes(png_bytes)
             set_run_label(label)
+            set_progress("")
             set_state("ready")
             logger.info(
                 "Map load timing: probe=%.2fs fetch+decode=%.2fs render=%.2fs "
@@ -88,8 +98,6 @@ def MapView(settings: UserSettings):
             set_error(f"{type(e).__name__}: {e}")
             set_state("error")
 
-    ft.use_effect(lambda: ft.context.page.run_task(load), [])
-
     if state == "disabled":
         return ft.Column(
             controls=[
@@ -99,18 +107,38 @@ def MapView(settings: UserSettings):
                     color=ft.Colors.GREY,
                 ),
                 ft.Text(
-                    "Pick an ECMWF mirror in Settings to enable map views.",
+                    "Set forecast_source in config.toml to enable map views.",
                     color=ft.Colors.GREY,
                 ),
             ],
         )
 
-    if state in ("idle", "loading"):
+    if state == "idle":
         return ft.Column(
             controls=[
                 ft.Text("Map View (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
-                ft.ProgressRing(),
-                ft.Text("Fetching MSL field…", color=ft.Colors.GREY),
+                ft.Text(
+                    "MSL (mean sea level pressure) from the latest ECMWF IFS run.",
+                    color=ft.Colors.GREY,
+                ),
+                ft.FilledButton(
+                    content=ft.Text("取得 / Fetch"),
+                    on_click=lambda _: ft.context.page.run_task(load),
+                ),
+            ],
+        )
+
+    if state == "loading":
+        return ft.Column(
+            controls=[
+                ft.Text("Map View (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
+                ft.Row(
+                    controls=[
+                        ft.ProgressRing(width=20, height=20),
+                        ft.Text(progress or "Loading…", color=ft.Colors.GREY),
+                    ],
+                    spacing=12,
+                ),
             ],
         )
 
@@ -126,6 +154,7 @@ def MapView(settings: UserSettings):
             ],
         )
 
+    # state == "ready"
     return ft.Column(
         expand=True,
         controls=[

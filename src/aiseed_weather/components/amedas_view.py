@@ -3,9 +3,9 @@
 
 """AMeDAS ground observation map view.
 
-Implements the standard fetch-on-open pattern. Default variable is
-temperature; the user can switch to precipitation, wind, sunshine, or
-snow depth.
+Stays idle on mount; fetches only when the user presses 取得 / Fetch.
+Default variable is temperature; the user can switch to precipitation,
+wind, sunshine, or snow depth. See the `user-action-fetch` skill.
 """
 
 from __future__ import annotations
@@ -35,28 +35,50 @@ def AmedasView(settings: UserSettings):
     snapshot, set_snapshot = ft.use_state(None)
     error, set_error = ft.use_state(None)
     variable, set_variable = ft.use_state("temperature")
+    progress, set_progress = ft.use_state("")
 
     service = JmaAmedasService(data_dir=resolved_data_dir(settings))
 
     async def load(force: bool = False):
         set_state("loading")
+        set_error(None)
+        set_progress("Fetching AMeDAS snapshot from JMA…")
         try:
             s = await service.fetch(force=force)
             set_snapshot(s)
+            set_progress("")
             set_state("ready")
         except Exception as e:
             logger.exception("AMeDAS view failed to fetch JMA snapshot")
             set_error(str(e))
             set_state("error")
 
-    ft.use_effect(lambda: ft.context.page.run_task(load), deps=[])
-
-    if state in ("idle", "loading"):
+    if state == "idle":
         return ft.Column(
             controls=[
                 ft.Text("AMeDAS (JMA)", size=18, weight=ft.FontWeight.BOLD),
-                ft.ProgressRing(),
-                ft.Text("Fetching ground observations…", color=ft.Colors.GREY),
+                ft.Text(
+                    "Latest ground observations from ~1,300 AMeDAS stations.",
+                    color=ft.Colors.GREY,
+                ),
+                ft.FilledButton(
+                    content=ft.Text("取得 / Fetch"),
+                    on_click=lambda _: ft.context.page.run_task(load),
+                ),
+            ],
+        )
+
+    if state == "loading":
+        return ft.Column(
+            controls=[
+                ft.Text("AMeDAS (JMA)", size=18, weight=ft.FontWeight.BOLD),
+                ft.Row(
+                    controls=[
+                        ft.ProgressRing(width=20, height=20),
+                        ft.Text(progress or "Loading…", color=ft.Colors.GREY),
+                    ],
+                    spacing=12,
+                ),
             ],
         )
 
@@ -66,7 +88,7 @@ def AmedasView(settings: UserSettings):
                 ft.Text("AMeDAS (JMA)", size=18, weight=ft.FontWeight.BOLD),
                 ft.Text(f"Could not fetch AMeDAS: {error}", color=ft.Colors.RED),
                 ft.FilledButton(
-                    text="再取得 / Retry",
+                    content=ft.Text("再取得 / Retry"),
                     on_click=lambda _: ft.context.page.run_task(load, force=True),
                 ),
             ],
@@ -78,7 +100,7 @@ def AmedasView(settings: UserSettings):
                 controls=[
                     ft.Text("AMeDAS (JMA)", size=18, weight=ft.FontWeight.BOLD),
                     ft.FilledButton(
-                        text="再取得",
+                        content=ft.Text("再取得"),
                         on_click=lambda _: ft.context.page.run_task(load, force=True),
                     ),
                 ],
