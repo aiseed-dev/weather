@@ -41,10 +41,12 @@ from aiseed_weather.services.forecast_service import (
 logger = logging.getLogger(__name__)
 
 
-# HRES 0p25 oper publishes step=0..144 every 3h, step=150..240 every 6h.
-# Synoptic subset (D+0 through D+10) for the step selector and animation:
-STEP_OPTIONS = (0, 24, 48, 72, 96, 120, 144, 168, 192, 216, 240)
-FRAME_INTERVAL_SEC = 0.6  # animation frame duration
+# HRES 0p25 oper publishes step=0..144 every 3h and step=150..240 every 6h.
+# The full 3h cadence (65 frames) makes a smooth synoptic animation but
+# is heavy to preload — figure roughly 10 min cold, 5 min cache-warm for
+# all frames on a typical laptop.
+STEP_OPTIONS = tuple(list(range(0, 145, 3)) + list(range(150, 241, 6)))
+FRAME_INTERVAL_SEC = 0.9  # animation frame duration
 
 
 def _step_label(h: int) -> str:
@@ -60,19 +62,6 @@ def _figure_to_png_bytes(fig: Figure, *, dpi: int = 120) -> bytes:
     fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
     plt.close(fig)
     return buf.getvalue()
-
-
-def _step_dropdown(value: int, on_change) -> ft.Control:
-    return ft.Dropdown(
-        label="Forecast step",
-        value=str(value),
-        width=200,
-        options=[
-            ft.dropdown.Option(key=str(h), text=_step_label(h))
-            for h in STEP_OPTIONS
-        ],
-        on_select=on_change,
-    )
 
 
 @ft.component
@@ -252,20 +241,6 @@ def MapView(settings: UserSettings):
         _animation_cleanup,
     )
 
-    def handle_step_change(e):
-        new_step = int(e.control.value)
-        set_step_hours(new_step)
-        set_is_playing(False)
-        cached = frames.get(new_step)
-        if cached is not None:
-            set_image_bytes(cached)
-            set_run_label(
-                f"{run_time_holder:%Y%m%d %Hz} IFS · {_step_label(new_step)}"
-                if run_time_holder else _step_label(new_step)
-            )
-        else:
-            ft.context.page.run_task(load, step=new_step)
-
     def handle_slider_change(e):
         idx = int(e.control.value)
         new_step = STEP_OPTIONS[idx]
@@ -328,13 +303,14 @@ def MapView(settings: UserSettings):
             controls=[
                 ft.Text("Map View (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
                 ft.Text(
-                    "MSL (mean sea level pressure) from the latest ECMWF IFS run.",
+                    "MSL (mean sea level pressure) from the latest ECMWF IFS run. "
+                    f"Animation covers T+0h..T+240h at 3h cadence "
+                    f"({len(STEP_OPTIONS)} frames).",
                     color=ft.Colors.GREY,
                 ),
-                _step_dropdown(step_hours, lambda e: set_step_hours(int(e.control.value))),
                 ft.FilledButton(
-                    content=ft.Text("取得 / Fetch"),
-                    on_click=lambda _: ft.context.page.run_task(load, step=step_hours),
+                    content=ft.Text("取得 / Fetch (T+0h)"),
+                    on_click=lambda _: ft.context.page.run_task(load, step=0),
                 ),
             ],
         )
@@ -426,17 +402,11 @@ def MapView(settings: UserSettings):
                         f"MSL · ECMWF IFS · {run_label}",
                         size=16, weight=ft.FontWeight.BOLD,
                     ),
-                    ft.Row(
-                        controls=[
-                            _step_dropdown(step_hours, handle_step_change),
-                            ft.FilledButton(
-                                content=ft.Text("再取得"),
-                                on_click=lambda _: ft.context.page.run_task(
-                                    load, step=step_hours, force=True,
-                                ),
-                            ),
-                        ],
-                        spacing=8,
+                    ft.FilledButton(
+                        content=ft.Text("再取得"),
+                        on_click=lambda _: ft.context.page.run_task(
+                            load, step=step_hours, force=True,
+                        ),
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
