@@ -351,65 +351,33 @@ def MapView(settings: UserSettings):
         else:
             set_is_playing(True)
 
+    # ----- Layout -----
+    # Desktop 3-pane shell:
+    #   left  : control panel  (fixed 240px, action button + future selectors)
+    #   main  : chart + timeline (expand)
+    #   bottom: status bar (90px, progress + cache + cycle info)
+    # The disabled state bypasses the shell and shows a full-pane hint.
+
     if state == "disabled":
-        return ft.Column(
-            controls=[
-                ft.Text("Map View (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
-                ft.Text(
-                    error or "Forecast source is not configured.",
-                    color=ft.Colors.GREY,
-                ),
-                ft.Text(
-                    "Set forecast_source in config.toml to enable map views.",
-                    color=ft.Colors.GREY,
-                ),
-            ],
+        return ft.SafeArea(
+            expand=True,
+            content=ft.Column(
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                controls=[
+                    ft.Text("Map View (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
+                    ft.Text(
+                        error or "Forecast source is not configured.",
+                        color=ft.Colors.GREY,
+                    ),
+                    ft.Text(
+                        "Set forecast_source in config.toml to enable map views.",
+                        color=ft.Colors.GREY,
+                    ),
+                ],
+            ),
         )
 
-    if state == "idle":
-        return ft.Column(
-            controls=[
-                ft.Text("Map View (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
-                ft.Text(
-                    "MSL (mean sea level pressure) from the latest ECMWF IFS run. "
-                    f"Animation covers T+0h..T+240h at 3h cadence "
-                    f"({len(STEP_OPTIONS)} frames).",
-                    color=ft.Colors.GREY,
-                ),
-                ft.FilledButton(
-                    content=ft.Text("取得 / Fetch (T+0h)"),
-                    on_click=lambda _: ft.context.page.run_task(load, step=0),
-                ),
-            ],
-        )
-
-    if state == "loading":
-        return ft.Column(
-            controls=[
-                ft.Text("Map View (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
-                ft.Row(
-                    controls=[
-                        ft.ProgressRing(width=20, height=20),
-                        ft.Text(progress or "Loading…", color=ft.Colors.GREY),
-                    ],
-                    spacing=12,
-                ),
-            ],
-        )
-
-    if state == "error":
-        return ft.Column(
-            controls=[
-                ft.Text("Map View (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
-                ft.Text(f"Could not render map: {error}", color=ft.Colors.RED),
-                ft.FilledButton(
-                    content=ft.Text("再取得 / Retry"),
-                    on_click=lambda _: ft.context.page.run_task(load, step=step_hours, force=True),
-                ),
-            ],
-        )
-
-    # state == "ready"
     try:
         current_idx = STEP_OPTIONS.index(step_hours)
     except ValueError:
@@ -417,88 +385,265 @@ def MapView(settings: UserSettings):
     loaded_count = len(frames)
     total_count = len(STEP_OPTIONS)
     all_loaded = loaded_count >= total_count
-    is_preloading = bool(progress)  # non-empty progress text = work in flight
+    has_image = image_bytes is not None
+    is_working = bool(progress)
     play_icon = ft.Icons.PAUSE if is_playing else ft.Icons.PLAY_ARROW
     play_tooltip = "一時停止" if is_playing else (
         "▶ アニメーション再生" if all_loaded
         else f"全フレームを読み込んで再生 ({loaded_count}/{total_count})"
     )
 
-    timeline = ft.Row(
-        alignment=ft.MainAxisAlignment.CENTER,
-        spacing=4,
-        controls=[
-            ft.IconButton(
-                icon=ft.Icons.SKIP_PREVIOUS,
-                tooltip="前のフレーム",
-                on_click=lambda _: step_by(-1),
+    # ----- Left: control panel -----
+    if state == "error":
+        primary_action = ft.FilledButton(
+            content=ft.Text("再取得 / Retry"),
+            width=208,
+            on_click=lambda _: ft.context.page.run_task(
+                load, step=step_hours, force=True,
             ),
-            ft.IconButton(
-                icon=play_icon,
-                tooltip=play_tooltip,
-                on_click=toggle_play,
+        )
+    elif not has_image:
+        primary_action = ft.FilledButton(
+            content=ft.Text("取得 / Fetch (T+0h)"),
+            width=208,
+            disabled=(state == "loading"),
+            on_click=lambda _: ft.context.page.run_task(load, step=0),
+        )
+    else:
+        primary_action = ft.FilledButton(
+            content=ft.Text("再取得 / Refresh"),
+            width=208,
+            disabled=is_working,
+            on_click=lambda _: ft.context.page.run_task(
+                load, step=step_hours, force=True,
             ),
-            ft.IconButton(
-                icon=ft.Icons.SKIP_NEXT,
-                tooltip="次のフレーム",
-                on_click=lambda _: step_by(1),
-            ),
-            ft.Container(
-                # on_change_end fires once on release rather than on
-                # every drag tick — avoids spamming fetches when the
-                # user drags through multiple uncached frames.
-                content=ft.Slider(
-                    min=0,
-                    max=total_count - 1,
-                    divisions=total_count - 1,
-                    value=current_idx,
-                    on_change_end=handle_slider_change,
+        )
+
+    control_panel = ft.Container(
+        width=240,
+        bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+        padding=ft.Padding.all(16),
+        content=ft.Column(
+            spacing=10,
+            controls=[
+                ft.Text("ECMWF Map", size=16, weight=ft.FontWeight.BOLD),
+                ft.Text(
+                    "MSL (mean sea level pressure)",
+                    size=11, color=ft.Colors.GREY,
                 ),
-                expand=True,
-            ),
-            ft.Text(
-                _step_label(step_hours),
-                size=12,
-                width=160,
-                text_align=ft.TextAlign.RIGHT,
-            ),
-        ],
+                ft.Divider(height=12),
+                ft.Text("Cycle", size=10, color=ft.Colors.GREY),
+                ft.Text(
+                    f"{run_time_holder:%Y%m%d %Hz} IFS" if run_time_holder else "—",
+                    size=13, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text("Animation", size=10, color=ft.Colors.GREY),
+                ft.Text(
+                    f"T+0h..T+{MAX_STEP}h at 3h cadence ({total_count} frames)",
+                    size=11,
+                ),
+                ft.Divider(height=12),
+                primary_action,
+                # Placeholders for the next iteration — variable / region
+                # / cycle selectors land here once those features ship.
+                # Keeping the slot visible signals to future-self where
+                # additional controls belong.
+                ft.Text(
+                    "Variables, regions, and cycle selection come later.",
+                    size=10, color=ft.Colors.GREY, italic=True,
+                ),
+            ],
+        ),
     )
 
-    return ft.Column(
-        expand=True,
-        controls=[
-            ft.Row(
-                controls=[
-                    ft.Text(
-                        f"MSL · ECMWF IFS · {run_label}",
-                        size=16, weight=ft.FontWeight.BOLD,
-                    ),
-                    ft.FilledButton(
-                        content=ft.Text("再取得"),
-                        on_click=lambda _: ft.context.page.run_task(
-                            load, step=step_hours, force=True,
-                        ),
-                    ),
-                ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
-            ),
-            ft.Row(
-                visible=is_preloading,
+    # ----- Main: chart area depending on state -----
+    if state == "idle":
+        main_area = ft.Container(
+            alignment=ft.Alignment.CENTER,
+            content=ft.Column(
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=8,
                 controls=[
-                    ft.ProgressRing(width=14, height=14),
-                    ft.Text(progress, size=12, color=ft.Colors.GREY),
+                    ft.Icon(
+                        ft.Icons.PUBLIC, size=64, color=ft.Colors.OUTLINE_VARIANT,
+                    ),
+                    ft.Text(
+                        "Press 取得 / Fetch to load the latest analysis.",
+                        size=14, color=ft.Colors.GREY,
+                    ),
                 ],
             ),
-            ft.Container(
-                content=ft.Image(
-                    src=image_bytes,
-                    fit=ft.BoxFit.CONTAIN,
+        )
+    elif state == "loading" and not has_image:
+        # Very first fetch — no chart to show yet.
+        main_area = ft.Container(
+            alignment=ft.Alignment.CENTER,
+            content=ft.Row(
+                alignment=ft.MainAxisAlignment.CENTER,
+                spacing=12,
+                controls=[
+                    ft.ProgressRing(width=20, height=20),
+                    ft.Text(progress or "Loading…", color=ft.Colors.GREY),
+                ],
+            ),
+        )
+    elif state == "error":
+        main_area = ft.Container(
+            alignment=ft.Alignment.CENTER,
+            content=ft.Column(
+                alignment=ft.MainAxisAlignment.CENTER,
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=8,
+                controls=[
+                    ft.Icon(
+                        ft.Icons.ERROR_OUTLINE, size=48, color=ft.Colors.RED,
+                    ),
+                    ft.Text(
+                        f"Could not render map: {error}",
+                        color=ft.Colors.RED, size=13,
+                    ),
+                ],
+            ),
+        )
+    else:
+        # state == "ready" (or "loading" with an existing image we keep)
+        timeline = ft.Row(
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=4,
+            controls=[
+                ft.IconButton(
+                    icon=ft.Icons.SKIP_PREVIOUS,
+                    tooltip="前のフレーム",
+                    on_click=lambda _: step_by(-1),
+                ),
+                ft.IconButton(
+                    icon=play_icon,
+                    tooltip=play_tooltip,
+                    on_click=toggle_play,
+                ),
+                ft.IconButton(
+                    icon=ft.Icons.SKIP_NEXT,
+                    tooltip="次のフレーム",
+                    on_click=lambda _: step_by(1),
+                ),
+                ft.Container(
+                    # on_change_end fires once on release rather than on
+                    # every drag tick — avoids spamming fetches when the
+                    # user drags through multiple uncached frames.
+                    content=ft.Slider(
+                        min=0,
+                        max=total_count - 1,
+                        divisions=total_count - 1,
+                        value=current_idx,
+                        on_change_end=handle_slider_change,
+                    ),
                     expand=True,
                 ),
+                ft.Text(
+                    _step_label(step_hours),
+                    size=12,
+                    width=160,
+                    text_align=ft.TextAlign.RIGHT,
+                ),
+            ],
+        )
+        main_area = ft.Column(
+            expand=True,
+            spacing=4,
+            controls=[
+                ft.Container(
+                    padding=ft.Padding.symmetric(horizontal=16, vertical=8),
+                    content=ft.Text(
+                        f"MSL · ECMWF IFS · {run_label}",
+                        size=15, weight=ft.FontWeight.BOLD,
+                    ),
+                ),
+                ft.Container(
+                    content=ft.Image(
+                        src=image_bytes,
+                        fit=ft.BoxFit.CONTAIN,
+                        expand=True,
+                    ),
+                    expand=True,
+                ),
+                ft.Container(
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=0),
+                    content=timeline,
+                ),
+            ],
+        )
+
+    # ----- Bottom: status bar -----
+    if state == "error":
+        status_primary = ft.Text(error, size=12, color=ft.Colors.RED)
+    elif is_working:
+        status_primary = ft.Text(progress, size=12)
+    elif state == "ready" and is_playing:
+        status_primary = ft.Text(
+            f"Playing · {_step_label(step_hours)}", size=12,
+        )
+    elif state == "ready":
+        status_primary = ft.Text(
+            f"Ready · viewing {_step_label(step_hours)}", size=12,
+        )
+    else:
+        status_primary = ft.Text("Idle", size=12, color=ft.Colors.GREY)
+
+    status_bar = ft.Container(
+        height=90,
+        bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
+        padding=ft.Padding.symmetric(horizontal=16, vertical=10),
+        content=ft.Column(
+            spacing=4,
+            controls=[
+                ft.Row(
+                    spacing=10,
+                    controls=[
+                        ft.ProgressRing(
+                            width=14, height=14, visible=is_working,
+                        ),
+                        status_primary,
+                    ],
+                ),
+                ft.Row(
+                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    controls=[
+                        ft.Text(
+                            f"Frames cached: {loaded_count}/{total_count}",
+                            size=11, color=ft.Colors.GREY,
+                        ),
+                        ft.Text(
+                            (
+                                f"Cycle: {run_time_holder:%Y%m%d %Hz} IFS"
+                                if run_time_holder else "Cycle: —"
+                            ),
+                            size=11, color=ft.Colors.GREY,
+                        ),
+                        ft.Text(
+                            f"Source: {settings.forecast_source.value}",
+                            size=11, color=ft.Colors.GREY,
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    )
+
+    return ft.Row(
+        expand=True,
+        spacing=0,
+        controls=[
+            control_panel,
+            ft.VerticalDivider(width=1),
+            ft.Column(
                 expand=True,
+                spacing=0,
+                controls=[
+                    ft.Container(content=main_area, expand=True),
+                    ft.Divider(height=1),
+                    status_bar,
+                ],
             ),
-            timeline,
         ],
     )
