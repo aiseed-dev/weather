@@ -122,6 +122,94 @@ def _recent_base_times(n: int = 20):
     return [latest - timedelta(hours=6 * i) for i in range(n)]
 
 
+# HRES IFS 0p25 oper publishes 4 cycles per day with two different
+# forecast horizons. 00z and 12z run to T+240h (10 days); 06z and 18z
+# only run to T+90h (~3.75 days), giving forecasters short-range
+# refreshes between the long cycles. To get a smooth T+0..T+240h
+# animation from a short cycle, we stitch its short-range steps with
+# extension steps from the most recent long cycle preceding it.
+_LONG_CYCLE_HORIZON_H = 240
+_SHORT_CYCLE_HORIZON_H = 90
+_LONG_CYCLE_HOURS = (0, 12)
+_SHORT_CYCLE_HOURS = (6, 18)
+
+
+def _is_short_cycle(cycle_dt) -> bool:
+    return cycle_dt.hour in _SHORT_CYCLE_HOURS
+
+
+def _cycle_horizon_h(cycle_dt) -> int:
+    return (
+        _SHORT_CYCLE_HORIZON_H if cycle_dt.hour in _SHORT_CYCLE_HOURS
+        else _LONG_CYCLE_HORIZON_H
+    )
+
+
+def _prior_long_cycle(cycle_dt):
+    """The most recent 00z/12z cycle strictly before ``cycle_dt``.
+
+    For 06z → previous 00z (6h earlier). For 18z → previous 12z (6h
+    earlier). Both other inputs are already long cycles, in which case
+    this returns 12 hours earlier (the previous long cycle).
+    """
+    from datetime import timedelta
+    dt = cycle_dt - timedelta(hours=6)
+    while dt.hour not in _LONG_CYCLE_HOURS:
+        dt -= timedelta(hours=6)
+    return dt
+
+
+def _publication_window(cycle_dt):
+    """Approximate (start, end) UTC times when this cycle is being
+    published. ECMWF publishes progressively over a ~5h window. Used
+    for UI hints only; we don't gate on these times."""
+    from datetime import timedelta
+    # Empirical lag (varies a bit by load). Long cycles take longer.
+    start = cycle_dt + timedelta(hours=5, minutes=30)
+    end = cycle_dt + timedelta(hours=7)
+    return start, end
+
+
+def _stitch_plan(
+    primary_cycle,
+    max_step_h: int,
+    cadence_h: int,
+) -> tuple[tuple[int, "datetime", int], ...]:
+    """Build [(display_step, source_cycle, source_step), ...] for the
+    requested horizon, transparently stitching a short primary cycle
+    with the previous long cycle for steps beyond the short horizon.
+
+    Display step is the value the slider reports (the "T+Nh" the user
+    sees, expressed relative to primary_cycle). source_step is what we
+    actually ask the upstream cycle for; it equals display_step inside
+    the primary cycle's horizon, and display_step + offset when we've
+    crossed into the extension cycle (offset = primary − extension in
+    hours, i.e. 6 for the typical 06z→00z or 18z→12z stitch).
+
+    If max_step_h exceeds what stitching can deliver (extension cycle
+    also runs out), the plan is truncated.
+    """
+    primary_horizon = _cycle_horizon_h(primary_cycle)
+    if not _is_short_cycle(primary_cycle) or max_step_h <= primary_horizon:
+        # No stitching needed.
+        return tuple(
+            (s, primary_cycle, s)
+            for s in _compute_steps(min(max_step_h, primary_horizon), cadence_h)
+        )
+
+    extension = _prior_long_cycle(primary_cycle)
+    extension_horizon = _cycle_horizon_h(extension)  # 240
+    offset_h = int((primary_cycle - extension).total_seconds() / 3600)
+    effective_max = min(max_step_h, extension_horizon - offset_h)
+    plan = []
+    for s in _compute_steps(effective_max, cadence_h):
+        if s <= primary_horizon:
+            plan.append((s, primary_cycle, s))
+        else:
+            plan.append((s, extension, s + offset_h))
+    return tuple(plan)
+
+
 def _step_label(h: int) -> str:
     if h == 0:
         return "T+0h (analysis)"
@@ -218,13 +306,57 @@ def MapView(settings: UserSettings):
     # 65-frame setup; user can shorten to make preload less painful.
     max_step_h, set_max_step_h = ft.use_state(240)
     cadence_h, set_cadence_h = ft.use_state(3)
-    step_options = _compute_steps(max_step_h, cadence_h)
+
+    # Stitch plan: for each display step, which actual (cycle, step)
+    # to fetch from. Steps within the primary cycle's horizon come from
+    # the primary; steps beyond (only happens for short 06z/18z cycles
+    # whose user-requested horizon exceeds 90h) come from the previous
+    # long cycle. step_options is the list of display steps.
+    primary_cycle = manual_cycle if manual_cycle is not None else run_time_holder
+    if primary_cycle is not None:
+        stitch_plan = _stitch_plan(primary_cycle, max_step_h, cadence_h)
+        step_options = tuple(p[0] for p in stitch_plan)
+        source_lookup = {p[0]: (p[1], p[2]) for p in stitch_plan}
+    else:
+        stitch_plan = ()
+        step_options = _compute_steps(max_step_h, cadence_h)
+        source_lookup = {}
     MAX_STEP = max(step_options) if step_options else 0
 
-    async def _render_step(service, run_time, step: int, region_: Region) -> bytes:
-        request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
+    def _source_for(display_step):
+        """Return (source_cycle, source_step) for the given display step.
+        Falls back to (primary, display) if not in the plan."""
+        return source_lookup.get(
+            display_step, (primary_cycle, display_step),
+        )
+
+    async def _render_one(
+        service,
+        src_cycle,
+        src_step: int,
+        region_: Region,
+        *,
+        display_step: int,
+        primary,
+    ) -> bytes:
+        """Fetch + render one frame from (src_cycle, src_step).
+
+        Decoupled from any source_lookup closure so callers (preload
+        loop, single-step fetch) can pass the already-resolved source
+        cycle / step directly. The run_id footer credits both the
+        primary cycle and the extension cycle when they differ.
+        """
+        request = ForecastRequest(
+            run_time=src_cycle, step_hours=src_step, param="msl",
+        )
         ds = await service.fetch(request)
-        label = f"{run_time:%Y%m%d %Hz} IFS · {_step_label(step)}"
+        if src_cycle == primary:
+            label = f"{primary:%Y%m%d %Hz} IFS · {_step_label(display_step)}"
+        else:
+            label = (
+                f"{primary:%Y%m%d %Hz} IFS "
+                f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
+            )
         fig = await asyncio.to_thread(
             render_msl, ds, region=region_, run_id=label,
         )
@@ -285,11 +417,34 @@ def MapView(settings: UserSettings):
                 set_frames({})
             set_run_time_holder(run_time)
 
-            label = f"{run_time:%Y%m%d %Hz} IFS · {_step_label(step)}"
-            request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
+            # Resolve the actual (source_cycle, source_step) for the
+            # requested display step. For long cycles (00z/12z) this is
+            # just (run_time, step); for short cycles past their horizon
+            # this hops to the extension cycle.
+            if step in source_lookup:
+                src_cycle, src_step = source_lookup[step]
+            elif _is_short_cycle(run_time) and step > _cycle_horizon_h(run_time):
+                # Plan not yet built (e.g. before run_time_holder was
+                # set). Compute on the fly.
+                ext = _prior_long_cycle(run_time)
+                offset = int((run_time - ext).total_seconds() / 3600)
+                src_cycle, src_step = ext, step + offset
+            else:
+                src_cycle, src_step = run_time, step
+            if src_cycle == run_time:
+                label = f"{run_time:%Y%m%d %Hz} IFS · {_step_label(step)}"
+            else:
+                label = (
+                    f"{run_time:%Y%m%d %Hz} IFS "
+                    f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(step)}"
+                )
+            request = ForecastRequest(
+                run_time=src_cycle, step_hours=src_step, param="msl",
+            )
             hit_cache = service.is_cached(request)
             set_progress(
-                f"Fetching MSL · {run_time:%Y%m%d %Hz} · {_step_label(step)}"
+                f"Fetching MSL · {src_cycle:%Y%m%d %Hz} step={src_step}h · "
+                f"{_step_label(step)}"
                 f"{' (cached)' if hit_cache and not force else ''}…"
             )
             ds = await service.fetch(request, force=force)
@@ -358,36 +513,60 @@ def MapView(settings: UserSettings):
                 new_frames = dict(frames)
             set_run_time_holder(run_time)
 
-            for i, step in enumerate(step_options):
-                if step in new_frames:
+            # Build the plan against the (possibly newly probed) run_time.
+            # source_lookup from the render scope might be stale if
+            # primary_cycle was None then.
+            local_plan = _stitch_plan(run_time, max_step_h, cadence_h)
+            total = len(local_plan)
+            local_steps = tuple(p[0] for p in local_plan)
+
+            for i, (display_step, src_cycle, src_step) in enumerate(local_plan):
+                if display_step in new_frames:
                     # Already loaded — sweep through visually so the user
                     # sees the timeline progress for cached frames too.
-                    set_step_hours(step)
-                    set_image_bytes(new_frames[step])
+                    set_step_hours(display_step)
+                    set_image_bytes(new_frames[display_step])
                     set_run_label(
-                        f"{run_time:%Y%m%d %Hz} IFS · {_step_label(step)}"
+                        f"{run_time:%Y%m%d %Hz} IFS · {_step_label(display_step)}"
+                        + (
+                            f" + {src_cycle:%Hz} ext"
+                            if src_cycle != run_time else ""
+                        )
                     )
                     continue
-                req = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
-                hit_cache = service.is_cached(req)
-                set_progress(
-                    f"Loading frame {i + 1}/{len(step_options)} · "
-                    f"{_step_label(step)}{' (cached)' if hit_cache else ''}…"
+                req = ForecastRequest(
+                    run_time=src_cycle, step_hours=src_step, param="msl",
                 )
-                png = await _render_step(service, run_time, step, region)
-                # Image ready — only NOW advance the slider/label to this
-                # step. The display stays on the previous frame until the
-                # new one has been fully rendered and encoded.
-                new_frames[step] = png
+                hit_cache = service.is_cached(req)
+                ext_tag = (
+                    f" [ext {src_cycle:%Hz}]" if src_cycle != run_time else ""
+                )
+                set_progress(
+                    f"Loading frame {i + 1}/{total} · "
+                    f"{_step_label(display_step)}{ext_tag}"
+                    f"{' (cached)' if hit_cache else ''}…"
+                )
+                # _render_step uses _source_for via the render-scope
+                # source_lookup, which is correct for the COMMITTED
+                # primary_cycle. Inside this loop, run_time may differ
+                # if we just probed a new cycle. Call _render_step with
+                # the source we resolved locally instead.
+                png = await _render_one(
+                    service, src_cycle, src_step, region,
+                    display_step=display_step, primary=run_time,
+                )
+                new_frames[display_step] = png
                 set_frames(dict(new_frames))
-                set_step_hours(step)
+                set_step_hours(display_step)
                 set_image_bytes(png)
                 set_run_label(
-                    f"{run_time:%Y%m%d %Hz} IFS · {_step_label(step)}"
+                    f"{run_time:%Y%m%d %Hz} IFS · {_step_label(display_step)}"
+                    + (
+                        f" + {src_cycle:%Y%m%d %Hz} ext"
+                        if src_cycle != run_time else ""
+                    )
                 )
-                # Polite spacing only after frames we actually downloaded —
-                # cache hits don't touch S3, no need to slow them down.
-                if not hit_cache and i + 1 < len(step_options):
+                if not hit_cache and i + 1 < total:
                     await asyncio.sleep(PRELOAD_SPACING_SEC)
 
             set_progress("")
@@ -952,14 +1131,24 @@ def MapView(settings: UserSettings):
     _preview_steps = _compute_steps(draft_horizon_h, draft_cadence_h)
     _preview_frame_count = len(_preview_steps)
 
-    # Build base-time radio rows. Mark the currently-committed cycle.
+    # Build base-time radio rows with horizon + publication info.
     def _base_time_label(dt: datetime) -> str:
-        # Mark in-progress cycles (within ~5h of "now") informally so
-        # the user knows they may 404.
-        in_progress = (datetime.now(tz=timezone.utc) - dt) < timedelta(hours=5)
-        tag = "  (公開中の可能性) / in progress" if in_progress else ""
+        pub_start, pub_end = _publication_window(dt)
+        now_utc = datetime.now(tz=timezone.utc)
+        if now_utc < pub_start:
+            pub_state = f"公開予定 {pub_start:%m/%d %H:%M}"
+        elif now_utc < pub_end:
+            pub_state = f"公開中 (〜{pub_end:%H:%M})"
+        else:
+            pub_state = "公開済み"
+        horizon = _cycle_horizon_h(dt)
+        if _is_short_cycle(dt):
+            ext = _prior_long_cycle(dt)
+            horizon_str = f"T+{horizon}h + 延長: {ext:%Hz}"
+        else:
+            horizon_str = f"T+{horizon}h"
         current = (
-            "  ← 現在 / current"
+            "  ← 現在"
             if (
                 manual_cycle is not None and dt == manual_cycle
             ) or (
@@ -968,12 +1157,18 @@ def MapView(settings: UserSettings):
             )
             else ""
         )
-        return f"{dt:%Y-%m-%d %H:%M UTC} ({dt:%Hz}){tag}{current}"
+        return (
+            f"{dt:%Y-%m-%d %H:%M UTC} ({dt:%Hz})  ·  "
+            f"{horizon_str}  ·  {pub_state}{current}"
+        )
 
     base_time_radios = [
         ft.Radio(
             value="auto",
-            label="Auto: 全予報範囲が公開済みの最新 base time を自動選択 (推奨)",
+            label=(
+                "Auto: 全予報範囲が公開済みの最新 base time を自動選択 "
+                "(常に 00z/12z を選びます; 推奨)"
+            ),
         ),
     ] + [
         ft.Radio(
@@ -1004,8 +1199,9 @@ def MapView(settings: UserSettings):
                     ),
                     ft.Text(
                         "Base time は予報の初期値時刻 (model initialization)。"
-                        "Lead time / step を変えても base time は変わりません。"
-                        "ECMWF Open Data は直近 ~5 日分のみ保持。",
+                        "00z/12z は T+240h まで、06z/18z は T+90h まで配信。"
+                        "06z/18z 選択時は T+90h 以降を直前の 00z/12z で自動補完 "
+                        "(stitching)。ECMWF Open Data は直近 ~5 日分のみ保持。",
                         size=10, color=ft.Colors.GREY,
                     ),
                     ft.Divider(height=10),
@@ -1199,38 +1395,50 @@ def MapView(settings: UserSettings):
         product_status_text = "閲覧のみ / catalog only"
 
     # Per-step cache status for the bar in the Data section.
-    # green = rendered PNG in memory; amber = GRIB on disk, not yet
-    # rendered; grey = nothing. ECMWF service is only used to check
-    # the on-disk state, which is a path existence check.
-    _base_for_status = manual_cycle if manual_cycle is not None else run_time_holder
-    if _base_for_status is not None:
+    # green        = rendered PNG in memory (primary cycle)
+    # light green  = rendered PNG in memory (extension cycle)
+    # amber        = GRIB on disk for source cycle, not yet rendered
+    # grey         = nothing. We probe the SOURCE cycle for each
+    #                display step so stitched frames are accounted for.
+    if primary_cycle is not None and stitch_plan:
         cache_rendered = sum(1 for s in step_options if s in frames)
-        cache_grib = sum(
-            1 for s in step_options
-            if s not in frames and is_grib_cached(settings, _base_for_status, s)
-        )
-        cache_none = len(step_options) - cache_rendered - cache_grib
+        cache_grib = 0
         cache_cells = []
-        for s in step_options:
-            if s in frames:
-                color = ft.Colors.GREEN
-            elif is_grib_cached(settings, _base_for_status, s):
+        for display_step, src_cycle, src_step in stitch_plan:
+            stitched = (src_cycle != primary_cycle)
+            if display_step in frames:
+                color = (
+                    ft.Colors.LIGHT_GREEN if stitched else ft.Colors.GREEN
+                )
+            elif is_grib_cached(settings, src_cycle, src_step):
                 color = ft.Colors.AMBER
+                cache_grib += 1
             else:
                 color = ft.Colors.OUTLINE_VARIANT
             cache_cells.append(
                 ft.Container(
                     width=3, height=12, bgcolor=color, border_radius=1,
-                    tooltip=f"{_step_label(s)}",
+                    tooltip=(
+                        f"{_step_label(display_step)}"
+                        + (
+                            f"  [ext {src_cycle:%Hz}]" if stitched else ""
+                        )
+                    ),
                 )
             )
+        cache_none = len(step_options) - cache_rendered - cache_grib
+        stitch_note = (
+            f"  | 内 {sum(1 for p in stitch_plan if p[1] != primary_cycle)} 件は "
+            f"{_prior_long_cycle(primary_cycle):%Hz} 延長"
+            if any(p[1] != primary_cycle for p in stitch_plan) else ""
+        )
         cache_bar = ft.Column(
             spacing=2,
             controls=[
                 ft.Row(spacing=1, controls=cache_cells, wrap=False),
                 ft.Text(
-                    f"描画 {cache_rendered} · GRIB {cache_grib} · 未取得 {cache_none}  "
-                    f"/ 全 {len(step_options)}",
+                    f"描画 {cache_rendered} · GRIB {cache_grib} · 未取得 {cache_none}"
+                    f" / 全 {len(step_options)}{stitch_note}",
                     size=10, color=ft.Colors.GREY,
                 ),
             ],
@@ -1307,6 +1515,22 @@ def MapView(settings: UserSettings):
                 ft.Text(
                     "manual" if manual_cycle else "auto (latest available)",
                     size=10, color=ft.Colors.GREY,
+                ),
+                ft.Text(
+                    (
+                        f"+ {_prior_long_cycle(primary_cycle):%Hz} 延長 (stitched)"
+                        if (
+                            primary_cycle is not None
+                            and _is_short_cycle(primary_cycle)
+                            and max_step_h > _cycle_horizon_h(primary_cycle)
+                        ) else ""
+                    ),
+                    size=10, color=ft.Colors.AMBER,
+                    visible=(
+                        primary_cycle is not None
+                        and _is_short_cycle(primary_cycle)
+                        and max_step_h > _cycle_horizon_h(primary_cycle)
+                    ),
                 ),
                 ft.Text(
                     f"範囲: T+0..T+{MAX_STEP}h, 粒度 {cadence_h}h "
