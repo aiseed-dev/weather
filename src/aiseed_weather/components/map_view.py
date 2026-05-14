@@ -25,17 +25,45 @@ import asyncio
 import io
 import logging
 import time
+from dataclasses import dataclass
 
 import flet as ft
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 
 from aiseed_weather.figures.msl_chart import render_msl
+from aiseed_weather.figures.regions import (
+    GLOBAL,
+    PRESETS as REGION_PRESETS,
+    Region,
+    by_key as region_by_key,
+    custom_region,
+)
 from aiseed_weather.models.user_settings import UserSettings
 from aiseed_weather.services.forecast_service import (
     ForecastDisabledError,
     ForecastRequest,
     ForecastService,
+)
+
+
+# Layer / variable choices. Only MSL is wired through to a figure builder
+# today; the rest are listed so the UI reflects the planned roadmap (and
+# so adding a builder is the only thing standing between us and them
+# lighting up).
+@dataclass(frozen=True)
+class LayerOption:
+    key: str
+    label: str
+    available: bool
+
+
+LAYER_OPTIONS: tuple[LayerOption, ...] = (
+    LayerOption("msl", "MSL — 海面更正気圧 / Mean sea level pressure", True),
+    LayerOption("t2m", "T2m — 2m気温 / 2-metre temperature", False),
+    LayerOption("gh500", "Z500 — 500hPa高度 / 500 hPa geopotential", False),
+    LayerOption("wind10m", "10m風 / 10-metre wind", False),
+    LayerOption("tp", "降水 / Total precipitation", False),
 )
 
 logger = logging.getLogger(__name__)
@@ -93,12 +121,19 @@ def MapView(settings: UserSettings):
     # render.
     anim_task_ref, _ = ft.use_state(lambda: {"task": None})
 
-    async def _render_step(service, run_time, step: int) -> bytes:
+    # User-facing selectors. region drives the chart projection + extent;
+    # layer will eventually pick which figures/ builder to call.
+    region, set_region = ft.use_state(GLOBAL)
+    layer, set_layer = ft.use_state("msl")
+    show_region_dialog, set_show_region_dialog = ft.use_state(False)
+    show_time_dialog, set_show_time_dialog = ft.use_state(False)
+
+    async def _render_step(service, run_time, step: int, region_: Region) -> bytes:
         request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
         ds = await service.fetch(request)
         label = f"{run_time:%Y%m%d %Hz} IFS · {_step_label(step)}"
         fig = await asyncio.to_thread(
-            render_msl, ds, projection="robinson", run_id=label,
+            render_msl, ds, region=region_, run_id=label,
         )
         return await asyncio.to_thread(_figure_to_png_bytes, fig)
 
@@ -125,8 +160,15 @@ def MapView(settings: UserSettings):
         new_run = await service.latest_run(step_hours=MAX_STEP, param="msl")
         return new_run, True
 
-    async def load(*, step: int, force: bool = False):
-        """Fetch + render a single step. Caches the resulting PNG."""
+    async def load(*, step: int, region_: Region | None = None, force: bool = False):
+        """Fetch + render a single step. Caches the resulting PNG.
+
+        ``region_`` defaults to the current region state at call time, but
+        callers that need a different region (e.g. immediately after the
+        user picks a new region in the dialog, before re-render captures
+        the new state) can pass it explicitly.
+        """
+        region_used = region_ if region_ is not None else region
         set_state("loading")
         set_error(None)
         set_progress("Initializing forecast service…")
@@ -159,9 +201,9 @@ def MapView(settings: UserSettings):
             )
             ds = await service.fetch(request, force=force)
             t_fetch = time.perf_counter()
-            set_progress("Rendering chart (matplotlib + cartopy)…")
+            set_progress(f"Rendering chart ({region_used.label})…")
             fig = await asyncio.to_thread(
-                render_msl, ds, projection="robinson", run_id=label,
+                render_msl, ds, region=region_used, run_id=label,
             )
             t_render = time.perf_counter()
             set_progress("Encoding PNG…")
@@ -239,7 +281,7 @@ def MapView(settings: UserSettings):
                     f"Loading frame {i + 1}/{len(STEP_OPTIONS)} · "
                     f"{_step_label(step)}{' (cached)' if hit_cache else ''}…"
                 )
-                png = await _render_step(service, run_time, step)
+                png = await _render_step(service, run_time, step, region)
                 # Image ready — only NOW advance the slider/label to this
                 # step. The display stays on the previous frame until the
                 # new one has been fully rendered and encoded.
@@ -341,6 +383,24 @@ def MapView(settings: UserSettings):
         else:
             ft.context.page.run_task(load, step=new_step)
 
+    def apply_region(new_region: Region):
+        # Region change invalidates the rendered-PNG cache (different
+        # projection/extent → different image) but NOT the GRIB2 cache
+        # on disk. Re-rendering all 65 frames means CPU work, not network
+        # traffic, so it's fast-ish (~5 min cold render).
+        if new_region == region:
+            set_show_region_dialog(False)
+            return
+        set_region(new_region)
+        set_frames({})
+        set_show_region_dialog(False)
+        # Re-render the currently-displayed step in the new region so
+        # the user sees the change immediately.
+        if run_time_holder is not None:
+            ft.context.page.run_task(
+                load, step=step_hours, region_=new_region, force=False,
+            )
+
     def toggle_play(_):
         if is_playing:
             set_is_playing(False)
@@ -351,9 +411,182 @@ def MapView(settings: UserSettings):
         else:
             set_is_playing(True)
 
+    # ----- Dialogs (region + time) -----
+    # Local draft state so canceling the dialog doesn't mutate the
+    # committed selection.
+    draft_region_key, set_draft_region_key = ft.use_state(region.key)
+    draft_bounds_text, set_draft_bounds_text = ft.use_state(
+        # lon_min, lon_max, lat_min, lat_max
+        ", ".join(str(int(v)) for v in (region.extent or (-180, 180, -90, 90)))
+    )
+
+    def _open_region_dialog():
+        # Reset draft to the current committed state each time we open.
+        set_draft_region_key(region.key)
+        set_draft_bounds_text(
+            ", ".join(str(int(v)) for v in (region.extent or (-180, 180, -90, 90)))
+        )
+        set_show_region_dialog(True)
+
+    def _commit_region(_):
+        if draft_region_key == "custom":
+            try:
+                parts = [float(p.strip()) for p in draft_bounds_text.split(",")]
+                if len(parts) != 4:
+                    raise ValueError("need 4 comma-separated numbers")
+                new_region = custom_region(*parts)
+            except (ValueError, TypeError) as e:
+                logger.warning("Invalid custom region bounds: %s", e)
+                return  # leave dialog open so user can correct
+        else:
+            new_region = region_by_key(draft_region_key)
+        apply_region(new_region)
+
+    region_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("地域設定 / Region Settings"),
+        content=ft.Column(
+            tight=True,
+            width=420,
+            controls=[
+                ft.Text(
+                    "プリセットから選択するか、カスタム範囲を指定してください。",
+                    size=12, color=ft.Colors.GREY,
+                ),
+                ft.RadioGroup(
+                    value=draft_region_key,
+                    on_change=lambda e: set_draft_region_key(e.control.value),
+                    content=ft.Column(
+                        tight=True,
+                        spacing=2,
+                        controls=[
+                            ft.Radio(value=r.key, label=r.label)
+                            for r in REGION_PRESETS
+                        ] + [
+                            ft.Radio(value="custom", label="任意 / Custom bounds"),
+                        ],
+                    ),
+                ),
+                ft.Container(
+                    visible=(draft_region_key == "custom"),
+                    padding=ft.Padding.only(left=32, top=4),
+                    content=ft.Column(
+                        spacing=4,
+                        controls=[
+                            ft.Text(
+                                "lon_min, lon_max, lat_min, lat_max  "
+                                "(degrees, PlateCarree)",
+                                size=10, color=ft.Colors.GREY,
+                            ),
+                            ft.TextField(
+                                value=draft_bounds_text,
+                                hint_text="115, 155, 20, 50",
+                                dense=True,
+                                on_change=lambda e: set_draft_bounds_text(
+                                    e.control.value,
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+            ],
+        ),
+        actions=[
+            ft.TextButton(
+                "キャンセル",
+                on_click=lambda _: set_show_region_dialog(False),
+            ),
+            ft.FilledButton("適用 / Apply", on_click=_commit_region),
+        ],
+    )
+
+    time_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("時間設定 / Time Settings"),
+        content=ft.Column(
+            tight=True,
+            width=420,
+            controls=[
+                ft.Text("Run / cycle", size=11, color=ft.Colors.GREY),
+                ft.Text(
+                    f"{run_time_holder:%Y-%m-%d %H:%M UTC} IFS"
+                    if run_time_holder else "Not loaded yet",
+                    size=14, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    "Auto-pick: latest fully-published cycle (need T+240h)",
+                    size=11, color=ft.Colors.GREY,
+                ),
+                ft.Divider(height=12),
+                ft.Text("Cycle override", size=11, color=ft.Colors.GREY),
+                ft.RadioGroup(
+                    value="auto",
+                    content=ft.Column(
+                        tight=True,
+                        spacing=2,
+                        controls=[
+                            ft.Radio(
+                                value="auto",
+                                label="Auto (recommended)",
+                            ),
+                            ft.Radio(
+                                value="00z", label="00z (disabled · future)",
+                                disabled=True,
+                            ),
+                            ft.Radio(
+                                value="06z", label="06z (disabled · future)",
+                                disabled=True,
+                            ),
+                            ft.Radio(
+                                value="12z", label="12z (disabled · future)",
+                                disabled=True,
+                            ),
+                            ft.Radio(
+                                value="18z", label="18z (disabled · future)",
+                                disabled=True,
+                            ),
+                        ],
+                    ),
+                ),
+                ft.Text(
+                    "Manual cycle override lands in a follow-up: today the "
+                    "app always picks the newest cycle that has the full "
+                    "forecast horizon published.",
+                    size=10, color=ft.Colors.GREY, italic=True,
+                ),
+                ft.Divider(height=12),
+                ft.Text("Animation range", size=11, color=ft.Colors.GREY),
+                ft.Text(
+                    f"T+0h .. T+{MAX_STEP}h, 3h cadence  "
+                    f"({len(STEP_OPTIONS)} frames)",
+                    size=12,
+                ),
+                ft.Text(
+                    "Range and cadence selectors land in a follow-up.",
+                    size=10, color=ft.Colors.GREY, italic=True,
+                ),
+            ],
+        ),
+        actions=[
+            ft.TextButton(
+                "閉じる",
+                on_click=lambda _: set_show_time_dialog(False),
+            ),
+        ],
+    )
+
+    # Show whichever dialog is open. Passing None dismisses; the hook
+    # diffs the dialog dataclass field-by-field, so re-rendering with
+    # updated draft state preserves cursor / focus.
+    ft.use_dialog(
+        region_dialog if show_region_dialog
+        else time_dialog if show_time_dialog
+        else None
+    )
+
     # ----- Layout -----
     # Desktop 3-pane shell:
-    #   left  : control panel  (fixed 240px, action button + future selectors)
+    #   left  : control panel  (fixed 240px, layer / region / time / action)
     #   main  : chart + timeline (expand)
     #   bottom: status bar (90px, progress + cache + cycle info)
     # The disabled state bypasses the shell and shows a full-pane hint.
@@ -419,39 +652,90 @@ def MapView(settings: UserSettings):
             ),
         )
 
+    # Layer dropdown — only the MSL option is functional today; the rest
+    # advertise the planned variables and are disabled.
+    layer_dropdown = ft.Dropdown(
+        label="レイヤー / Layer",
+        value=layer,
+        dense=True,
+        options=[
+            ft.dropdown.Option(
+                key=opt.key,
+                text=opt.label + ("" if opt.available else "  (近日)"),
+                disabled=not opt.available,
+            )
+            for opt in LAYER_OPTIONS
+        ],
+        on_select=lambda e: set_layer(e.control.value),
+    )
+
+    region_dropdown = ft.Dropdown(
+        label="地域 / Region",
+        value=(region.key if region.key != "custom" else None),
+        hint_text=region.label if region.key == "custom" else None,
+        dense=True,
+        options=[
+            ft.dropdown.Option(key=r.key, text=r.label)
+            for r in REGION_PRESETS
+        ],
+        on_select=lambda e: apply_region(region_by_key(e.control.value)),
+    )
+
     control_panel = ft.Container(
         width=240,
         bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
         padding=ft.Padding.all(16),
         content=ft.Column(
-            spacing=10,
+            spacing=8,
+            scroll=ft.ScrollMode.ADAPTIVE,
             controls=[
                 ft.Text("ECMWF Map", size=16, weight=ft.FontWeight.BOLD),
                 ft.Text(
-                    "MSL (mean sea level pressure)",
-                    size=11, color=ft.Colors.GREY,
+                    f"Source: {settings.forecast_source.value}",
+                    size=10, color=ft.Colors.GREY,
                 ),
-                ft.Divider(height=12),
-                ft.Text("Cycle", size=10, color=ft.Colors.GREY),
+
+                ft.Divider(height=14),
                 ft.Text(
-                    f"{run_time_holder:%Y%m%d %Hz} IFS" if run_time_holder else "—",
-                    size=13, weight=ft.FontWeight.BOLD,
+                    "レイヤー / Layer", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
-                ft.Text("Animation", size=10, color=ft.Colors.GREY),
+                layer_dropdown,
+
+                ft.Divider(height=14),
                 ft.Text(
-                    f"T+0h..T+{MAX_STEP}h at 3h cadence ({total_count} frames)",
-                    size=11,
+                    "地域 / Region", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
-                ft.Divider(height=12),
+                region_dropdown,
+                ft.TextButton(
+                    content=ft.Text("詳細設定 / Custom bounds…", size=12),
+                    icon=ft.Icons.TUNE,
+                    on_click=lambda _: _open_region_dialog(),
+                ),
+
+                ft.Divider(height=14),
+                ft.Text(
+                    "時間 / Time", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    f"{run_time_holder:%Y%m%d %Hz} IFS"
+                    if run_time_holder else "Not loaded",
+                    size=12, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    f"Animation: T+0..T+{MAX_STEP}h at 3h ({total_count} frames)",
+                    size=10, color=ft.Colors.GREY,
+                ),
+                ft.TextButton(
+                    content=ft.Text("詳細設定 / Time settings…", size=12),
+                    icon=ft.Icons.SCHEDULE,
+                    on_click=lambda _: set_show_time_dialog(True),
+                ),
+
+                ft.Divider(height=14),
                 primary_action,
-                # Placeholders for the next iteration — variable / region
-                # / cycle selectors land here once those features ship.
-                # Keeping the slot visible signals to future-self where
-                # additional controls belong.
-                ft.Text(
-                    "Variables, regions, and cycle selection come later.",
-                    size=10, color=ft.Colors.GREY, italic=True,
-                ),
             ],
         ),
     )

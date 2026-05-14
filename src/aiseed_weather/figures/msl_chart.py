@@ -18,6 +18,7 @@ import xarray as xr
 from matplotlib.figure import Figure
 
 from aiseed_weather.figures.footer import apply_footer
+from aiseed_weather.figures.regions import GLOBAL, Region
 
 
 _PROJECTIONS = {
@@ -40,7 +41,7 @@ def _make_projection(name: str) -> ccrs.Projection:
 def render_msl(
     ds: xr.Dataset,
     *,
-    projection: str = "robinson",
+    region: Region = GLOBAL,
     run_id: str,
 ) -> Figure:
     msl_hpa = ds["msl"] / 100.0
@@ -48,8 +49,12 @@ def render_msl(
     latitudes = ds["latitude"].values
 
     fig = plt.figure(figsize=(12, 7))
-    ax = plt.axes(projection=_make_projection(projection))
-    ax.set_global()
+    ax = plt.axes(projection=_make_projection(region.projection))
+    if region.extent is None:
+        ax.set_global()
+    else:
+        # cartopy expects (lon_min, lon_max, lat_min, lat_max).
+        ax.set_extent(region.extent, crs=ccrs.PlateCarree())
     ax.coastlines(linewidth=0.6, color="#444444")
     ax.gridlines(draw_labels=False, linewidth=0.3, color="#888888", alpha=0.5)
 
