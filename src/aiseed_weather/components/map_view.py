@@ -92,6 +92,12 @@ def MapView(settings: UserSettings):
     frames, set_frames = ft.use_state({})
     is_playing, set_is_playing = ft.use_state(False)
     run_time_holder, set_run_time_holder = ft.use_state(None)
+    # Stable mutable holder for the currently-scheduled animation task.
+    # ft.use_state with a lazy initializer returns the same dict object
+    # across renders, so setup can write the task reference and cleanup
+    # can read it back even though both closures are recreated every
+    # render.
+    anim_task_ref, _ = ft.use_state(lambda: {"task": None})
 
     async def _render_step(service, run_time, step: int) -> bytes:
         request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
@@ -222,22 +228,29 @@ def MapView(settings: UserSettings):
             if run_time_holder else _step_label(next_step)
         )
 
-    def _animation_effect():
-        # use_effect cleanup pattern: when is_playing flips on we schedule
-        # one frame advance. The advance itself mutates step_hours, which
-        # re-runs this effect (because step_hours is a dep) with a fresh
-        # closure and schedules the next frame. Pausing flips is_playing
-        # → the next effect run schedules nothing and the chain ends.
+    def _animation_setup():
+        # The advance task itself mutates step_hours, which re-fires this
+        # effect with a fresh closure and schedules the next tick. Pausing
+        # flips is_playing → the next setup returns without scheduling and
+        # the chain terminates.
         if not is_playing or state != "ready":
-            return None
-        task = ft.context.page.run_task(_advance_one_frame)
+            return
+        anim_task_ref["task"] = ft.context.page.run_task(_advance_one_frame)
 
-        def cleanup():
-            if not task.done():
-                task.cancel()
-        return cleanup
+    def _animation_cleanup():
+        # Flet runs this before each new setup (when deps change) and at
+        # unmount. Cancel any pending tick so paused/seeked animations
+        # don't continue advancing in the background.
+        task = anim_task_ref.get("task")
+        if task is not None and not task.done():
+            task.cancel()
+        anim_task_ref["task"] = None
 
-    ft.use_effect(_animation_effect, [is_playing, step_hours, state])
+    ft.use_effect(
+        _animation_setup,
+        [is_playing, step_hours, state],
+        _animation_cleanup,
+    )
 
     def handle_step_change(e):
         new_step = int(e.control.value)
@@ -383,12 +396,15 @@ def MapView(settings: UserSettings):
                 on_click=lambda _: step_by(1),
             ),
             ft.Container(
+                # on_change_end fires once on release rather than on
+                # every drag tick — avoids spamming fetches when the
+                # user drags through multiple uncached frames.
                 content=ft.Slider(
                     min=0,
                     max=total_count - 1,
                     divisions=total_count - 1,
                     value=current_idx,
-                    on_change=handle_slider_change,
+                    on_change_end=handle_slider_change,
                 ),
                 expand=True,
             ),
