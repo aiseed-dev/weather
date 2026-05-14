@@ -34,7 +34,7 @@ def RadarView():
             set_state("error")
 
     # Mount-time fetch. Runs once per RadarView instance.
-    ft.use_effect(lambda: ft.run_task(load), deps=[])
+    ft.use_effect(lambda: ft.run_task(load), [])
 
     if state in ("idle", "loading"):
         return ft.Column(

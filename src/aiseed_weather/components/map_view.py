@@ -71,7 +71,7 @@ def MapView(settings: UserSettings):
             set_error(f"{type(e).__name__}: {e}")
             set_state("error")
 
-    ft.use_effect(lambda: ft.run_task(load), deps=[])
+    ft.use_effect(lambda: ft.run_task(load), [])
 
     if state == "disabled":
         return ft.Column(
