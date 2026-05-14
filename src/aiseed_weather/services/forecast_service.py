@@ -3,12 +3,15 @@
 
 """Service for fetching ECMWF Open Data forecasts.
 
-The data source (AWS / Azure / GCP / direct) is chosen by the user at first
-run and stored in user_settings. This service reads that setting; it never
-defaults to a source on its own.
+The data source (AWS / Azure / GCP / direct) is chosen by the user via
+config.toml. This service reads that setting; it never defaults to a
+source on its own.
 
 Implementation notes:
-- Open Data is available 6 hours after each run; run_selector enforces this.
+- "Latest run" is resolved by probing the server via Client.latest() —
+  ECMWF's publication delay is variable, so any client-side heuristic is
+  wrong some fraction of the time. The probe makes a few HEAD requests
+  and is cheap.
 - Decoding GRIB is CPU-bound; wrap with asyncio.to_thread in async methods.
 - If the user has set forecast_source to NONE, instantiation raises so the
   UI can route to the historical-only flow.
@@ -17,8 +20,9 @@ Implementation notes:
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import xarray as xr
@@ -26,6 +30,8 @@ from ecmwf.opendata import Client
 from platformdirs import user_cache_dir
 
 from aiseed_weather.models.user_settings import ForecastSource, UserSettings
+
+logger = logging.getLogger(__name__)
 
 
 _CLIENT_SOURCE = {
@@ -64,6 +70,20 @@ class ForecastService:
         if not path.exists() or path.stat().st_size == 0:
             await asyncio.to_thread(self._download, request, path)
         return await asyncio.to_thread(self._decode, path)
+
+    async def latest_run(self, *, step_hours: int, param: str) -> datetime:
+        """Return the run datetime of the most recent publicly available run
+        that contains the requested field. Probes the server.
+        """
+        run = await asyncio.to_thread(
+            self._client.latest, type="fc", step=step_hours, param=param,
+        )
+        # ecmwf-opendata returns a naive UTC datetime; attach the timezone so
+        # callers can format/compare without surprises.
+        if run.tzinfo is None:
+            run = run.replace(tzinfo=timezone.utc)
+        logger.info("ECMWF latest run for step=%s param=%s: %s", step_hours, param, run)
+        return run
 
     def _cache_path(self, r: ForecastRequest) -> Path:
         stamp = r.run_time.strftime("%Y%m%d_%Hz")

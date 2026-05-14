@@ -27,7 +27,6 @@ from aiseed_weather.services.forecast_service import (
     ForecastRequest,
     ForecastService,
 )
-from aiseed_weather.services.run_selector import latest_available_run
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ def MapView(settings: UserSettings):
             return
 
         try:
-            run_time = latest_available_run()
+            run_time = await service.latest_run(step_hours=0, param="msl")
             label = f"{run_time:%Y%m%d %Hz} IFS"
             request = ForecastRequest(run_time=run_time, step_hours=0, param="msl")
             ds = await service.fetch(request)

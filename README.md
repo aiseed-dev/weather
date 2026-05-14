@@ -246,8 +246,7 @@ src/aiseed_weather/
 │   ├── point_forecast_service.py     # Open-Meteo
 │   ├── jma_radar_service.py          # JMA radar tiles
 │   ├── jma_amedas_service.py         # JMA AMeDAS
-│   ├── jma_endpoints.py              # URL registry
-│   └── run_selector.py
+│   └── jma_endpoints.py              # URL registry
 └── models/                           # dataclasses, observable models
     └── user_settings.py
 ```
