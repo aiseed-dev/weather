@@ -1,30 +1,26 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
-"""User-controlled settings, persisted to disk.
+"""User-controlled settings, loaded from a TOML config file.
 
-The user decides which data sources to use at first run. The app itself is a
-neutral viewer — it does not push a default forecast source or hide the choice.
-This module owns the schema and the load/save round-trip.
+The user chooses data sources by editing the config file before launching
+the app. The app never writes user choices — it only writes the initial
+template once, so the user has a starting point to edit. See the
+`first-run-setup` skill.
 """
 
 from __future__ import annotations
 
-import json
-from dataclasses import asdict, dataclass, field, fields
+import tomllib
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Literal
 
 from platformdirs import user_config_dir
 
 
 class ForecastSource(str, Enum):
-    """Where to pull forecast (future) grids from.
-
-    NONE means the user has opted out of forecast data entirely — the app
-    operates in pure historical/climatology mode.
-    """
-
     NONE = "none"
     ECMWF_AWS = "ecmwf_aws"
     ECMWF_AZURE = "ecmwf_azure"
@@ -33,16 +29,12 @@ class ForecastSource(str, Enum):
 
 
 class HistoricalSource(str, Enum):
-    """Where to pull historical (past) grids from."""
-
     NONE = "none"
     ERA5_AWS = "era5_aws"
     ERA5_CDS = "era5_cds"
 
 
 class PointForecastSource(str, Enum):
-    """Where to pull supporting point-forecast data from."""
-
     NONE = "none"
     OPEN_METEO = "open_meteo"
 
@@ -54,10 +46,7 @@ class UserSettings:
     point_source: PointForecastSource = PointForecastSource.NONE
     reference_period_start: int = 1991
     reference_period_end: int = 2020
-    setup_completed: bool = False
-    accepted_attribution_terms: bool = False
-    # Forward-compatibility: ignore unknown keys when loading, so an older
-    # binary can still read a settings file written by a newer version.
+    accept_attribution: bool = False
 
     def has_forecast(self) -> bool:
         return self.forecast_source != ForecastSource.NONE
@@ -66,32 +55,124 @@ class UserSettings:
         return self.historical_source != HistoricalSource.NONE
 
 
-def settings_path() -> Path:
-    return Path(user_config_dir("aiseed-weather")) / "settings.json"
+def config_path() -> Path:
+    return Path(user_config_dir("aiseed-weather")) / "config.toml"
 
 
-def load() -> UserSettings:
-    path = settings_path()
+_TEMPLATE = """\
+# AIseed Weather configuration
+#
+# Edit this file to choose data sources, then restart the app.
+# Default location on Linux: ~/.config/aiseed-weather/config.toml
+# ($XDG_CONFIG_HOME is honored.)
+#
+# The app is a neutral viewer: it never picks sources for you. Leaving a
+# field as "none" disables features that depend on it. JMA radar and
+# AMeDAS work regardless of these settings.
+
+# ---- Forecast (future grids, ECMWF Open Data) ----
+# Options:
+#   "none"          : operate in historical / nowcast-only mode
+#   "ecmwf_aws"     : ECMWF Open Data via AWS (fastest globally)
+#   "ecmwf_azure"   : ECMWF Open Data via Azure
+#   "ecmwf_gcp"     : ECMWF Open Data via GCP (often best from Asia-Pacific)
+#   "ecmwf_direct"  : ECMWF direct (500-connection limit; use only if mirrors fail)
+forecast_source = "none"
+
+# ---- Historical (past grids, ERA5) ----
+# Options:
+#   "none"
+#   "era5_aws"      : anonymous, ~5-day lag from real-time
+#   "era5_cds"      : Copernicus CDS API (requires free account; not yet wired up)
+historical_source = "none"
+
+# ---- Point forecast (supporting view) ----
+# Options:
+#   "none"
+#   "open_meteo"    : public API, free for personal use, CC-BY-4.0
+point_source = "none"
+
+# ---- Climatology reference period ----
+# WMO standard normal is 1991-2020. Change only if you know why.
+reference_period_start = 1991
+reference_period_end = 2020
+
+# ---- Attribution acceptance ----
+# Exported figures always embed CC-BY-4.0 attribution. Set this to true to
+# confirm you understand and will not remove attribution when sharing.
+# Export buttons stay disabled until this is true.
+accept_attribution = false
+"""
+
+
+def template() -> str:
+    return _TEMPLATE
+
+
+@dataclass(frozen=True)
+class LoadResult:
+    status: Literal["ok", "created", "invalid"]
+    path: Path
+    settings: UserSettings | None = None
+    error: str | None = None
+
+
+def load_or_init() -> LoadResult:
+    """Load config.toml, writing the template once if it doesn't exist.
+
+    Status meanings:
+        ok       — config existed and parsed cleanly; ``settings`` is set
+        created  — config did not exist; the template was just written
+        invalid  — config exists but failed to parse / validate; ``error`` is set
+    """
+    path = config_path()
     if not path.exists():
-        return UserSettings()
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    known = {f.name for f in fields(UserSettings)}
-    filtered = {k: v for k, v in raw.items() if k in known}
-    # Re-cast Enum strings to Enum instances.
-    if "forecast_source" in filtered:
-        filtered["forecast_source"] = ForecastSource(filtered["forecast_source"])
-    if "historical_source" in filtered:
-        filtered["historical_source"] = HistoricalSource(filtered["historical_source"])
-    if "point_source" in filtered:
-        filtered["point_source"] = PointForecastSource(filtered["point_source"])
-    return UserSettings(**filtered)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_TEMPLATE, encoding="utf-8")
+        return LoadResult(status="created", path=path)
+    try:
+        raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as e:
+        return LoadResult(status="invalid", path=path, error=f"TOML parse error: {e}")
+    try:
+        settings = _from_mapping(raw)
+    except (ValueError, TypeError) as e:
+        return LoadResult(status="invalid", path=path, error=str(e))
+    return LoadResult(status="ok", path=path, settings=settings)
 
 
-def save(settings: UserSettings) -> None:
-    path = settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    serializable = {
-        k: (v.value if isinstance(v, Enum) else v)
-        for k, v in asdict(settings).items()
-    }
-    path.write_text(json.dumps(serializable, indent=2), encoding="utf-8")
+_DEFAULTS = UserSettings()
+
+
+def _enum_field(data: dict, key: str, enum_cls, default):
+    value = data.get(key, default.value)
+    try:
+        return enum_cls(value)
+    except ValueError as exc:
+        valid = ", ".join(repr(m.value) for m in enum_cls)
+        raise ValueError(
+            f"{key}: {value!r} is not a valid value. Choose one of: {valid}"
+        ) from exc
+
+
+def _from_mapping(data: dict) -> UserSettings:
+    return UserSettings(
+        forecast_source=_enum_field(
+            data, "forecast_source", ForecastSource, _DEFAULTS.forecast_source,
+        ),
+        historical_source=_enum_field(
+            data, "historical_source", HistoricalSource, _DEFAULTS.historical_source,
+        ),
+        point_source=_enum_field(
+            data, "point_source", PointForecastSource, _DEFAULTS.point_source,
+        ),
+        reference_period_start=int(
+            data.get("reference_period_start", _DEFAULTS.reference_period_start),
+        ),
+        reference_period_end=int(
+            data.get("reference_period_end", _DEFAULTS.reference_period_end),
+        ),
+        accept_attribution=bool(
+            data.get("accept_attribution", _DEFAULTS.accept_attribution),
+        ),
+    )

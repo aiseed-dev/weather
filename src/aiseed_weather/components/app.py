@@ -6,30 +6,21 @@ import flet as ft
 from aiseed_weather.components.amedas_view import AmedasView
 from aiseed_weather.components.map_view import MapView
 from aiseed_weather.components.radar_view import RadarView
-from aiseed_weather.components.setup_view import SetupView
 from aiseed_weather.models import user_settings
+from aiseed_weather.models.user_settings import LoadResult
 
 
 @ft.component
 def App():
-    # Route at startup based on whether the user has completed first-run setup.
-    # SafeArea at root keeps the app honest on mobile-style window sizes too,
-    # even though the primary target is desktop.
-    settings, set_settings = ft.use_state(user_settings.load())
-    # Top-level navigation: which view the user is currently looking at.
-    # Each view is responsible for its own data fetching (see user-action-fetch skill).
+    # Config is read once at startup. Editing the TOML and restarting is the
+    # only way to change sources — see the `first-run-setup` skill.
+    result, _ = ft.use_state(user_settings.load_or_init())
     active_view, set_active_view = ft.use_state("map")
 
-    def handle_setup_done(new_settings):
-        user_settings.save(new_settings)
-        set_settings(new_settings)
+    if result.status != "ok":
+        return ft.SafeArea(expand=True, content=ConfigStatusPanel(result=result))
 
-    if not settings.setup_completed:
-        return ft.SafeArea(
-            expand=True,
-            content=SetupView(initial=settings, on_complete=handle_setup_done),
-        )
-
+    settings = result.settings
     body = {
         "map": lambda: MapView(settings=settings),
         "radar": lambda: RadarView(),
@@ -55,6 +46,38 @@ def App():
             controls=[
                 ft.Container(content=body, expand=True),
                 nav,
+            ],
+        ),
+    )
+
+
+@ft.component
+def ConfigStatusPanel(result: LoadResult):
+    if result.status == "created":
+        title = "Config file created"
+        title_color = ft.Colors.AMBER
+        lines = [
+            f"A template was written to:\n  {result.path}",
+            'Edit it to choose data sources ("forecast_source", '
+            '"historical_source", "point_source"), then restart the app.',
+            'JMA radar and AMeDAS work even with every source set to "none".',
+        ]
+    else:  # "invalid"
+        title = "Config file is invalid"
+        title_color = ft.Colors.RED
+        lines = [
+            f"Path:\n  {result.path}",
+            f"Reason:\n  {result.error}",
+            "Fix the file and restart the app.",
+        ]
+
+    return ft.Container(
+        padding=24,
+        content=ft.Column(
+            spacing=12,
+            controls=[
+                ft.Text(title, size=22, weight=ft.FontWeight.BOLD, color=title_color),
+                *[ft.Text(line, size=13) for line in lines],
             ],
         ),
     )

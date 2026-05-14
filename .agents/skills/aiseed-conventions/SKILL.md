@@ -10,9 +10,11 @@ meteorological terminology (MSL, geopotential, anomaly, hPa levels, ensemble
 spread, etc.) and wants to produce figures to share with others.
 
 This tool is a **neutral viewer**, not a forecast provider. The user chooses
-which data sources to use at first run; the app does not pick for them and
-does not push a default. This is the foundational design principle from
-which everything else follows.
+which data sources to use by editing a TOML config file at
+`~/.config/aiseed-weather/config.toml` before launching the app; the app
+does not pick for them and does not push a default. There is no in-app
+setup screen — see the `first-run-setup` skill. This is the foundational
+design principle from which everything else follows.
 
 A second foundational rule: **data is fetched only in response to user
 actions**. The user opening a view, pressing Refresh, or changing a parameter
@@ -112,9 +114,12 @@ Every `.py` source file starts with:
 - Hardcoded paths (use `pathlib` + a config module)
 - Exporting a figure without attribution and run identifier
 - Translating ECMWF variable short names into "friendlier" English in code
-- **Defaulting a data source before the user has chosen one** — the setup
-  screen must show all choices including "None"
+- **Defaulting a data source before the user has chosen one** — the
+  config template ships with every source set to `"none"`, and the app
+  never substitutes another value
 - **Silently switching data sources** if the user's chosen one fails — report
   the error and let the user decide
 - **Auto-downloading at app start** before the user has explicitly chosen
-  to fetch (the first run completes setup, not data fetch)
+  to fetch (loading the config does not trigger any data fetch)
+- **Adding an in-app setup screen** — choices live in `config.toml`, not in
+  a UI flow

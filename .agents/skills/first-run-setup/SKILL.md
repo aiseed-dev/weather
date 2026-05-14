@@ -1,108 +1,86 @@
 ---
 name: first-run-setup
-description: How the first-run setup screen works and why it matters. Read when implementing or modifying the setup flow, data source selection, or settings persistence.
+description: How initial configuration works. The app reads ~/.config/aiseed-weather/config.toml and never shows a setup UI. Read when modifying config loading, data source selection, or related code.
 ---
 
 ## Position and purpose
 
-This tool is a **neutral viewer**. The app does not pick data sources for the
-user — the user picks at first run. This is both a design principle (respect
-the user's agency) and an operational one (the user is responsible for what
-they choose to view).
+This tool is a neutral viewer. The user chooses data sources by editing a
+TOML config file before launching the app. There is no in-app setup
+screen, no wizard, no nudging.
 
-The setup screen is the first thing the user sees. Get it right.
+The first time the app runs without a config file, it writes a commented
+template to `$XDG_CONFIG_HOME/aiseed-weather/config.toml` (default
+`~/.config/aiseed-weather/config.toml`) and tells the user to edit it and
+restart. This is the standard Linux pattern: dotfile, not wizard.
 
-## What the setup screen does
+## What the app does on startup
 
-1. Greets the user briefly (one sentence, no marketing)
-2. Explains in plain language: "This app shows weather data from public
-   sources. Choose which sources you want to use."
-3. Presents the choices, each with:
-   - Source name
-   - Brief description of what it provides
-   - License and attribution terms
-   - A direct link to the source's documentation
-4. Records the choice via `models.user_settings.save`
-5. Confirms attribution terms acceptance (a single checkbox; required)
-6. Lets the user proceed to the main app
+1. Read config from `user_config_dir("aiseed-weather") / "config.toml"`.
+2. If the file does not exist:
+   - Create the parent directory.
+   - Write the template returned by `user_settings.template()`.
+   - Render a panel telling the user where the file is and to restart.
+3. If the file exists but fails to parse or validate:
+   - Render a panel with the path and the reason. No fallback values.
+4. Otherwise: hand the parsed `UserSettings` to the main app.
 
-The user can revisit settings later via a menu, but the first run is the
-moment of explicit choice.
+## What the app does NOT do
 
-## What the setup screen does NOT do
+- Does **not** show a setup UI under any circumstance.
+- Does **not** preselect any source as "recommended" or "default". The
+  template ships with every source set to `"none"`.
+- Does **not** write the config after the first template-creation. The
+  user owns the file from that point on.
+- Does **not** call any data source APIs during startup.
+- Does **not** watch the file for changes — restart is the contract.
 
-- Does **not** preselect any source as "recommended" or "default"
-- Does **not** auto-download anything before the user has chosen
-- Does **not** call the data source APIs during setup (no probe requests)
-- Does **not** hide the "no forecast / historical only" option
-- Does **not** persist anything to disk until the user confirms
+## Config schema
 
-The point of the screen is to surface the choice, not to nudge.
+The schema lives in `models/user_settings.py`. Keep this table in sync
+with the dataclass; do not introduce a second source of truth.
 
-## Source options to present
+| Key | Type | Default | Valid values |
+|-----|------|---------|--------------|
+| `forecast_source` | string | `"none"` | `none`, `ecmwf_aws`, `ecmwf_azure`, `ecmwf_gcp`, `ecmwf_direct` |
+| `historical_source` | string | `"none"` | `none`, `era5_aws`, `era5_cds` |
+| `point_source` | string | `"none"` | `none`, `open_meteo` |
+| `reference_period_start` | int | `1991` | year |
+| `reference_period_end` | int | `2020` | year |
+| `accept_attribution` | bool | `false` | `true` gates export features |
 
-### Forecast (future grids)
-- **None** — operate in historical/climatology mode only
-- **ECMWF Open Data via AWS** — fastest globally, anonymous access
-- **ECMWF Open Data via Azure** — alternate mirror
-- **ECMWF Open Data via GCP** — often best from Asia-Pacific
-- **ECMWF direct** — official endpoint, but 500-connection limit; use only if cloud mirrors fail
-
-### Historical (past grids)
-- **None**
-- **ERA5 via AWS** — anonymous, ~5-day lag from real-time
-- **ERA5 via CDS API** — requires free Copernicus registration, more flexible queries
-
-### Point forecast (supporting view)
-- **None**
-- **Open-Meteo** — public API, free for personal use, CC-BY-4.0
-
-Order matters: "None" comes first for each, signaling that no choice is required.
-
-### JMA nowcast (radar, AMeDAS) — NOT in setup
-
-JMA data is intentionally **not** part of first-run setup. JMA endpoints
-require no credentials, no source selection, and have explicit usage terms
-that apply per request. Using the JMA features inside the app is itself the
-user's act of choosing to fetch from JMA — adding a setup toggle for it
-would be unnecessary friction.
-
-If we later add JMA cloud (paid) data sources, those would belong in setup.
-The free public endpoints do not.
-
-## Settings persistence
-
-Settings live in `user_config_dir("aiseed-weather") / settings.json`.
-Use the `models.user_settings` module — never write the file directly from
-the UI layer.
-
-The file is plain JSON for inspectability. The user can delete it to reset
-the app to first-run state.
+JMA radar and AMeDAS are intentionally not in the config — JMA endpoints
+need no credentials and using the feature is itself the act of choosing
+to fetch.
 
 ## Attribution acceptance
 
-The user must explicitly check a box acknowledging:
+The user records consent to CC-BY-4.0 attribution by setting
+`accept_attribution = true`. Until they do, export features stay
+disabled. Exports themselves always embed attribution; the flag gates
+whether the export buttons are usable, not whether attribution is
+written.
 
-> "I understand that data shown by this app is licensed under CC-BY-4.0.
-> Figures I export include attribution automatically; I will not remove it
-> when sharing."
+## Re-entry
 
-This is recorded in `accepted_attribution_terms` and gates entry to the
-main app. If the user unchecks it later in settings, sharing/export features
-disable themselves.
+To change sources, the user edits the config and restarts. There is no
+"reload config" command; restart is intentional friction that mirrors
+the "no background activity" rule.
 
-## Re-entry to setup
+## Resetting
 
-The setup screen is reachable any time via Settings → "Data sources".
-Changes there save immediately on confirmation, with a one-line summary of
-what changed.
+Deleting `~/.config/aiseed-weather/config.toml` brings the app back to
+the template-creation path on the next launch.
 
 ## Forbidden
 
-- Defaulting any source to "selected" before the user chooses
-- Hiding the "None" option in any category
-- Making attribution acceptance a buried checkbox; it must be visible and explicit
-- Skipping setup based on a "convenient default" branch
-- Storing API keys or credentials in `settings.json` (use a separate secrets
-  module if/when CDS API support is added)
-- Calling data source APIs during setup just to "validate" the choice
+- A first-run UI of any kind. The config is the contract.
+- Reading or writing the file from the UI layer; only
+  `models/user_settings` touches disk.
+- Calling source APIs during load (no probe, no validation request).
+- Storing secrets in `config.toml` (use a separate secrets module if/when
+  CDS support adds an API key).
+- Hiding the `"none"` value in any comment or table; `"none"` is always
+  valid.
+- Defining the schema in two places. The dataclass is canonical; the
+  template string and this table follow it.

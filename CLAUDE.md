@@ -25,8 +25,10 @@ See **AGENTS.md** for skill locations and ordering rules.
 
 ## Two foundational design rules
 
-1. **The user chooses data sources** at first run (ECMWF / ERA5 / Open-Meteo).
-   The app does not preselect. JMA is not in setup — its use is per-feature.
+1. **The user chooses data sources** by editing
+   `~/.config/aiseed-weather/config.toml` before launching the app
+   (ECMWF / ERA5 / Open-Meteo). The app does not preselect and never shows
+   a setup UI. JMA is not in the config — its use is per-feature.
 2. **Data fetches only on user actions** — opening a view, pressing Refresh,
    or changing a parameter. No background polling, no auto-update, no
    pre-fetch. See the `user-action-fetch` skill.

@@ -36,10 +36,12 @@ expert workflow, not onboarding.
 
 ## Two principles you should know about
 
-**1. The user chooses data sources.** At first run you pick which ECMWF mirror,
-which ERA5 access path, and whether to enable Open-Meteo. The app never
-preselects. JMA is per-feature (no setup toggle needed; JMA endpoints are
-public and free).
+**1. The user chooses data sources.** Source selection lives in
+`~/.config/aiseed-weather/config.toml`. The first launch writes a commented
+template there for you to edit. Pick which ECMWF mirror, which ERA5 access
+path, and whether to enable Open-Meteo, then restart. The app never
+preselects and never shows a setup UI. JMA is per-feature (no config key
+needed; JMA endpoints are public and free).
 
 **2. Data fetches only on user actions.** Opening a view, pressing Refresh, or
 changing a parameter triggers a fetch. The app never polls in the background,
@@ -236,7 +238,6 @@ src/aiseed_weather/
 ├── main.py
 ├── components/                       # Flet components (UI only)
 │   ├── app.py                        # nav between map / radar / amedas
-│   ├── setup_view.py                 # first-run source selection
 │   ├── map_view.py                   # ECMWF/ERA5 synoptic charts
 │   ├── radar_view.py                 # JMA rainfall nowcast
 │   └── amedas_view.py                # JMA ground observations

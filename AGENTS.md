@@ -19,7 +19,7 @@ Skills are located in `.agents/skills/`.
 
 | Task | Read |
 |------|------|
-| Setup screen / settings UI | conventions, flet, first-run-setup |
+| Config loading / data source selection | conventions, first-run-setup |
 | Map view rendering (ECMWF) | conventions, flet, user-action-fetch, ecmwf-data-access, weather-rendering |
 | Anomaly / climatology feature | conventions, flet, user-action-fetch, ecmwf-data-access, climatology-analysis, weather-rendering |
 | Radar / AMeDAS view | conventions, flet, user-action-fetch, jma-data-access, weather-rendering |
@@ -35,8 +35,9 @@ Any task involving a view that displays data must also read `user-action-fetch`.
 
 The order matters for prioritization:
 
-- **The user picks data sources** at first run for ECMWF/ERA5/Open-Meteo;
-  JMA is per-feature (no setup toggle)
+- **The user picks data sources** by editing
+  `~/.config/aiseed-weather/config.toml` for ECMWF/ERA5/Open-Meteo;
+  JMA is per-feature (no config key)
 - **Data fetches only on user actions** (open view, press Refresh, change param)
 - **ECMWF + ERA5 + rendering + export** is the product
 - **JMA radar + AMeDAS** is the "Japan, right now" layer
