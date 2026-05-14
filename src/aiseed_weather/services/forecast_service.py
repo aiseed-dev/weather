@@ -44,36 +44,59 @@ logger = logging.getLogger(__name__)
 # Down" pauses everything for 2 minutes, and S3 is happy to issue several
 # of those when we hammer one bucket prefix.
 #
-# Patch HTTPDownloaderBase.__init__ to force shorter retry settings on
-# every downloader instance:
-#   * retry_after = (5, 60, 2)  → exponential backoff 5s → 60s, ×2/attempt
-#   * maximum_retries = 10      → worst-case ~6 min instead of >16 hours
+# Patch strategy (belt + braces, applied at every relevant level so no
+# resolution path through multiurl can dodge it):
 #
-# We override the instance attributes after the original __init__ runs,
-# so it doesn't matter whether the caller passed retry_after explicitly
-# or not. This is more robust than patching the module-level robust()
-# function (which can be bypassed by direct `from .http import robust`).
+#   1. Wrap HTTPDownloaderBase.__init__ to write our policy onto every
+#      instance after init runs. Subclasses inherit init → all reached.
+#   2. Set class-level defaults too, in case some code path constructs an
+#      instance and reads the attribute before our wrapper writes it
+#      (paranoia, but the cost is one assignment).
+#
+# We print() as well as log because module-level logging at import time
+# is unreliable: depending on flet's process model the logger config may
+# not be in place when this code runs, and the WARNING gets swallowed.
+import sys
+
+
 def _install_multiurl_backoff_patch() -> None:
     import multiurl.http as _mh
     if getattr(_mh, "_aiseed_patched", False):
         return
+
     _orig_init = _mh.HTTPDownloaderBase.__init__
 
     def _patched_init(self, *args, **kwargs):
         _orig_init(self, *args, **kwargs)
-        # Force the policy onto every instance regardless of multiurl's
-        # default or what ecmwf-opendata passed.
         self.retry_after = (5, 60, 2)
         self.maximum_retries = 10
 
     _mh.HTTPDownloaderBase.__init__ = _patched_init
+    # Class-level defaults as a second line of defence.
+    _mh.HTTPDownloaderBase.retry_after = (5, 60, 2)
+    _mh.HTTPDownloaderBase.maximum_retries = 10
     _mh._aiseed_patched = True
-    # Use warning() so this shows up even before main() configures the
-    # root logger — patch is critical and we want to know it ran.
-    logger.warning(
-        "Installed multiurl backoff patch: retry_after=(5, 60, 2) "
-        "max_tries=10 (was 120s / 500)",
+
+    print(
+        "[aiseed] multiurl backoff patch installed: "
+        "retry_after=(5, 60, 2), max_tries=10",
+        file=sys.stderr, flush=True,
     )
+    logger.warning(
+        "Installed multiurl backoff patch: retry_after=(5, 60, 2) max_tries=10",
+    )
+
+
+def _verify_multiurl_patch() -> None:
+    """Sanity-check the patch state right before we kick off a download."""
+    import multiurl.http as _mh
+    if not getattr(_mh, "_aiseed_patched", False):
+        print(
+            "[aiseed] WARNING: multiurl patch missing at download time, "
+            "re-applying",
+            file=sys.stderr, flush=True,
+        )
+        _install_multiurl_backoff_patch()
 
 
 _install_multiurl_backoff_patch()
@@ -146,6 +169,7 @@ class ForecastService:
         return run_dir / f"{r.param}_{r.step_hours}h.grib2"
 
     def _download(self, r: ForecastRequest, target: Path) -> None:
+        _verify_multiurl_patch()
         self._client.retrieve(
             type="fc",
             step=r.step_hours,
