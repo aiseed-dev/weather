@@ -12,7 +12,6 @@ MatplotlibChart. Mount-time fetch + explicit Refresh, no polling
 from __future__ import annotations
 
 import asyncio
-import base64
 import io
 import logging
 import time
@@ -32,20 +31,20 @@ from aiseed_weather.services.forecast_service import (
 logger = logging.getLogger(__name__)
 
 
-def _figure_to_png_b64(fig: Figure, *, dpi: int = 120) -> str:
-    # The on-screen render goes through PNG because Flet's MatplotlibChart
-    # bridge has moved to a separate package across Flet versions. PNG via
-    # `ft.Image(src_base64=...)` is the version-agnostic path.
+def _figure_to_png_bytes(fig: Figure, *, dpi: int = 120) -> bytes:
+    # Flet 0.85's ft.Image accepts raw bytes via src=; no base64 wrapping
+    # needed. We render to PNG because matplotlib + Flet share no in-process
+    # figure transport across Flet versions.
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
     plt.close(fig)
-    return base64.b64encode(buf.getvalue()).decode("ascii")
+    return buf.getvalue()
 
 
 @ft.component
 def MapView(settings: UserSettings):
     state, set_state = ft.use_state("idle")  # idle | loading | ready | error | disabled
-    image_b64, set_image_b64 = ft.use_state(None)
+    image_bytes, set_image_bytes = ft.use_state(None)
     error, set_error = ft.use_state(None)
     run_label, set_run_label = ft.use_state("")
 
@@ -70,9 +69,9 @@ def MapView(settings: UserSettings):
                 render_msl, ds, projection="robinson", run_id=label,
             )
             t_render = time.perf_counter()
-            b64 = await asyncio.to_thread(_figure_to_png_b64, fig)
+            png_bytes = await asyncio.to_thread(_figure_to_png_bytes, fig)
             t_encode = time.perf_counter()
-            set_image_b64(b64)
+            set_image_bytes(png_bytes)
             set_run_label(label)
             set_state("ready")
             logger.info(
@@ -145,7 +144,7 @@ def MapView(settings: UserSettings):
             ),
             ft.Container(
                 content=ft.Image(
-                    src_base64=image_b64,
+                    src=image_bytes,
                     fit=ft.BoxFit.CONTAIN,
                     expand=True,
                 ),
