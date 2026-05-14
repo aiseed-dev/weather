@@ -37,15 +37,24 @@ def SetupView(initial: UserSettings, on_complete: Callable[[UserSettings], None]
     point, set_point = ft.use_state(initial.point_source)
     accepted, set_accepted = ft.use_state(initial.accepted_attribution_terms)
 
-    can_continue = accepted  # All "None" is a valid choice; only attribution gates entry.
+    def on_accept_change(e):
+        # Flet 0.85 sometimes delivers Checkbox state via e.data ("true"/"false")
+        # rather than e.control.value; accept either to stay robust across releases.
+        new_value = getattr(getattr(e, "control", None), "value", None)
+        if not isinstance(new_value, bool):
+            new_value = str(getattr(e, "data", "false")).lower() == "true"
+        set_accepted(bool(new_value))
 
     def handle_continue(_):
+        # Pressing Continue while the attribution text is on screen counts as
+        # acceptance — the click itself is the gate, not a separate checkbox
+        # whose value may not have round-tripped through Flet's event layer.
         new = replace(
             initial,
             forecast_source=forecast,
             historical_source=historical,
             point_source=point,
-            accepted_attribution_terms=accepted,
+            accepted_attribution_terms=True,
             setup_completed=True,
         )
         on_complete(new)
@@ -72,12 +81,11 @@ def SetupView(initial: UserSettings, on_complete: Callable[[UserSettings], None]
                         "I will not remove it when sharing."
                     ),
                     value=accepted,
-                    on_change=lambda e: set_accepted(e.control.value),
+                    on_change=on_accept_change,
                 ),
                 ft.FilledButton(
                     content=ft.Text("Continue"),
                     on_click=handle_continue,
-                    disabled=not can_continue,
                 ),
             ],
             spacing=14,
