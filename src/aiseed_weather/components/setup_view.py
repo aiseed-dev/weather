@@ -75,7 +75,7 @@ def SetupView(initial: UserSettings, on_complete: Callable[[UserSettings], None]
                     on_change=lambda e: set_accepted(e.control.value),
                 ),
                 ft.FilledButton(
-                    text="Continue",
+                    content=ft.Text("Continue"),
                     on_click=handle_continue,
                     disabled=not can_continue,
                 ),

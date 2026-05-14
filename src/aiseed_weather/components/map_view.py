@@ -103,7 +103,7 @@ def MapView(settings: UserSettings):
                 ft.Text("Map View (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
                 ft.Text(f"Could not render map: {error}", color=ft.Colors.RED),
                 ft.FilledButton(
-                    text="再取得 / Retry",
+                    content=ft.Text("再取得 / Retry"),
                     on_click=lambda _: ft.run_task(lambda: load(force=True)),
                 ),
             ],
@@ -119,7 +119,7 @@ def MapView(settings: UserSettings):
                         size=16, weight=ft.FontWeight.BOLD,
                     ),
                     ft.FilledButton(
-                        text="再取得",
+                        content=ft.Text("再取得"),
                         on_click=lambda _: ft.run_task(lambda: load(force=True)),
                     ),
                 ],

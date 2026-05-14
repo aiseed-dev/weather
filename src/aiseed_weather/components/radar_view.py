@@ -51,7 +51,7 @@ def RadarView():
                 ft.Text("Rainfall Nowcast (JMA)", size=18, weight=ft.FontWeight.BOLD),
                 ft.Text(f"Could not fetch radar: {error}", color=ft.Colors.RED),
                 ft.FilledButton(
-                    text="再取得 / Retry",
+                    content=ft.Text("再取得 / Retry"),
                     on_click=lambda _: ft.run_task(lambda: load(force=True)),
                 ),
             ],
@@ -64,7 +64,7 @@ def RadarView():
                 controls=[
                     ft.Text("Rainfall Nowcast (JMA)", size=18, weight=ft.FontWeight.BOLD),
                     ft.FilledButton(
-                        text="再取得",
+                        content=ft.Text("再取得"),
                         on_click=lambda _: ft.run_task(lambda: load(force=True)),
                     ),
                 ],
