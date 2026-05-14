@@ -43,11 +43,7 @@ def AmedasView():
             set_error(str(e))
             set_state("error")
 
-<<<<<<< HEAD
-    ft.use_effect(lambda: ft.run_task(load), [])
-=======
     ft.use_effect(lambda: ft.context.page.run_task(load), deps=[])
->>>>>>> origin/claude/fix-error-restart-u0qIj
 
     if state in ("idle", "loading"):
         return ft.Column(
@@ -64,13 +60,8 @@ def AmedasView():
                 ft.Text("AMeDAS (JMA)", size=18, weight=ft.FontWeight.BOLD),
                 ft.Text(f"Could not fetch AMeDAS: {error}", color=ft.Colors.RED),
                 ft.FilledButton(
-<<<<<<< HEAD
-                    content=ft.Text("再取得 / Retry"),
-                    on_click=lambda _: ft.run_task(lambda: load(force=True)),
-=======
                     text="再取得 / Retry",
                     on_click=lambda _: ft.context.page.run_task(load, force=True),
->>>>>>> origin/claude/fix-error-restart-u0qIj
                 ),
             ],
         )
@@ -81,13 +72,8 @@ def AmedasView():
                 controls=[
                     ft.Text("AMeDAS (JMA)", size=18, weight=ft.FontWeight.BOLD),
                     ft.FilledButton(
-<<<<<<< HEAD
-                        content=ft.Text("再取得"),
-                        on_click=lambda _: ft.run_task(lambda: load(force=True)),
-=======
                         text="再取得",
                         on_click=lambda _: ft.context.page.run_task(load, force=True),
->>>>>>> origin/claude/fix-error-restart-u0qIj
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
