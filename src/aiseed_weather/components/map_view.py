@@ -156,10 +156,20 @@ def MapView(settings: UserSettings):
                 pass  # NONE etc. — fall through to catalog default
         return product_by_key(p_key).default_source_key
 
+    # Currently fixed at config.toml's choice. We keep state + the
+    # override plumbing so a future "advanced" toggle can flip mirrors
+    # at runtime, but the mirror is not a user-facing concern: the
+    # bytes are identical across AWS/Azure/GCP/ECMWF Direct, only
+    # latency differs. What the user cares about is the cycle (run
+    # initialization time), so that's what gets the prominent UI.
     data_source_key, set_data_source_key = ft.use_state(
         _initial_source_for("ecmwf_hres")
     )
-    show_source_dialog, set_show_source_dialog = ft.use_state(False)
+
+    # Manual cycle override. When None, _resolve_run_time falls back
+    # to auto-probing the latest fully-published cycle (today's behaviour).
+    # When set, we use this exact datetime as the run, skipping the probe.
+    manual_cycle, set_manual_cycle = ft.use_state(None)
 
     async def _render_step(service, run_time, step: int, region_: Region) -> bytes:
         request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
@@ -175,16 +185,18 @@ def MapView(settings: UserSettings):
     async def _resolve_run_time(service, *, force: bool):
         """Pick the IFS cycle every frame must come from.
 
-        Probes with the LARGEST step so we always lock onto a run that has
-        published its full forecast horizon. Probing with a smaller step
-        would give the absolute latest cycle, but that cycle may not yet
-        have its long-range fields out — leading to 404s deep into the
-        animation preload. The trade-off is that the frame at T+0 is a
-        few hours older than the strictly-newest analysis.
-
-        Reuses the cached holder unless force=True (Refresh button) or no
-        cycle has been resolved yet.
+        Three modes, in priority order:
+        1. ``manual_cycle`` is set → the user pinned a specific cycle in
+           the Time dialog. Use it directly, no probe.
+        2. ``run_time_holder`` is set and not forced → reuse the
+           previously-probed cycle (Auto mode).
+        3. Otherwise → probe latest_run with the LARGEST step so we
+           lock onto a cycle that has published its full forecast
+           horizon. Smaller-step probes give a fresher cycle but risk
+           404s deep into the preload because long-range fields lag.
         """
+        if manual_cycle is not None:
+            return manual_cycle, False
         if run_time_holder is not None and not force:
             return run_time_holder, False  # (run_time, did_probe)
         set_progress(
@@ -616,93 +628,6 @@ def MapView(settings: UserSettings):
         ],
     )
 
-    # ----- Source dialog (sibling concern, separate from product) -----
-    # Draft state so cancel doesn't mutate the committed source.
-    draft_source_key, set_draft_source_key = ft.use_state(data_source_key)
-
-    def _open_source_dialog():
-        set_draft_source_key(data_source_key)
-        set_show_source_dialog(True)
-
-    def _commit_source(_):
-        if draft_source_key != data_source_key:
-            set_data_source_key(draft_source_key)
-            # Different mirror → drop in-memory rendered PNGs. GRIB
-            # files on disk are byte-identical across mirrors so the
-            # next fetch finds them cached and re-renders quickly.
-            set_frames({})
-        set_show_source_dialog(False)
-
-    source_radios = []
-    for s in selected_product.sources:
-        source_radios.append(
-            ft.Container(
-                padding=ft.Padding.symmetric(horizontal=4, vertical=2),
-                content=ft.Column(
-                    spacing=1,
-                    controls=[
-                        ft.Radio(
-                            value=s.key,
-                            label=f"{s.label}  {STATUS_LABELS[s.status]}",
-                        ),
-                        ft.Container(
-                            padding=ft.Padding.only(left=32),
-                            content=ft.Text(
-                                f"{s.transport} · {s.region} · {s.endpoint}"
-                                + (f"\n{s.notes}" if s.notes else ""),
-                                size=10, color=ft.Colors.GREY,
-                            ),
-                        ),
-                    ],
-                ),
-            ),
-        )
-
-    source_dialog = ft.AlertDialog(
-        modal=True,
-        title=ft.Text("データ取得元 / Data source"),
-        content=ft.Container(
-            width=560,
-            content=ft.Column(
-                tight=True,
-                spacing=6,
-                scroll=ft.ScrollMode.ADAPTIVE,
-                controls=[
-                    ft.Text(
-                        f"プロダクト: {selected_product.bilingual_label()}",
-                        size=12, weight=ft.FontWeight.BOLD,
-                    ),
-                    ft.Text(
-                        "ミラー / 提供元の違いで配信レイテンシと帯域が変わります。"
-                        "GRIB バイト列は同一のため、切替えてもデータ内容は変わりません。",
-                        size=11, color=ft.Colors.GREY,
-                    ),
-                    ft.Divider(height=8),
-                    ft.RadioGroup(
-                        value=draft_source_key,
-                        on_change=lambda e: set_draft_source_key(e.control.value),
-                        content=ft.Column(
-                            tight=True,
-                            spacing=4,
-                            controls=source_radios,
-                        ),
-                    ),
-                    ft.Text(
-                        f"既定 / Default: {selected_product.default_source_key}",
-                        size=10, color=ft.Colors.GREY,
-                    ),
-                ],
-            ),
-        ),
-        actions=[
-            ft.TextButton(
-                "キャンセル",
-                on_click=lambda _: set_show_source_dialog(False),
-            ),
-            ft.FilledButton("適用 / Apply", on_click=_commit_source),
-        ],
-    )
-
     region_dialog = ft.AlertDialog(
         modal=True,
         title=ft.Text("地域設定 / Region Settings"),
@@ -761,78 +686,174 @@ def MapView(settings: UserSettings):
         ],
     )
 
+    # Draft state for the time dialog. Initialised from the committed
+    # state every time the dialog opens, so Cancel never mutates the
+    # live cycle.
+    from datetime import datetime, timezone, timedelta
+    _today_utc = datetime.now(tz=timezone.utc)
+    _default_date = (
+        manual_cycle.strftime("%Y-%m-%d") if manual_cycle
+        else (run_time_holder or _today_utc).strftime("%Y-%m-%d")
+    )
+    _default_hour = (
+        manual_cycle.hour if manual_cycle
+        else (run_time_holder.hour if run_time_holder else 0)
+    )
+
+    draft_cycle_mode, set_draft_cycle_mode = ft.use_state(
+        "manual" if manual_cycle is not None else "auto"
+    )
+    draft_cycle_date, set_draft_cycle_date = ft.use_state(_default_date)
+    draft_cycle_hour, set_draft_cycle_hour = ft.use_state(str(_default_hour))
+    draft_cycle_error, set_draft_cycle_error = ft.use_state("")
+
+    def _open_time_dialog():
+        # Reset draft to the committed values on open.
+        set_draft_cycle_mode("manual" if manual_cycle is not None else "auto")
+        set_draft_cycle_date(_default_date)
+        set_draft_cycle_hour(str(_default_hour))
+        set_draft_cycle_error("")
+        set_show_time_dialog(True)
+
+    def _commit_cycle(_):
+        if draft_cycle_mode == "auto":
+            if manual_cycle is not None:
+                set_manual_cycle(None)
+                set_frames({})
+                # Drop the cached holder too so the next fetch re-probes.
+                set_run_time_holder(None)
+            set_show_time_dialog(False)
+            return
+        # Manual: parse the inputs.
+        try:
+            d = datetime.strptime(draft_cycle_date, "%Y-%m-%d").date()
+            h = int(draft_cycle_hour)
+            if h not in (0, 6, 12, 18):
+                raise ValueError("hour must be 00, 06, 12, or 18 (UTC)")
+            new_cycle = datetime(d.year, d.month, d.day, h, 0, tzinfo=timezone.utc)
+        except (ValueError, TypeError) as e:
+            set_draft_cycle_error(f"入力エラー: {e}")
+            return
+        # Don't accept future cycles.
+        if new_cycle > _today_utc + timedelta(hours=6):
+            set_draft_cycle_error("未来の cycle は指定できません。")
+            return
+        if new_cycle != manual_cycle:
+            set_manual_cycle(new_cycle)
+            set_frames({})
+        set_show_time_dialog(False)
+
+    cycle_now_display = (
+        manual_cycle.strftime("%Y-%m-%d %H:%M UTC") + " (manual)"
+        if manual_cycle else (
+            run_time_holder.strftime("%Y-%m-%d %H:%M UTC") + " (auto)"
+            if run_time_holder else "未取得 / not yet probed"
+        )
+    )
+
     time_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("時間設定 / Time Settings"),
-        content=ft.Column(
-            tight=True,
-            width=420,
-            controls=[
-                ft.Text("Run / cycle", size=11, color=ft.Colors.GREY),
-                ft.Text(
-                    f"{run_time_holder:%Y-%m-%d %H:%M UTC} IFS"
-                    if run_time_holder else "Not loaded yet",
-                    size=14, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    "Auto-pick: latest fully-published cycle (need T+240h)",
-                    size=11, color=ft.Colors.GREY,
-                ),
-                ft.Divider(height=12),
-                ft.Text("Cycle override", size=11, color=ft.Colors.GREY),
-                ft.RadioGroup(
-                    value="auto",
-                    content=ft.Column(
-                        tight=True,
-                        spacing=2,
-                        controls=[
-                            ft.Radio(
-                                value="auto",
-                                label="Auto (recommended)",
-                            ),
-                            ft.Radio(
-                                value="00z", label="00z (disabled · future)",
-                                disabled=True,
-                            ),
-                            ft.Radio(
-                                value="06z", label="06z (disabled · future)",
-                                disabled=True,
-                            ),
-                            ft.Radio(
-                                value="12z", label="12z (disabled · future)",
-                                disabled=True,
-                            ),
-                            ft.Radio(
-                                value="18z", label="18z (disabled · future)",
-                                disabled=True,
-                            ),
-                        ],
+        title=ft.Text("予報起点時間 / Forecast cycle"),
+        content=ft.Container(
+            width=480,
+            content=ft.Column(
+                tight=True,
+                spacing=8,
+                scroll=ft.ScrollMode.ADAPTIVE,
+                controls=[
+                    ft.Text("現在の cycle / Current", size=11, color=ft.Colors.GREY),
+                    ft.Text(
+                        cycle_now_display,
+                        size=14, weight=ft.FontWeight.BOLD,
                     ),
-                ),
-                ft.Text(
-                    "Manual cycle override lands in a follow-up: today the "
-                    "app always picks the newest cycle that has the full "
-                    "forecast horizon published.",
-                    size=10, color=ft.Colors.GREY, italic=True,
-                ),
-                ft.Divider(height=12),
-                ft.Text("Animation range", size=11, color=ft.Colors.GREY),
-                ft.Text(
-                    f"T+0h .. T+{MAX_STEP}h, 3h cadence  "
-                    f"({len(STEP_OPTIONS)} frames)",
-                    size=12,
-                ),
-                ft.Text(
-                    "Range and cadence selectors land in a follow-up.",
-                    size=10, color=ft.Colors.GREY, italic=True,
-                ),
-            ],
+                    ft.Divider(height=10),
+                    ft.RadioGroup(
+                        value=draft_cycle_mode,
+                        on_change=lambda e: set_draft_cycle_mode(e.control.value),
+                        content=ft.Column(
+                            tight=True,
+                            spacing=4,
+                            controls=[
+                                ft.Radio(
+                                    value="auto",
+                                    label="Auto: 全予報範囲が公開済みの最新 cycle を自動選択",
+                                ),
+                                ft.Radio(
+                                    value="manual",
+                                    label="Manual: 特定の cycle を指定",
+                                ),
+                            ],
+                        ),
+                    ),
+                    ft.Container(
+                        visible=(draft_cycle_mode == "manual"),
+                        padding=ft.Padding.only(left=32, top=4),
+                        content=ft.Column(
+                            spacing=8,
+                            controls=[
+                                ft.Row(
+                                    spacing=10,
+                                    controls=[
+                                        ft.TextField(
+                                            label="日付 (UTC) / Date",
+                                            value=draft_cycle_date,
+                                            hint_text="YYYY-MM-DD",
+                                            width=160,
+                                            dense=True,
+                                            on_change=lambda e: set_draft_cycle_date(
+                                                e.control.value,
+                                            ),
+                                        ),
+                                        ft.Dropdown(
+                                            label="時刻 (UTC)",
+                                            value=draft_cycle_hour,
+                                            width=120,
+                                            dense=True,
+                                            options=[
+                                                ft.dropdown.Option(key="0", text="00z"),
+                                                ft.dropdown.Option(key="6", text="06z"),
+                                                ft.dropdown.Option(key="12", text="12z"),
+                                                ft.dropdown.Option(key="18", text="18z"),
+                                            ],
+                                            on_select=lambda e: set_draft_cycle_hour(
+                                                e.control.value,
+                                            ),
+                                        ),
+                                    ],
+                                ),
+                                ft.Text(
+                                    "注: ECMWF Open Data は直近 ~5 日分のみ保持。"
+                                    "それ以上古い cycle は 404 になります。",
+                                    size=10, color=ft.Colors.GREY,
+                                ),
+                                ft.Text(
+                                    draft_cycle_error,
+                                    size=11, color=ft.Colors.RED,
+                                    visible=bool(draft_cycle_error),
+                                ),
+                            ],
+                        ),
+                    ),
+                    ft.Divider(height=10),
+                    ft.Text("予報範囲 / Range", size=11, color=ft.Colors.GREY),
+                    ft.Text(
+                        f"T+0h .. T+{MAX_STEP}h, 3h cadence  "
+                        f"({len(STEP_OPTIONS)} frames)",
+                        size=12,
+                    ),
+                    ft.Text(
+                        "範囲・粒度のカスタマイズは将来。",
+                        size=10, color=ft.Colors.GREY, italic=True,
+                    ),
+                ],
+            ),
         ),
         actions=[
             ft.TextButton(
-                "閉じる",
+                "キャンセル",
                 on_click=lambda _: set_show_time_dialog(False),
             ),
+            ft.FilledButton("適用 / Apply", on_click=_commit_cycle),
         ],
     )
 
@@ -841,7 +862,6 @@ def MapView(settings: UserSettings):
     # updated draft state preserves cursor / focus.
     ft.use_dialog(
         catalog_dialog if show_catalog_dialog
-        else source_dialog if show_source_dialog
         else region_dialog if show_region_dialog
         else time_dialog if show_time_dialog
         else None
@@ -999,34 +1019,6 @@ def MapView(settings: UserSettings):
 
                 ft.Divider(height=14),
                 ft.Text(
-                    "データ取得 / Data acquisition", size=11,
-                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    (
-                        selected_product.source_by_key(data_source_key).label
-                        if data_source_key in {s.key for s in selected_product.sources}
-                        else "—"
-                    ),
-                    size=12, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    (
-                        f"{selected_product.source_by_key(data_source_key).transport} · "
-                        f"{selected_product.source_by_key(data_source_key).region}"
-                        if data_source_key in {s.key for s in selected_product.sources}
-                        else ""
-                    ),
-                    size=10, color=ft.Colors.GREY,
-                ),
-                ft.TextButton(
-                    content=ft.Text("取得元変更 / Change source…", size=12),
-                    icon=ft.Icons.CLOUD_DOWNLOAD,
-                    on_click=lambda _: _open_source_dialog(),
-                ),
-
-                ft.Divider(height=14),
-                ft.Text(
                     "レイヤー / Layer", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
@@ -1046,22 +1038,32 @@ def MapView(settings: UserSettings):
 
                 ft.Divider(height=14),
                 ft.Text(
-                    "時間 / Time", size=11,
+                    "予報起点時間 / Forecast cycle", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Text(
-                    f"{run_time_holder:%Y%m%d %Hz} IFS"
-                    if run_time_holder else "Not loaded",
-                    size=12, weight=ft.FontWeight.BOLD,
+                    (
+                        f"{manual_cycle:%Y-%m-%d %H:%M UTC}"
+                        if manual_cycle
+                        else (
+                            f"{run_time_holder:%Y-%m-%d %H:%M UTC}"
+                            if run_time_holder else "未取得"
+                        )
+                    ),
+                    size=13, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Text(
-                    f"Animation: T+0..T+{MAX_STEP}h at 3h ({total_count} frames)",
+                    "manual" if manual_cycle else "auto (latest available)",
+                    size=10, color=ft.Colors.GREY,
+                ),
+                ft.Text(
+                    f"範囲: T+0..T+{MAX_STEP}h, 3h ({total_count} frames)",
                     size=10, color=ft.Colors.GREY,
                 ),
                 ft.TextButton(
-                    content=ft.Text("詳細設定 / Time settings…", size=12),
+                    content=ft.Text("起点時間変更 / Change cycle…", size=12),
                     icon=ft.Icons.SCHEDULE,
-                    on_click=lambda _: set_show_time_dialog(True),
+                    on_click=lambda _: _open_time_dialog(),
                 ),
 
                 ft.Divider(height=14),
@@ -1229,13 +1231,10 @@ def MapView(settings: UserSettings):
                         ),
                         ft.Text(
                             (
-                                f"Cycle: {run_time_holder:%Y%m%d %Hz} IFS"
-                                if run_time_holder else "Cycle: —"
+                                f"Cycle: {(manual_cycle or run_time_holder):%Y-%m-%d %H:%M UTC}"
+                                f"{' (manual)' if manual_cycle else ' (auto)'}"
+                                if (manual_cycle or run_time_holder) else "Cycle: —"
                             ),
-                            size=11, color=ft.Colors.GREY,
-                        ),
-                        ft.Text(
-                            f"Source: {data_source_key}",
                             size=11, color=ft.Colors.GREY,
                         ),
                     ],
