@@ -81,6 +81,14 @@ def _step_label(h: int) -> str:
     return f"T+{h}h (D+{days})" if rest == 0 else f"T+{h}h"
 
 
+def _valid_time_display(base_time, step_hours: int) -> str:
+    """Format valid time (= base time + lead). Returns '未取得' if no base."""
+    if base_time is None:
+        return "未取得"
+    from datetime import timedelta
+    return (base_time + timedelta(hours=step_hours)).strftime("%Y-%m-%d %H:%M UTC")
+
+
 def _figure_to_png_bytes(fig: Figure, *, dpi: int = 120) -> bytes:
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
@@ -726,9 +734,9 @@ def MapView(settings: UserSettings):
         )
         data_sections.extend(_build_field_card(f) for f in derived_fields)
 
-    data_dialog = ft.AlertDialog(
+    layer_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("データ選択 / Select data field"),
+        title=ft.Text("レイヤー / Layer (field + style)"),
         content=ft.Container(
             width=600,
             height=520,
@@ -742,8 +750,8 @@ def MapView(settings: UserSettings):
                         size=11, color=ft.Colors.GREY,
                     ),
                     ft.Text(
-                        "モデルが提供する場 (field) の中から、地図に描画するもの"
-                        "を選びます。利用可否は実装状況による。",
+                        "場 (field) と描画スタイルの組み合わせを「レイヤー」"
+                        "として選びます。利用可否は実装状況による。",
                         size=11, color=ft.Colors.GREY,
                     ),
                     ft.Divider(height=8),
@@ -884,7 +892,7 @@ def MapView(settings: UserSettings):
 
     time_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("予報起点時間 / Forecast cycle"),
+        title=ft.Text("データ / Data (base time)"),
         content=ft.Container(
             width=480,
             content=ft.Column(
@@ -892,10 +900,18 @@ def MapView(settings: UserSettings):
                 spacing=8,
                 scroll=ft.ScrollMode.ADAPTIVE,
                 controls=[
-                    ft.Text("現在の cycle / Current", size=11, color=ft.Colors.GREY),
+                    ft.Text(
+                        "現在の base time / Current",
+                        size=11, color=ft.Colors.GREY,
+                    ),
                     ft.Text(
                         cycle_now_display,
                         size=14, weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Text(
+                        "Base time は予報の初期値時刻 (model initialization)。"
+                        "Lead time / step を変えても base time は変わりません。",
+                        size=10, color=ft.Colors.GREY,
                     ),
                     ft.Divider(height=10),
                     ft.RadioGroup(
@@ -907,11 +923,11 @@ def MapView(settings: UserSettings):
                             controls=[
                                 ft.Radio(
                                     value="auto",
-                                    label="Auto: 全予報範囲が公開済みの最新 cycle を自動選択",
+                                    label="Auto: 全予報範囲が公開済みの最新 base time を自動選択",
                                 ),
                                 ft.Radio(
                                     value="manual",
-                                    label="Manual: 特定の cycle を指定",
+                                    label="Manual: 特定の base time を指定",
                                 ),
                             ],
                         ),
@@ -954,7 +970,7 @@ def MapView(settings: UserSettings):
                                 ),
                                 ft.Text(
                                     "注: ECMWF Open Data は直近 ~5 日分のみ保持。"
-                                    "それ以上古い cycle は 404 になります。",
+                                    "それ以上古い base time は 404 になります。",
                                     size=10, color=ft.Colors.GREY,
                                 ),
                                 ft.Text(
@@ -993,7 +1009,7 @@ def MapView(settings: UserSettings):
     # updated draft state preserves cursor / focus.
     ft.use_dialog(
         catalog_dialog if show_catalog_dialog
-        else data_dialog if show_data_dialog
+        else layer_dialog if show_data_dialog
         else region_dialog if show_region_dialog
         else time_dialog if show_time_dialog
         else None
@@ -1132,58 +1148,10 @@ def MapView(settings: UserSettings):
                     on_click=lambda _: set_show_catalog_dialog(True),
                 ),
 
-                # ── Data: which field of the model to fetch & render ──
+                # ── Data: which BASE TIME forecast to fetch from the model ──
                 ft.Divider(height=14),
                 ft.Text(
-                    "データ / Data", size=11,
-                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    selected_field.bilingual_label() + selected_field.level_suffix(),
-                    size=12, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    f"短縮名: {selected_field.key} · 単位: {selected_field.unit}",
-                    size=10, color=ft.Colors.GREY,
-                ),
-                ft.TextButton(
-                    content=ft.Text("データ変更 / Change data…", size=12),
-                    icon=ft.Icons.DATASET,
-                    on_click=lambda _: set_show_data_dialog(True),
-                ),
-
-                # ── Region: viewport / projection ──
-                ft.Divider(height=14),
-                ft.Text(
-                    "地域 / Region", size=11,
-                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
-                ),
-                region_dropdown,
-                ft.TextButton(
-                    content=ft.Text("詳細設定 / Custom bounds…", size=12),
-                    icon=ft.Icons.TUNE,
-                    on_click=lambda _: _open_region_dialog(),
-                ),
-
-                # ── Layer: rendering style applied to the Data ──
-                ft.Divider(height=14),
-                ft.Text(
-                    "レイヤー / Layer", size=11,
-                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    selected_field.typical_layer,
-                    size=12,
-                ),
-                ft.Text(
-                    "(スタイルバリエーション選択は将来)",
-                    size=10, color=ft.Colors.GREY, italic=True,
-                ),
-
-                # ── Forecast cycle (run initialization time) ──
-                ft.Divider(height=14),
-                ft.Text(
-                    "予報起点時間 / Forecast cycle", size=11,
+                    "データ / Data (base time)", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Text(
@@ -1201,14 +1169,66 @@ def MapView(settings: UserSettings):
                     "manual" if manual_cycle else "auto (latest available)",
                     size=10, color=ft.Colors.GREY,
                 ),
+                ft.TextButton(
+                    content=ft.Text("データ変更 / Change data…", size=12),
+                    icon=ft.Icons.SCHEDULE,
+                    on_click=lambda _: _open_time_dialog(),
+                ),
+
+                # ── Region: geographic viewport / projection ──
+                ft.Divider(height=14),
                 ft.Text(
-                    f"範囲: T+0..T+{MAX_STEP}h, 3h ({total_count} frames)",
+                    "地域 / Region", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                ),
+                region_dropdown,
+                ft.TextButton(
+                    content=ft.Text("詳細設定 / Custom bounds…", size=12),
+                    icon=ft.Icons.TUNE,
+                    on_click=lambda _: _open_region_dialog(),
+                ),
+
+                # ── Layer: field + rendering style ──
+                ft.Divider(height=14),
+                ft.Text(
+                    "レイヤー / Layer", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    selected_field.bilingual_label() + selected_field.level_suffix(),
+                    size=12, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    f"{selected_field.key} · {selected_field.unit}",
+                    size=10, color=ft.Colors.GREY,
+                ),
+                ft.Text(
+                    selected_field.typical_layer,
                     size=10, color=ft.Colors.GREY,
                 ),
                 ft.TextButton(
-                    content=ft.Text("起点時間変更 / Change cycle…", size=12),
-                    icon=ft.Icons.SCHEDULE,
-                    on_click=lambda _: _open_time_dialog(),
+                    content=ft.Text("レイヤー変更 / Change layer…", size=12),
+                    icon=ft.Icons.LAYERS,
+                    on_click=lambda _: set_show_data_dialog(True),
+                ),
+
+                # ── Time: valid time = base time + lead time (slider-driven) ──
+                ft.Divider(height=14),
+                ft.Text(
+                    "時間 / Time (valid time)", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    _valid_time_display(manual_cycle or run_time_holder, step_hours),
+                    size=12, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    f"Lead: {_step_label(step_hours)}",
+                    size=10, color=ft.Colors.GREY,
+                ),
+                ft.Text(
+                    f"範囲: T+0..T+{MAX_STEP}h, 3h ({total_count} frames)",
+                    size=10, color=ft.Colors.GREY,
                 ),
 
                 ft.Divider(height=14),
