@@ -1,0 +1,57 @@
+# Miniforge / conda-forge environment for AIseed Weather.
+#
+# Why conda-forge for almost everything:
+#   - cartopy needs PROJ and GEOS C libraries; conda-forge bundles them.
+#   - cfgrib needs eccodes (ECMWF C library); same story.
+#   - Avoids the "works on my machine" trap for cross-platform users.
+#
+# Why pip for Flet:
+#   - Flet is still in beta with frequent releases.
+#   - conda-forge tracks stable versions and lags behind.
+#   - Managing Flet via pip keeps us on the latest version directly.
+#
+# Setup:
+#   1. Install Miniforge: https://github.com/conda-forge/miniforge
+#   2. mamba env create -f environment.yml
+#      (or: conda env create -f environment.yml)
+#   3. mamba activate aiseed-weather
+#   4. python -m aiseed_weather.main
+
+name: aiseed-weather
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+
+  # ECMWF stack — C library deps bundled
+  - eccodes
+  - cfgrib
+  - ecmwf-opendata
+  - xarray
+  - netcdf4
+  - zarr
+  - fsspec
+  - s3fs
+
+  # Numerical
+  - numpy
+  - pandas
+
+  # Map rendering — PROJ + GEOS deps bundled
+  - matplotlib
+  - cartopy
+  - pyproj
+
+  # Utilities
+  - platformdirs
+  - httpx
+
+  # Dev tools
+  - pytest
+  - pytest-asyncio
+  - ruff
+
+  # Flet via pip — beta with frequent releases, manage directly
+  - pip
+  - pip:
+      - flet>=0.85
