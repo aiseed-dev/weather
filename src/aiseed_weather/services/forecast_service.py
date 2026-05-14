@@ -44,18 +44,19 @@ logger = logging.getLogger(__name__)
 # Down" pauses everything for 2 minutes, and S3 is happy to issue several
 # of those when we hammer one bucket prefix.
 #
-# Patch strategy (belt + braces, applied at every relevant level so no
-# resolution path through multiurl can dodge it):
+# Why this is non-trivial to patch: ecmwf.opendata.client does
+#   from multiurl import download, robust
+# and then calls robust(self.session.get)(index_url, ...) directly,
+# using multiurl's module-level robust() with its default 500/120s. So
+# patching multiurl.http.robust = our_func is ineffective — by the time
+# we run, ecmwf.opendata.client.robust is already bound to the original
+# function object.
 #
-#   1. Wrap HTTPDownloaderBase.__init__ to write our policy onto every
-#      instance after init runs. Subclasses inherit init → all reached.
-#   2. Set class-level defaults too, in case some code path constructs an
-#      instance and reads the attribute before our wrapper writes it
-#      (paranoia, but the cost is one assignment).
-#
-# We print() as well as log because module-level logging at import time
-# is unreliable: depending on flet's process model the logger config may
-# not be in place when this code runs, and the WARNING gets swallowed.
+# The fix: rewrite the function's __defaults__ tuple. All import paths
+# (multiurl, multiurl.http, multiurl.downloader, ecmwf.opendata.client)
+# point at the same function object, so changing its defaults takes
+# effect everywhere at once. We still also patch HTTPDownloaderBase
+# instances as belt-and-braces for the (slower) download path.
 import sys
 
 
@@ -64,6 +65,14 @@ def _install_multiurl_backoff_patch() -> None:
     if getattr(_mh, "_aiseed_patched", False):
         return
 
+    # 1) Rewrite the module-level robust() defaults. This catches
+    # ecmwf-opendata's direct robust(session.get)(url) calls.
+    new_defaults = (10, (5, 60, 2), None)  # (maximum_tries, retry_after, mirrors)
+    _mh.robust.__defaults__ = new_defaults
+
+    # 2) Force instance-level retry attributes via wrapped __init__ so
+    # any future code path that uses HTTPDownloaderBase.robust() also
+    # gets the policy, regardless of what kwargs were originally passed.
     _orig_init = _mh.HTTPDownloaderBase.__init__
 
     def _patched_init(self, *args, **kwargs):
@@ -72,18 +81,18 @@ def _install_multiurl_backoff_patch() -> None:
         self.maximum_retries = 10
 
     _mh.HTTPDownloaderBase.__init__ = _patched_init
-    # Class-level defaults as a second line of defence.
     _mh.HTTPDownloaderBase.retry_after = (5, 60, 2)
     _mh.HTTPDownloaderBase.maximum_retries = 10
     _mh._aiseed_patched = True
 
     print(
         "[aiseed] multiurl backoff patch installed: "
-        "retry_after=(5, 60, 2), max_tries=10",
+        f"robust.__defaults__={new_defaults}, "
+        "HTTPDownloaderBase retry_after=(5, 60, 2) max_tries=10",
         file=sys.stderr, flush=True,
     )
     logger.warning(
-        "Installed multiurl backoff patch: retry_after=(5, 60, 2) max_tries=10",
+        "Installed multiurl backoff patch (robust defaults + instance attrs)",
     )
 
 

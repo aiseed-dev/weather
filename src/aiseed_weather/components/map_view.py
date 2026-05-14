@@ -195,8 +195,14 @@ def MapView(settings: UserSettings):
             set_state("error")
 
     async def load_all_steps_and_play():
-        """Pre-fetch every step in STEP_OPTIONS, then start animation."""
-        set_state("loading")
+        """Pre-fetch every step in STEP_OPTIONS, then start animation.
+
+        Stays in "ready" state throughout so the chart, slider, and label
+        stay visible. Each frame's display update happens AFTER its image
+        is rendered — the slider does not move ahead of the picture.
+        """
+        # Don't transition to "loading"; that would hide the image. We
+        # stay in "ready" and surface progress via the progress overlay.
         set_error(None)
         set_is_playing(False)
         try:
@@ -219,6 +225,13 @@ def MapView(settings: UserSettings):
 
             for i, step in enumerate(STEP_OPTIONS):
                 if step in new_frames:
+                    # Already loaded — sweep through visually so the user
+                    # sees the timeline progress for cached frames too.
+                    set_step_hours(step)
+                    set_image_bytes(new_frames[step])
+                    set_run_label(
+                        f"{run_time:%Y%m%d %Hz} IFS · {_step_label(step)}"
+                    )
                     continue
                 req = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
                 hit_cache = service.is_cached(req)
@@ -226,17 +239,23 @@ def MapView(settings: UserSettings):
                     f"Loading frame {i + 1}/{len(STEP_OPTIONS)} · "
                     f"{_step_label(step)}{' (cached)' if hit_cache else ''}…"
                 )
-                new_frames[step] = await _render_step(service, run_time, step)
-                # Push the partial dict to state so subsequent renders
-                # (e.g. seeking via the slider) can see frames already loaded.
+                png = await _render_step(service, run_time, step)
+                # Image ready — only NOW advance the slider/label to this
+                # step. The display stays on the previous frame until the
+                # new one has been fully rendered and encoded.
+                new_frames[step] = png
                 set_frames(dict(new_frames))
+                set_step_hours(step)
+                set_image_bytes(png)
+                set_run_label(
+                    f"{run_time:%Y%m%d %Hz} IFS · {_step_label(step)}"
+                )
                 # Polite spacing only after frames we actually downloaded —
                 # cache hits don't touch S3, no need to slow them down.
                 if not hit_cache and i + 1 < len(STEP_OPTIONS):
                     await asyncio.sleep(PRELOAD_SPACING_SEC)
 
             set_progress("")
-            set_state("ready")
             set_is_playing(True)
         except Exception as e:
             logger.exception("Map view failed to preload animation frames")
@@ -391,10 +410,14 @@ def MapView(settings: UserSettings):
         )
 
     # state == "ready"
-    current_idx = STEP_OPTIONS.index(step_hours)
+    try:
+        current_idx = STEP_OPTIONS.index(step_hours)
+    except ValueError:
+        current_idx = 0
     loaded_count = len(frames)
     total_count = len(STEP_OPTIONS)
     all_loaded = loaded_count >= total_count
+    is_preloading = bool(progress)  # non-empty progress text = work in flight
     play_icon = ft.Icons.PAUSE if is_playing else ft.Icons.PLAY_ARROW
     play_tooltip = "一時停止" if is_playing else (
         "▶ アニメーション再生" if all_loaded
@@ -459,6 +482,14 @@ def MapView(settings: UserSettings):
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+            ),
+            ft.Row(
+                visible=is_preloading,
+                spacing=8,
+                controls=[
+                    ft.ProgressRing(width=14, height=14),
+                    ft.Text(progress, size=12, color=ft.Colors.GREY),
+                ],
             ),
             ft.Container(
                 content=ft.Image(
