@@ -7,7 +7,9 @@ Pipeline (only after the user presses 取得 / Fetch):
   probe latest run via ForecastService.latest_run → download GRIB2 →
   decode via cfgrib → render matplotlib figure → embed as PNG bytes.
 
-No mount-time fetch — the view stays idle until the user asks. See the
+No mount-time fetch — the view stays idle until the user asks. The
+forecast step (T+0 to T+240h) is selectable; changing it re-fetches
+because it requires a different GRIB2 file. See the
 `user-action-fetch` skill.
 """
 
@@ -33,6 +35,19 @@ from aiseed_weather.services.forecast_service import (
 logger = logging.getLogger(__name__)
 
 
+# HRES 0p25 oper publishes step=0..144 every 3h, step=150..240 every 6h.
+# A pragmatic synoptic subset (D+0 through D+10) for the step selector:
+STEP_OPTIONS = (0, 24, 48, 72, 96, 120, 144, 168, 192, 216, 240)
+
+
+def _step_label(h: int) -> str:
+    if h == 0:
+        return "T+0h (analysis)"
+    days = h // 24
+    rest = h % 24
+    return f"T+{h}h (D+{days})" if rest == 0 else f"T+{h}h"
+
+
 def _figure_to_png_bytes(fig: Figure, *, dpi: int = 120) -> bytes:
     # Flet 0.85's ft.Image accepts raw bytes via src=; no base64 wrapping
     # needed. We render to PNG because matplotlib + Flet share no in-process
@@ -43,6 +58,19 @@ def _figure_to_png_bytes(fig: Figure, *, dpi: int = 120) -> bytes:
     return buf.getvalue()
 
 
+def _step_dropdown(value: int, on_change) -> ft.Control:
+    return ft.Dropdown(
+        label="Forecast step",
+        value=str(value),
+        width=200,
+        options=[
+            ft.dropdown.Option(key=str(h), text=_step_label(h))
+            for h in STEP_OPTIONS
+        ],
+        on_change=on_change,
+    )
+
+
 @ft.component
 def MapView(settings: UserSettings):
     state, set_state = ft.use_state("idle")  # idle | loading | ready | error | disabled
@@ -50,8 +78,9 @@ def MapView(settings: UserSettings):
     error, set_error = ft.use_state(None)
     run_label, set_run_label = ft.use_state("")
     progress, set_progress = ft.use_state("")
+    step_hours, set_step_hours = ft.use_state(0)
 
-    async def load(force: bool = False):
+    async def load(*, step: int, force: bool = False):
         set_state("loading")
         set_error(None)
         set_progress("Initializing forecast service…")
@@ -65,11 +94,11 @@ def MapView(settings: UserSettings):
         try:
             t0 = time.perf_counter()
             set_progress("Probing latest ECMWF run…")
-            run_time = await service.latest_run(step_hours=0, param="msl")
+            run_time = await service.latest_run(step_hours=step, param="msl")
             t_probe = time.perf_counter()
-            label = f"{run_time:%Y%m%d %Hz} IFS"
-            set_progress(f"Fetching MSL grid · {label}…")
-            request = ForecastRequest(run_time=run_time, step_hours=0, param="msl")
+            label = f"{run_time:%Y%m%d %Hz} IFS · {_step_label(step)}"
+            set_progress(f"Fetching MSL grid · step={step}h · {run_time:%Y%m%d %Hz}…")
+            request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
             ds = await service.fetch(request)
             t_fetch = time.perf_counter()
             set_progress("Rendering chart (matplotlib + cartopy)…")
@@ -85,8 +114,9 @@ def MapView(settings: UserSettings):
             set_progress("")
             set_state("ready")
             logger.info(
-                "Map load timing: probe=%.2fs fetch+decode=%.2fs render=%.2fs "
-                "encode=%.2fs total=%.2fs",
+                "Map load timing (step=%dh): probe=%.2fs fetch+decode=%.2fs "
+                "render=%.2fs encode=%.2fs total=%.2fs",
+                step,
                 t_probe - t0,
                 t_fetch - t_probe,
                 t_render - t_fetch,
@@ -94,9 +124,15 @@ def MapView(settings: UserSettings):
                 t_encode - t0,
             )
         except Exception as e:
-            logger.exception("Map view failed to load forecast")
+            logger.exception("Map view failed to load forecast (step=%dh)", step)
             set_error(f"{type(e).__name__}: {e}")
             set_state("error")
+
+    def handle_step_change(e):
+        new_step = int(e.control.value)
+        set_step_hours(new_step)
+        # Parameter change is a user action → fetch immediately.
+        ft.context.page.run_task(load, step=new_step)
 
     if state == "disabled":
         return ft.Column(
@@ -121,9 +157,10 @@ def MapView(settings: UserSettings):
                     "MSL (mean sea level pressure) from the latest ECMWF IFS run.",
                     color=ft.Colors.GREY,
                 ),
+                _step_dropdown(step_hours, lambda e: set_step_hours(int(e.control.value))),
                 ft.FilledButton(
                     content=ft.Text("取得 / Fetch"),
-                    on_click=lambda _: ft.context.page.run_task(load),
+                    on_click=lambda _: ft.context.page.run_task(load, step=step_hours),
                 ),
             ],
         )
@@ -149,7 +186,7 @@ def MapView(settings: UserSettings):
                 ft.Text(f"Could not render map: {error}", color=ft.Colors.RED),
                 ft.FilledButton(
                     content=ft.Text("再取得 / Retry"),
-                    on_click=lambda _: ft.context.page.run_task(load, force=True),
+                    on_click=lambda _: ft.context.page.run_task(load, step=step_hours, force=True),
                 ),
             ],
         )
@@ -164,9 +201,17 @@ def MapView(settings: UserSettings):
                         f"MSL · ECMWF IFS · {run_label}",
                         size=16, weight=ft.FontWeight.BOLD,
                     ),
-                    ft.FilledButton(
-                        content=ft.Text("再取得"),
-                        on_click=lambda _: ft.context.page.run_task(load, force=True),
+                    ft.Row(
+                        controls=[
+                            _step_dropdown(step_hours, handle_step_change),
+                            ft.FilledButton(
+                                content=ft.Text("再取得"),
+                                on_click=lambda _: ft.context.page.run_task(
+                                    load, step=step_hours, force=True,
+                                ),
+                            ),
+                        ],
+                        spacing=8,
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
