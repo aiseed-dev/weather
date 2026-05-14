@@ -10,9 +10,13 @@ snow depth.
 
 from __future__ import annotations
 
+import logging
+
 import flet as ft
 
 from aiseed_weather.services.jma_amedas_service import JmaAmedasService
+
+logger = logging.getLogger(__name__)
 
 
 VARIABLES = (
@@ -40,6 +44,7 @@ def AmedasView():
             set_snapshot(s)
             set_state("ready")
         except Exception as e:
+            logger.exception("AMeDAS view failed to fetch JMA snapshot")
             set_error(str(e))
             set_state("error")
 

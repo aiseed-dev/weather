@@ -74,6 +74,18 @@ Implications for all code and UI:
 - Long-running CPU work (GRIB decoding, plotting) goes through
   `asyncio.to_thread` to avoid blocking the UI.
 
+## Logging
+
+- `main.py` configures `logging.basicConfig` to stderr at INFO. The level
+  can be overridden with the `AISEED_WEATHER_LOG` env var.
+- Every module that catches exceptions uses a module-level
+  `logger = logging.getLogger(__name__)`.
+- View `except` blocks **must** call `logger.exception("...")` before
+  updating UI state. Flet only surfaces a short string to the user; without
+  this the traceback is lost and dev-time debugging is impossible.
+- Services should log expected-but-noteworthy events (cache miss, fallback
+  endpoint) at INFO, unexpected ones at WARNING.
+
 ## File header
 
 Every `.py` source file starts with:

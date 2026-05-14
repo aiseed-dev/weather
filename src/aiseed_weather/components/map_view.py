@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+import logging
 
 import flet as ft
 import matplotlib.pyplot as plt
@@ -27,6 +28,8 @@ from aiseed_weather.services.forecast_service import (
     ForecastService,
 )
 from aiseed_weather.services.run_selector import latest_available_run
+
+logger = logging.getLogger(__name__)
 
 
 def _figure_to_png_b64(fig: Figure, *, dpi: int = 120) -> str:
@@ -68,6 +71,7 @@ def MapView(settings: UserSettings):
             set_run_label(label)
             set_state("ready")
         except Exception as e:
+            logger.exception("Map view failed to load forecast")
             set_error(f"{type(e).__name__}: {e}")
             set_state("error")
 

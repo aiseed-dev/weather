@@ -10,9 +10,13 @@ no background polling, explicit Refresh button.
 
 from __future__ import annotations
 
+import logging
+
 import flet as ft
 
 from aiseed_weather.services.jma_radar_service import JmaRadarService
+
+logger = logging.getLogger(__name__)
 
 
 @ft.component
@@ -30,6 +34,7 @@ def RadarView():
             set_snapshot(s)
             set_state("ready")
         except Exception as e:
+            logger.exception("Radar view failed to fetch JMA snapshot")
             set_error(str(e))
             set_state("error")
 
