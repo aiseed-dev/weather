@@ -25,7 +25,6 @@ import asyncio
 import io
 import logging
 import time
-from dataclasses import dataclass
 
 import flet as ft
 import matplotlib.pyplot as plt
@@ -42,10 +41,12 @@ from aiseed_weather.figures.regions import (
 from aiseed_weather.models.user_settings import UserSettings
 from aiseed_weather.products.catalog import (
     CATEGORY_LABELS,
+    FIELDS as DATA_FIELDS,
     STATUS_LABELS,
     Status,
     Tab as ProductTab,
     by_key as product_by_key,
+    field_by_key,
     grouped_by_category,
 )
 from aiseed_weather.services.forecast_service import (
@@ -55,25 +56,6 @@ from aiseed_weather.services.forecast_service import (
     ForecastService,
 )
 
-
-# Layer / variable choices. Only MSL is wired through to a figure builder
-# today; the rest are listed so the UI reflects the planned roadmap (and
-# so adding a builder is the only thing standing between us and them
-# lighting up).
-@dataclass(frozen=True)
-class LayerOption:
-    key: str
-    label: str
-    available: bool
-
-
-LAYER_OPTIONS: tuple[LayerOption, ...] = (
-    LayerOption("msl", "MSL — 海面更正気圧 / Mean sea level pressure", True),
-    LayerOption("t2m", "T2m — 2m気温 / 2-metre temperature", False),
-    LayerOption("gh500", "Z500 — 500hPa高度 / 500 hPa geopotential", False),
-    LayerOption("wind10m", "10m風 / 10-metre wind", False),
-    LayerOption("tp", "降水 / Total precipitation", False),
-)
 
 logger = logging.getLogger(__name__)
 
@@ -130,12 +112,15 @@ def MapView(settings: UserSettings):
     # render.
     anim_task_ref, _ = ft.use_state(lambda: {"task": None})
 
-    # User-facing selectors. region drives the chart projection + extent;
-    # layer will eventually pick which figures/ builder to call.
+    # User-facing selectors. region drives the chart projection +
+    # extent; data_field_key picks which meteorological field to fetch
+    # and render (msl, t2m, gh@500, ...).
     region, set_region = ft.use_state(GLOBAL)
-    layer, set_layer = ft.use_state("msl")
+    data_field_key, set_data_field_key = ft.use_state("msl")
     show_region_dialog, set_show_region_dialog = ft.use_state(False)
     show_time_dialog, set_show_time_dialog = ft.use_state(False)
+    show_data_dialog, set_show_data_dialog = ft.use_state(False)
+    selected_field = field_by_key(data_field_key)
 
     # Selected product (data product within this tab). Today only
     # ecmwf_hres is wired through; selecting a planned product just
@@ -628,6 +613,152 @@ def MapView(settings: UserSettings):
         ],
     )
 
+    # ----- Data dialog (fields the selected model can provide) -----
+    def _select_data_field(key: str):
+        if key != data_field_key:
+            set_data_field_key(key)
+            # Different field → cached PNGs are wrong (we'd be showing
+            # the old field's rendering). Drop the cache.
+            set_frames({})
+        set_show_data_dialog(False)
+
+    def _build_field_card(f) -> ft.Control:
+        is_selectable = f.status == Status.IMPLEMENTED
+        is_current = f.key == data_field_key
+        if f.status == Status.IMPLEMENTED:
+            accent = ft.Colors.GREEN
+        elif f.status == Status.PLANNED:
+            accent = ft.Colors.AMBER
+        elif f.status == Status.EXTERNAL_DEP:
+            accent = ft.Colors.BLUE_GREY
+        else:
+            accent = ft.Colors.OUTLINE
+        return ft.Container(
+            padding=ft.Padding.all(10),
+            border=ft.Border.all(
+                width=2 if is_current else 1,
+                color=(
+                    ft.Colors.PRIMARY if is_current
+                    else ft.Colors.OUTLINE_VARIANT
+                ),
+            ),
+            border_radius=6,
+            content=ft.Column(
+                spacing=4,
+                controls=[
+                    ft.Row(
+                        spacing=8,
+                        controls=[
+                            ft.Container(
+                                width=4, height=18, bgcolor=accent,
+                                border_radius=2,
+                            ),
+                            ft.Text(
+                                f.bilingual_label() + f.level_suffix(),
+                                size=13, weight=ft.FontWeight.BOLD,
+                                expand=True,
+                            ),
+                            ft.Text(
+                                STATUS_LABELS[f.status],
+                                size=10, color=ft.Colors.GREY,
+                            ),
+                        ],
+                    ),
+                    ft.Text(
+                        f"短縮名: {f.key} · 単位: {f.unit}",
+                        size=11,
+                    ),
+                    ft.Text(
+                        f"既定レイヤー: {f.typical_layer}",
+                        size=10, color=ft.Colors.GREY,
+                    ),
+                    ft.Text(
+                        f.notes, size=10, color=ft.Colors.GREY, italic=True,
+                        visible=bool(f.notes),
+                    ),
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.END,
+                        controls=[
+                            ft.FilledTonalButton(
+                                "選択中 / Current" if is_current else "選択 / Select",
+                                disabled=(not is_selectable) or is_current,
+                                on_click=(
+                                    (lambda _, k=f.key: _select_data_field(k))
+                                    if is_selectable else None
+                                ),
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        )
+
+    # Group by surface vs pressure-level for readability.
+    surface_fields = [f for f in DATA_FIELDS if f.level is None and not f.key.startswith("thickness") and not f.key.startswith("theta")]
+    pressure_fields = [f for f in DATA_FIELDS if f.level is not None]
+    derived_fields = [f for f in DATA_FIELDS if f.key.startswith("thickness") or f.key.startswith("theta")]
+
+    data_sections: list[ft.Control] = []
+    if surface_fields:
+        data_sections.append(
+            ft.Text(
+                "地表面 / Surface", size=12, weight=ft.FontWeight.BOLD,
+                color=ft.Colors.GREY,
+            )
+        )
+        data_sections.extend(_build_field_card(f) for f in surface_fields)
+        data_sections.append(ft.Container(height=4))
+    if pressure_fields:
+        data_sections.append(
+            ft.Text(
+                "気圧面 / Pressure levels", size=12, weight=ft.FontWeight.BOLD,
+                color=ft.Colors.GREY,
+            )
+        )
+        data_sections.extend(_build_field_card(f) for f in pressure_fields)
+        data_sections.append(ft.Container(height=4))
+    if derived_fields:
+        data_sections.append(
+            ft.Text(
+                "導出量 / Derived", size=12, weight=ft.FontWeight.BOLD,
+                color=ft.Colors.GREY,
+            )
+        )
+        data_sections.extend(_build_field_card(f) for f in derived_fields)
+
+    data_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("データ選択 / Select data field"),
+        content=ft.Container(
+            width=600,
+            height=520,
+            content=ft.Column(
+                tight=True,
+                scroll=ft.ScrollMode.ADAPTIVE,
+                spacing=8,
+                controls=[
+                    ft.Text(
+                        f"プロダクト: {selected_product.bilingual_label()}",
+                        size=11, color=ft.Colors.GREY,
+                    ),
+                    ft.Text(
+                        "モデルが提供する場 (field) の中から、地図に描画するもの"
+                        "を選びます。利用可否は実装状況による。",
+                        size=11, color=ft.Colors.GREY,
+                    ),
+                    ft.Divider(height=8),
+                    *data_sections,
+                ],
+            ),
+        ),
+        actions=[
+            ft.TextButton(
+                "閉じる / Close",
+                on_click=lambda _: set_show_data_dialog(False),
+            ),
+        ],
+    )
+
     region_dialog = ft.AlertDialog(
         modal=True,
         title=ft.Text("地域設定 / Region Settings"),
@@ -862,6 +993,7 @@ def MapView(settings: UserSettings):
     # updated draft state preserves cursor / focus.
     ft.use_dialog(
         catalog_dialog if show_catalog_dialog
+        else data_dialog if show_data_dialog
         else region_dialog if show_region_dialog
         else time_dialog if show_time_dialog
         else None
@@ -935,23 +1067,6 @@ def MapView(settings: UserSettings):
             ),
         )
 
-    # Layer dropdown — only the MSL option is functional today; the rest
-    # advertise the planned variables and are disabled.
-    layer_dropdown = ft.Dropdown(
-        label="レイヤー / Layer",
-        value=layer,
-        dense=True,
-        options=[
-            ft.dropdown.Option(
-                key=opt.key,
-                text=opt.label + ("" if opt.available else "  (近日)"),
-                disabled=not opt.available,
-            )
-            for opt in LAYER_OPTIONS
-        ],
-        on_select=lambda e: set_layer(e.control.value),
-    )
-
     region_dropdown = ft.Dropdown(
         label="地域 / Region",
         value=(region.key if region.key != "custom" else None),
@@ -1017,13 +1132,27 @@ def MapView(settings: UserSettings):
                     on_click=lambda _: set_show_catalog_dialog(True),
                 ),
 
+                # ── Data: which field of the model to fetch & render ──
                 ft.Divider(height=14),
                 ft.Text(
-                    "レイヤー / Layer", size=11,
+                    "データ / Data", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
-                layer_dropdown,
+                ft.Text(
+                    selected_field.bilingual_label() + selected_field.level_suffix(),
+                    size=12, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    f"短縮名: {selected_field.key} · 単位: {selected_field.unit}",
+                    size=10, color=ft.Colors.GREY,
+                ),
+                ft.TextButton(
+                    content=ft.Text("データ変更 / Change data…", size=12),
+                    icon=ft.Icons.DATASET,
+                    on_click=lambda _: set_show_data_dialog(True),
+                ),
 
+                # ── Region: viewport / projection ──
                 ft.Divider(height=14),
                 ft.Text(
                     "地域 / Region", size=11,
@@ -1036,6 +1165,22 @@ def MapView(settings: UserSettings):
                     on_click=lambda _: _open_region_dialog(),
                 ),
 
+                # ── Layer: rendering style applied to the Data ──
+                ft.Divider(height=14),
+                ft.Text(
+                    "レイヤー / Layer", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    selected_field.typical_layer,
+                    size=12,
+                ),
+                ft.Text(
+                    "(スタイルバリエーション選択は将来)",
+                    size=10, color=ft.Colors.GREY, italic=True,
+                ),
+
+                # ── Forecast cycle (run initialization time) ──
                 ft.Divider(height=14),
                 ft.Text(
                     "予報起点時間 / Forecast cycle", size=11,

@@ -821,6 +821,191 @@ CATALOG: tuple[Product, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class DataField:
+    """A specific meteorological field that a model produces.
+
+    "Model decides where the bytes come from; Data decides what to
+    fetch from those bytes; Layer decides how to draw them."
+
+    Most numerical models share a common subset of fields (MSL, T2m,
+    geopotential at standard pressure levels, etc.), so we list them
+    once here. Whether any given model actually publishes a given
+    field is a separate (per-product) consideration that's not modeled
+    yet — for now status flags whether we render it.
+    """
+
+    key: str             # cfgrib / ecmwf short name (msl, t2m, gh, ...)
+    label_ja: str
+    label_en: str
+    unit: str            # display unit
+    level: int | None    # pressure level in hPa; None = surface / single-level
+    typical_layer: str   # default rendering style we apply
+    status: Status
+    notes: str = ""
+
+    def bilingual_label(self) -> str:
+        if self.label_ja == self.label_en:
+            return self.label_ja
+        return f"{self.label_ja} / {self.label_en}"
+
+    def level_suffix(self) -> str:
+        return "" if self.level is None else f" @ {self.level} hPa"
+
+
+FIELDS: tuple[DataField, ...] = (
+    # ---- Surface ----
+    DataField(
+        key="msl",
+        label_ja="海面更正気圧",
+        label_en="Mean sea level pressure",
+        unit="hPa",
+        level=None,
+        typical_layer="等圧線 4 hPa, 太線 20 hPa (synoptic convention)",
+        status=Status.IMPLEMENTED,
+    ),
+    DataField(
+        key="t2m",
+        label_ja="2m気温",
+        label_en="2-metre temperature",
+        unit="°C",
+        level=None,
+        typical_layer="カラーシェーディング 2°C, 0°C 太線",
+        status=Status.PLANNED,
+    ),
+    DataField(
+        key="d2m",
+        label_ja="2m露点温度",
+        label_en="2-metre dewpoint temperature",
+        unit="°C",
+        level=None,
+        typical_layer="カラーシェーディング",
+        status=Status.PLANNED,
+    ),
+    DataField(
+        key="10wind",
+        label_ja="10m風",
+        label_en="10-metre wind (u, v)",
+        unit="m/s",
+        level=None,
+        typical_layer="風向風速バーブ + 等風速線",
+        status=Status.PLANNED,
+        notes="ECMWF Open Data の u10/v10 を組合せて描画。",
+    ),
+    DataField(
+        key="gust",
+        label_ja="突風 (10m)",
+        label_en="10-metre wind gust",
+        unit="m/s",
+        level=None,
+        typical_layer="カラーシェーディング",
+        status=Status.PLANNED,
+    ),
+    DataField(
+        key="tp",
+        label_ja="積算降水量",
+        label_en="Total precipitation",
+        unit="mm",
+        level=None,
+        typical_layer="非線形カラーシェーディング (0.1/1/5/10/30/50/100 mm)",
+        status=Status.PLANNED,
+        notes="ECMWF Open Data は accumulated since run start; 区間値は差分計算。",
+    ),
+    DataField(
+        key="sp",
+        label_ja="地表気圧",
+        label_en="Surface pressure",
+        unit="hPa",
+        level=None,
+        typical_layer="等圧線",
+        status=Status.PLANNED,
+    ),
+    # ---- Pressure levels ----
+    DataField(
+        key="gh500",
+        label_ja="500hPa高度",
+        label_en="Geopotential height",
+        unit="m",
+        level=500,
+        typical_layer="等高度線 60 m, 5640m太線",
+        status=Status.PLANNED,
+    ),
+    DataField(
+        key="gh850",
+        label_ja="850hPa高度",
+        label_en="Geopotential height",
+        unit="m",
+        level=850,
+        typical_layer="等高度線 30 m",
+        status=Status.PLANNED,
+    ),
+    DataField(
+        key="t850",
+        label_ja="850hPa気温",
+        label_en="Temperature",
+        unit="°C",
+        level=850,
+        typical_layer="カラーシェーディング 3°C, 0°C 太線",
+        status=Status.PLANNED,
+    ),
+    DataField(
+        key="t500",
+        label_ja="500hPa気温",
+        label_en="Temperature",
+        unit="°C",
+        level=500,
+        typical_layer="等温線",
+        status=Status.PLANNED,
+    ),
+    DataField(
+        key="w700",
+        label_ja="700hPa鉛直流",
+        label_en="Vertical velocity (ω)",
+        unit="Pa/s",
+        level=700,
+        typical_layer="上昇流域シェーディング",
+        status=Status.PLANNED,
+    ),
+    DataField(
+        key="r700",
+        label_ja="700hPa相対湿度",
+        label_en="Relative humidity",
+        unit="%",
+        level=700,
+        typical_layer="高湿域シェーディング (>70%)",
+        status=Status.PLANNED,
+    ),
+    # ---- Derived ----
+    DataField(
+        key="thickness_500_1000",
+        label_ja="500-1000hPa層厚",
+        label_en="500-1000 hPa thickness",
+        unit="m",
+        level=None,
+        typical_layer="等層厚線 60 m, 5400m太線",
+        status=Status.PLANNED,
+        notes="gh@500 − gh@1000 で計算。",
+    ),
+    DataField(
+        key="theta_e_850",
+        label_ja="850hPa相当温位",
+        label_en="850 hPa equivalent potential temperature",
+        unit="K",
+        level=850,
+        typical_layer="等値線 3 K, 高 θe 域シェーディング",
+        status=Status.PLANNED,
+        notes="気温・湿度・気圧から計算。",
+    ),
+)
+
+
+def field_by_key(k: str) -> DataField:
+    for f in FIELDS:
+        if f.key == k:
+            return f
+    raise KeyError(f"No field with key={k!r}")
+
+
 def by_key(k: str) -> Product:
     for p in CATALOG:
         if p.key == k:
