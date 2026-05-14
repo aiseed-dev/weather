@@ -271,7 +271,7 @@ class Product:
     tab: Tab
     category: Category
     agency: str
-    spec: str             # "0.25° / 3h / T+0..T+240h" etc
+    spec: str             # "0.25° / 3h / T+0..T+360h" etc
     source_url: str
     backend: str          # short description of how we'd fetch it
     license_info: str
@@ -282,6 +282,19 @@ class Product:
     # initial source from config.toml's forecast_source instead).
     sources: tuple[DataSource, ...] = ()
     default_source_key: str = ""
+    # "atomic"      – every step of a cycle becomes available at the
+    #                 same moment (typical of HRES IFS via Open Data).
+    # "progressive" – each step is published as it's produced; the run
+    #                 trickles out over a window (AIFS, typical of AI
+    #                 inference where step N ships independently).
+    # "unknown"     – not yet researched; used for catalog entries
+    #                 we have not validated against the upstream.
+    publication_mode: str = "unknown"
+    # Average lag from cycle nominal time to when the cycle is fully
+    # available, in hours. For atomic publishers this is the single
+    # publication time; for progressive ones it's the time the LAST
+    # step appears.
+    publication_lag_h: float | None = None
 
     def bilingual_label(self) -> str:
         # Display "日本語 / English" while we don't have language settings.
@@ -306,13 +319,16 @@ CATALOG: tuple[Product, ...] = (
         tab=Tab.MODELS,
         category=Category.MEDIUM_RANGE,
         agency="ECMWF",
-        spec="0.25° / 3h up to T+144h, 6h to T+240h / 4 cycles/day (00,06,12,18 UTC)",
+        spec="0.25° / 00z+12z は T+360h まで (0..144h 3h, 144..360h 6h); "
+             "06z+18z は T+90h まで 3h / 4 cycles/day (00,06,12,18 UTC)",
         source_url="https://www.ecmwf.int/en/forecasts/datasets/open-data",
         backend="ecmwf-opendata client → GRIB2 from s3://ecmwf-forecasts",
         license_info="CC-BY-4.0",
         status=Status.IMPLEMENTED,
         sources=_ECMWF_OPENDATA_SOURCES,
         default_source_key="aws",
+        publication_mode="atomic",
+        publication_lag_h=7.5,
     ),
     Product(
         key="ecmwf_aifs_single",
@@ -326,9 +342,16 @@ CATALOG: tuple[Product, ...] = (
         backend="ecmwf-opendata client with model='aifs'",
         license_info="CC-BY-4.0",
         status=Status.PLANNED,
-        notes="Same Open Data backend as HRES — mostly an integration story.",
+        notes="HRES と同じ Open Data backend だが配信モデルが違う: "
+              "AI 推論は step ごとに完成次第アップロードされる progressive "
+              "publication なので、UI は step ごとに公開状況を probe する "
+              "必要がある (HRES の atomic な 7.5h ラグの仮定は使えない)。",
         sources=_ECMWF_OPENDATA_SOURCES,
         default_source_key="aws",
+        publication_mode="progressive",
+        # First steps appear quickly (~cycle+1h?); full T+360h takes ~3-4h.
+        # Empirical confirmation pending.
+        publication_lag_h=4.0,
     ),
     Product(
         key="ncep_gfs",
@@ -443,6 +466,8 @@ CATALOG: tuple[Product, ...] = (
         notes="Mean / spread / probability-of-exceedance / plume などの集約 view 必要。",
         sources=_ECMWF_OPENDATA_SOURCES,
         default_source_key="aws",
+        publication_mode="atomic",
+        publication_lag_h=7.5,
     ),
     Product(
         key="ecmwf_aifs_ens",
@@ -456,8 +481,11 @@ CATALOG: tuple[Product, ...] = (
         backend="ecmwf-opendata client with AIFS ensemble streams",
         license_info="CC-BY-4.0",
         status=Status.PLANNED,
+        notes="AIFS Single と同じく progressive publication の見込み。",
         sources=_ECMWF_OPENDATA_SOURCES,
         default_source_key="aws",
+        publication_mode="progressive",
+        publication_lag_h=5.0,
     ),
 
     # ── Reanalysis ──

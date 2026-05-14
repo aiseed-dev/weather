@@ -76,7 +76,7 @@ PRELOAD_SPACING_SEC = 0.5
 # Choices we expose in the Data dialog. Horizon caps where the animation
 # stops; cadence is the spacing between frames. ECMWF only publishes 6h
 # after T+144h, so a 3h cadence past 144h actually yields 6h there.
-HORIZON_CHOICES_H: tuple[int, ...] = (24, 48, 72, 120, 168, 240)
+HORIZON_CHOICES_H: tuple[int, ...] = (24, 48, 72, 120, 168, 240, 360)
 CADENCE_CHOICES_H: tuple[int, ...] = (3, 6, 12, 24)
 
 
@@ -123,15 +123,22 @@ def _recent_base_times(n: int = 20):
 
 
 # HRES IFS 0p25 oper publishes 4 cycles per day with two different
-# forecast horizons. 00z and 12z run to T+240h (10 days); 06z and 18z
+# forecast horizons. 00z and 12z run to T+360h (15 days); 06z and 18z
 # only run to T+90h (~3.75 days), giving forecasters short-range
-# refreshes between the long cycles. To get a smooth T+0..T+240h
-# animation from a short cycle, we stitch its short-range steps with
+# refreshes between the long cycles. To get a smooth animation past
+# T+90h from a short cycle, we stitch its short-range steps with
 # extension steps from the most recent long cycle preceding it.
-_LONG_CYCLE_HORIZON_H = 240
+#
+# Publication is ATOMIC per cycle — every step's GRIB2 appears with
+# the same scheduled timestamp on the dissemination index, roughly
+# cycle + 7.5h after the nominal cycle time. Earlier docs said "7 to
+# 9 hours" but observation of the index page confirms a single
+# publication moment, not a progressive window.
+_LONG_CYCLE_HORIZON_H = 360
 _SHORT_CYCLE_HORIZON_H = 90
 _LONG_CYCLE_HOURS = (0, 12)
 _SHORT_CYCLE_HOURS = (6, 18)
+_PUBLICATION_LAG_H = 7.5  # cycle → publication time, observed atomic
 
 
 def _is_short_cycle(cycle_dt) -> bool:
@@ -159,23 +166,18 @@ def _prior_long_cycle(cycle_dt):
     return dt
 
 
-def _publication_window(cycle_dt):
-    """Approximate (start, end) UTC times when this cycle is being
-    published. Per the ECMWF Open Data README:
+def _publication_time(cycle_dt):
+    """Approximate single UTC time when this cycle becomes available.
 
-      "The data is available between 7 and 9 hours after the forecast
-       starting date and time, depending on the forecasting system and
-       the time step specified."
-       (https://github.com/ecmwf/ecmwf-opendata)
-
-    So early (short-range) steps appear ~cycle+7h and the long-range
-    tail is in by ~cycle+9h. We expose three UI states based on this:
-    公開予定 (before +7h) / 公開中 (7h..9h) / 公開済み (after +9h).
+    ECMWF Open Data publishes a cycle ATOMICALLY — all GRIB2 files for
+    a cycle appear on the dissemination index with the same scheduled
+    timestamp, roughly cycle_time + 7.5h. Empirical: the 20260514 00z
+    run's index showed every step file scheduled at 14-05-2026 07:34,
+    confirming simultaneous publication, not the progressive window
+    older docs implied.
     """
     from datetime import timedelta
-    start = cycle_dt + timedelta(hours=7)
-    end = cycle_dt + timedelta(hours=9)
-    return start, end
+    return cycle_dt + timedelta(hours=_PUBLICATION_LAG_H)
 
 
 def _stitch_plan(
@@ -1140,15 +1142,17 @@ def MapView(settings: UserSettings):
     _preview_frame_count = len(_preview_steps)
 
     # Build base-time radio rows with horizon + publication info.
+    # HRES publication is atomic per cycle (single time), so the label
+    # has two states: 公開予定 / 公開済み. AIFS publishes progressively
+    # — when we wire AIFS Single, this label generator will need to
+    # know which model it's annotating.
     def _base_time_label(dt: datetime) -> str:
-        pub_start, pub_end = _publication_window(dt)
+        pub_at = _publication_time(dt)
         now_utc = datetime.now(tz=timezone.utc)
-        if now_utc < pub_start:
-            pub_state = f"公開予定 {pub_start:%m/%d %H:%M}"
-        elif now_utc < pub_end:
-            pub_state = f"公開中 (〜{pub_end:%H:%M})"
+        if now_utc < pub_at:
+            pub_state = f"公開予定 {pub_at:%m/%d %H:%M}"
         else:
-            pub_state = "公開済み"
+            pub_state = f"公開済み ({pub_at:%m/%d %H:%M})"
         horizon = _cycle_horizon_h(dt)
         if _is_short_cycle(dt):
             ext = _prior_long_cycle(dt)
