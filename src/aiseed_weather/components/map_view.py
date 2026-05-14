@@ -161,12 +161,20 @@ def _prior_long_cycle(cycle_dt):
 
 def _publication_window(cycle_dt):
     """Approximate (start, end) UTC times when this cycle is being
-    published. ECMWF publishes progressively over a ~5h window. Used
-    for UI hints only; we don't gate on these times."""
+    published. Per the ECMWF Open Data README:
+
+      "The data is available between 7 and 9 hours after the forecast
+       starting date and time, depending on the forecasting system and
+       the time step specified."
+       (https://github.com/ecmwf/ecmwf-opendata)
+
+    So early (short-range) steps appear ~cycle+7h and the long-range
+    tail is in by ~cycle+9h. We expose three UI states based on this:
+    公開予定 (before +7h) / 公開中 (7h..9h) / 公開済み (after +9h).
+    """
     from datetime import timedelta
-    # Empirical lag (varies a bit by load). Long cycles take longer.
-    start = cycle_dt + timedelta(hours=5, minutes=30)
-    end = cycle_dt + timedelta(hours=7)
+    start = cycle_dt + timedelta(hours=7)
+    end = cycle_dt + timedelta(hours=9)
     return start, end
 
 
