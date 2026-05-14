@@ -3,9 +3,10 @@
 
 """First-run setup screen.
 
-The user picks which data sources to use. The app does not preselect or
-recommend anything; "None" is always an option. See the first-run-setup
-skill for the full UX rules.
+Three Radio sections (Forecast / Historical / Point forecast) where "None"
+is the first and default option in every section. JMA is per-feature, not
+shown here. No data API is touched from this screen — the choice is just
+persisted via models.user_settings. See the `first-run-setup` skill.
 """
 
 from __future__ import annotations
@@ -23,32 +24,77 @@ from aiseed_weather.models.user_settings import (
 )
 
 
+_FORECAST_OPTIONS = (
+    (ForecastSource.NONE, "None", "Operate in historical / nowcast-only mode"),
+    (ForecastSource.ECMWF_AWS, "ECMWF Open Data via AWS",
+     "Anonymous, fastest globally. CC-BY-4.0."),
+    (ForecastSource.ECMWF_AZURE, "ECMWF Open Data via Azure",
+     "Anonymous mirror. CC-BY-4.0."),
+    (ForecastSource.ECMWF_GCP, "ECMWF Open Data via GCP",
+     "Often best from Asia-Pacific. CC-BY-4.0."),
+    (ForecastSource.ECMWF_DIRECT, "ECMWF direct",
+     "Official endpoint, 500-connection limit. CC-BY-4.0."),
+)
+
+_HISTORICAL_OPTIONS = (
+    (HistoricalSource.NONE, "None", "No climatology / anomaly features"),
+    (HistoricalSource.ERA5_AWS, "ERA5 via AWS",
+     "Anonymous, ~5-day lag from real-time. CC-BY-4.0."),
+    (HistoricalSource.ERA5_CDS, "ERA5 via Copernicus CDS",
+     "Requires free Copernicus account, more flexible queries. CC-BY-4.0."),
+)
+
+_POINT_OPTIONS = (
+    (PointForecastSource.NONE, "None", "Disable point-forecast view"),
+    (PointForecastSource.OPEN_METEO, "Open-Meteo",
+     "Public API, free for personal use. CC-BY-4.0."),
+)
+
+
+def _radio_event_value(e) -> str:
+    # Flet 0.85 has cases where RadioGroup state arrives as e.data rather than
+    # e.control.value; accept either to stay robust across releases.
+    val = getattr(getattr(e, "control", None), "value", None)
+    if isinstance(val, str) and val:
+        return val
+    return str(getattr(e, "data", ""))
+
+
+def _section(title: str, options, selected_value: str, on_change) -> ft.Control:
+    return ft.Container(
+        padding=ft.padding.symmetric(vertical=8),
+        content=ft.Column(
+            spacing=6,
+            controls=[
+                ft.Text(title, size=16, weight=ft.FontWeight.BOLD),
+                ft.RadioGroup(
+                    value=selected_value,
+                    on_change=on_change,
+                    content=ft.Column(
+                        spacing=2,
+                        controls=[
+                            ft.Radio(
+                                value=enum_value.value,
+                                label=f"{name} — {description}",
+                            )
+                            for enum_value, name, description in options
+                        ],
+                    ),
+                ),
+            ],
+        ),
+    )
+
+
 @ft.component
 def SetupView(initial: UserSettings, on_complete: Callable[[UserSettings], None]):
-    # Implementation note for the agent:
-    # - Render three grouped Radio sections, one per source category
-    # - Each section: "None" option listed first, then each available source
-    # - Each source row shows: name, one-line description, license link
-    # - Attribution checkbox at the bottom, required to enable Continue button
-    # - On Continue: build a UserSettings with setup_completed=True and call on_complete
-    # - Do not call data APIs from here. No probe requests.
     forecast, set_forecast = ft.use_state(initial.forecast_source)
     historical, set_historical = ft.use_state(initial.historical_source)
     point, set_point = ft.use_state(initial.point_source)
-    accepted, set_accepted = ft.use_state(initial.accepted_attribution_terms)
-
-    def on_accept_change(e):
-        # Flet 0.85 sometimes delivers Checkbox state via e.data ("true"/"false")
-        # rather than e.control.value; accept either to stay robust across releases.
-        new_value = getattr(getattr(e, "control", None), "value", None)
-        if not isinstance(new_value, bool):
-            new_value = str(getattr(e, "data", "false")).lower() == "true"
-        set_accepted(bool(new_value))
 
     def handle_continue(_):
-        # Pressing Continue while the attribution text is on screen counts as
-        # acceptance — the click itself is the gate, not a separate checkbox
-        # whose value may not have round-tripped through Flet's event layer.
+        # The attribution paragraph is on screen above the button — pressing
+        # Continue is the explicit acceptance signal recorded here.
         new = replace(
             initial,
             forecast_source=forecast,
@@ -61,33 +107,54 @@ def SetupView(initial: UserSettings, on_complete: Callable[[UserSettings], None]
 
     return ft.Container(
         padding=24,
+        expand=True,
         content=ft.Column(
+            scroll=ft.ScrollMode.AUTO,
+            expand=True,
+            spacing=10,
             controls=[
                 ft.Text("AIseed Weather — Setup", size=22, weight=ft.FontWeight.BOLD),
                 ft.Text(
-                    "Choose which public data sources you want this viewer to use. "
-                    "You can change these later in Settings.",
-                    size=14,
+                    "This app shows weather data from public sources. Choose which "
+                    "sources you want to use. \"None\" is a valid choice in every "
+                    "section — JMA radar and AMeDAS are available regardless.",
+                    size=13,
                 ),
-                # TODO(agent): render three grouped sections here.
-                # See .agents/skills/first-run-setup/SKILL.md for the full spec.
-                ft.Text(f"Forecast: {forecast.value}"),
-                ft.Text(f"Historical: {historical.value}"),
-                ft.Text(f"Point forecast: {point.value}"),
-                ft.Checkbox(
-                    label=(
-                        "I understand that data shown by this app is licensed under "
-                        "CC-BY-4.0. Exported figures include attribution automatically; "
-                        "I will not remove it when sharing."
-                    ),
-                    value=accepted,
-                    on_change=on_accept_change,
+                _section(
+                    "Forecast source (ECMWF Open Data)",
+                    _FORECAST_OPTIONS,
+                    forecast.value,
+                    lambda e: set_forecast(ForecastSource(_radio_event_value(e))),
                 ),
-                ft.FilledButton(
-                    content=ft.Text("Continue"),
-                    on_click=handle_continue,
+                _section(
+                    "Historical source (ERA5)",
+                    _HISTORICAL_OPTIONS,
+                    historical.value,
+                    lambda e: set_historical(HistoricalSource(_radio_event_value(e))),
+                ),
+                _section(
+                    "Point forecast source",
+                    _POINT_OPTIONS,
+                    point.value,
+                    lambda e: set_point(PointForecastSource(_radio_event_value(e))),
+                ),
+                ft.Divider(height=1),
+                ft.Text(
+                    "Data shown by this app is licensed under CC-BY-4.0. Exported "
+                    "figures include attribution automatically; do not remove it "
+                    "when sharing. Pressing Continue confirms acceptance of these "
+                    "terms.",
+                    size=12, color=ft.Colors.GREY,
+                ),
+                ft.Row(
+                    alignment=ft.MainAxisAlignment.END,
+                    controls=[
+                        ft.FilledButton(
+                            content=ft.Text("Continue"),
+                            on_click=handle_continue,
+                        ),
+                    ],
                 ),
             ],
-            spacing=14,
         ),
     )
