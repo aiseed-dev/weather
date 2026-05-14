@@ -86,21 +86,27 @@ def RadarView():
             set_state("error")
 
     # Mount-time fetch: schedule once when the component first renders.
-    ft.use_effect(lambda: ft.run_task(load), deps=[])
+    ft.use_effect(lambda: ft.context.page.run_task(load), deps=[])
 
     if state == "loading":
         return ft.ProgressRing()
     if state == "error":
-        return ErrorPanel(error, on_retry=lambda _: ft.run_task(lambda: load(force=True)))
-    return RadarCanvas(data, on_refresh=lambda _: ft.run_task(lambda: load(force=True)))
+        return ErrorPanel(error, on_retry=lambda _: ft.context.page.run_task(load, force=True))
+    return RadarCanvas(data, on_refresh=lambda _: ft.context.page.run_task(load, force=True))
 ```
 
-Two important details:
+Three important details:
 
 - `ft.use_effect(..., deps=[])` runs once per component lifecycle, not on
   every render. This is the "mount" trigger.
 - The Refresh button calls `load(force=True)`, which the service interprets
   as "bypass cache".
+- Use `ft.context.page.run_task(handler, *args, **kwargs)` to schedule an
+  async coroutine from a sync callback. `run_task` requires a coroutine
+  *function* — pass `load` directly and let it forward the args; do **not**
+  wrap it in `lambda: load(...)` (a lambda is not a coroutine function and
+  `run_task` will reject it). There is no top-level `ft.run_task` in
+  Flet ≥ 0.85.
 
 ## What the service must support
 
