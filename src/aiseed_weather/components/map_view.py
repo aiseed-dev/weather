@@ -40,6 +40,14 @@ from aiseed_weather.figures.regions import (
     custom_region,
 )
 from aiseed_weather.models.user_settings import UserSettings
+from aiseed_weather.products.catalog import (
+    CATEGORY_LABELS,
+    STATUS_LABELS,
+    Status,
+    Tab as ProductTab,
+    by_key as product_by_key,
+    grouped_by_category,
+)
 from aiseed_weather.services.forecast_service import (
     ForecastDisabledError,
     ForecastRequest,
@@ -127,6 +135,13 @@ def MapView(settings: UserSettings):
     layer, set_layer = ft.use_state("msl")
     show_region_dialog, set_show_region_dialog = ft.use_state(False)
     show_time_dialog, set_show_time_dialog = ft.use_state(False)
+
+    # Selected product (data product within this tab). Today only
+    # ecmwf_hres is wired through; selecting a planned product just
+    # updates the display so the user can browse the catalog.
+    product_key, set_product_key = ft.use_state("ecmwf_hres")
+    show_catalog_dialog, set_show_catalog_dialog = ft.use_state(False)
+    selected_product = product_by_key(product_key)
 
     async def _render_step(service, run_time, step: int, region_: Region) -> bytes:
         request = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
@@ -442,6 +457,121 @@ def MapView(settings: UserSettings):
             new_region = region_by_key(draft_region_key)
         apply_region(new_region)
 
+    def _select_product(key: str):
+        set_product_key(key)
+        set_show_catalog_dialog(False)
+        # Today only ECMWF HRES is wired through. If the user picks a
+        # planned product, we update the display and the chart area
+        # explains why nothing changed. No silent failure.
+
+    def _build_product_card(p) -> ft.Control:
+        # One row in the catalog dialog: status icon + name + spec + meta.
+        is_selectable = p.status == Status.IMPLEMENTED
+        is_current = p.key == product_key
+        # Status-tinted accent so the user can scan implemented vs planned
+        # at a glance.
+        if p.status == Status.IMPLEMENTED:
+            accent = ft.Colors.GREEN
+        elif p.status == Status.PLANNED:
+            accent = ft.Colors.AMBER
+        elif p.status == Status.EXTERNAL_DEP:
+            accent = ft.Colors.BLUE_GREY
+        else:
+            accent = ft.Colors.OUTLINE
+        return ft.Container(
+            padding=ft.Padding.all(10),
+            border=ft.Border.all(
+                width=2 if is_current else 1,
+                color=ft.Colors.PRIMARY if is_current else ft.Colors.OUTLINE_VARIANT,
+            ),
+            border_radius=6,
+            content=ft.Column(
+                spacing=4,
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Container(
+                                width=4, height=18, bgcolor=accent,
+                                border_radius=2,
+                            ),
+                            ft.Text(
+                                p.bilingual_label(),
+                                size=13, weight=ft.FontWeight.BOLD,
+                                expand=True,
+                            ),
+                            ft.Text(
+                                STATUS_LABELS[p.status],
+                                size=10, color=ft.Colors.GREY,
+                            ),
+                        ],
+                        spacing=8,
+                    ),
+                    ft.Text(
+                        p.spec, size=11,
+                    ),
+                    ft.Text(
+                        f"{p.agency} · {p.backend}",
+                        size=10, color=ft.Colors.GREY,
+                    ),
+                    ft.Text(
+                        f"License: {p.license_info} · {p.source_url}",
+                        size=10, color=ft.Colors.GREY,
+                    ),
+                    ft.Text(
+                        p.notes, size=10, color=ft.Colors.GREY, italic=True,
+                        visible=bool(p.notes),
+                    ),
+                    ft.Row(
+                        alignment=ft.MainAxisAlignment.END,
+                        controls=[
+                            ft.FilledTonalButton(
+                                "選択中 / Current" if is_current else "選択 / Select",
+                                disabled=(not is_selectable) or is_current,
+                                on_click=(
+                                    (lambda _, k=p.key: _select_product(k))
+                                    if is_selectable else None
+                                ),
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        )
+
+    # Build catalog dialog body — sections by category, cards inside.
+    catalog_sections: list[ft.Control] = []
+    for cat, products in grouped_by_category(ProductTab.MODELS):
+        catalog_sections.append(
+            ft.Text(
+                CATEGORY_LABELS[cat],
+                size=12, weight=ft.FontWeight.BOLD,
+                color=ft.Colors.GREY,
+            ),
+        )
+        for p in products:
+            catalog_sections.append(_build_product_card(p))
+        catalog_sections.append(ft.Container(height=4))
+
+    catalog_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("プロダクト選択 / Select product"),
+        content=ft.Container(
+            width=620,
+            height=520,
+            content=ft.Column(
+                scroll=ft.ScrollMode.ADAPTIVE,
+                spacing=8,
+                controls=catalog_sections,
+            ),
+        ),
+        actions=[
+            ft.TextButton(
+                "閉じる / Close",
+                on_click=lambda _: set_show_catalog_dialog(False),
+            ),
+        ],
+    )
+
     region_dialog = ft.AlertDialog(
         modal=True,
         title=ft.Text("地域設定 / Region Settings"),
@@ -579,7 +709,8 @@ def MapView(settings: UserSettings):
     # diffs the dialog dataclass field-by-field, so re-rendering with
     # updated draft state preserves cursor / focus.
     ft.use_dialog(
-        region_dialog if show_region_dialog
+        catalog_dialog if show_catalog_dialog
+        else region_dialog if show_region_dialog
         else time_dialog if show_time_dialog
         else None
     )
@@ -681,6 +812,15 @@ def MapView(settings: UserSettings):
         on_select=lambda e: apply_region(region_by_key(e.control.value)),
     )
 
+    # Status badge for the currently-selected product (green for fully
+    # wired through, amber for "planned, viewing only").
+    if selected_product.status == Status.IMPLEMENTED:
+        product_status_color = ft.Colors.GREEN
+        product_status_text = "実装済み / wired"
+    else:
+        product_status_color = ft.Colors.AMBER
+        product_status_text = "閲覧のみ / catalog only"
+
     control_panel = ft.Container(
         width=240,
         bgcolor=ft.Colors.SURFACE_CONTAINER_LOW,
@@ -689,10 +829,40 @@ def MapView(settings: UserSettings):
             spacing=8,
             scroll=ft.ScrollMode.ADAPTIVE,
             controls=[
-                ft.Text("ECMWF Map", size=16, weight=ft.FontWeight.BOLD),
                 ft.Text(
-                    f"Source: {settings.forecast_source.value}",
+                    "モデル / Models", size=16, weight=ft.FontWeight.BOLD,
+                ),
+
+                ft.Divider(height=14),
+                ft.Text(
+                    "プロダクト / Product", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    selected_product.bilingual_label(),
+                    size=12, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Row(
+                    spacing=6,
+                    controls=[
+                        ft.Container(
+                            width=8, height=8, bgcolor=product_status_color,
+                            border_radius=4,
+                        ),
+                        ft.Text(
+                            product_status_text,
+                            size=10, color=ft.Colors.GREY,
+                        ),
+                    ],
+                ),
+                ft.Text(
+                    selected_product.spec,
                     size=10, color=ft.Colors.GREY,
+                ),
+                ft.TextButton(
+                    content=ft.Text("モデル変更 / Change…", size=12),
+                    icon=ft.Icons.LIST_ALT,
+                    on_click=lambda _: set_show_catalog_dialog(True),
                 ),
 
                 ft.Divider(height=14),

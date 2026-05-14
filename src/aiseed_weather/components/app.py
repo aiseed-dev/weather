@@ -33,9 +33,15 @@ def App():
             ["map", "radar", "amedas"][e.control.selected_index],
         ),
         destinations=[
-            ft.NavigationBarDestination(icon=ft.Icons.PUBLIC, label="Map"),
-            ft.NavigationBarDestination(icon=ft.Icons.RADAR, label="Radar"),
-            ft.NavigationBarDestination(icon=ft.Icons.SENSORS, label="AMeDAS"),
+            ft.NavigationBarDestination(
+                icon=ft.Icons.PUBLIC, label="モデル / Models",
+            ),
+            ft.NavigationBarDestination(
+                icon=ft.Icons.RADAR, label="ナウキャスト / Nowcast",
+            ),
+            ft.NavigationBarDestination(
+                icon=ft.Icons.LOCATION_ON, label="地点 / Points",
+            ),
         ],
     )
 
