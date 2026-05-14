@@ -131,7 +131,7 @@ def MapView(settings: UserSettings):
             ft.Container(
                 content=ft.Image(
                     src_base64=image_b64,
-                    fit=ft.ImageFit.CONTAIN,
+                    fit=ft.BoxFit.CONTAIN,
                     expand=True,
                 ),
                 expand=True,
