@@ -71,7 +71,7 @@ def MapView(settings: UserSettings):
             set_error(f"{type(e).__name__}: {e}")
             set_state("error")
 
-    ft.use_effect(lambda: ft.run_task(load), [])
+    ft.use_effect(lambda: ft.context.page.run_task(load), [])
 
     if state == "disabled":
         return ft.Column(
@@ -104,7 +104,7 @@ def MapView(settings: UserSettings):
                 ft.Text(f"Could not render map: {error}", color=ft.Colors.RED),
                 ft.FilledButton(
                     content=ft.Text("再取得 / Retry"),
-                    on_click=lambda _: ft.run_task(lambda: load(force=True)),
+                    on_click=lambda _: ft.context.page.run_task(load, force=True),
                 ),
             ],
         )
@@ -120,7 +120,7 @@ def MapView(settings: UserSettings):
                     ),
                     ft.FilledButton(
                         content=ft.Text("再取得"),
-                        on_click=lambda _: ft.run_task(lambda: load(force=True)),
+                        on_click=lambda _: ft.context.page.run_task(load, force=True),
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
