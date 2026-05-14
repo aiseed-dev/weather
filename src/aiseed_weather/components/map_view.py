@@ -15,6 +15,7 @@ import asyncio
 import base64
 import io
 import logging
+import time
 
 import flet as ft
 import matplotlib.pyplot as plt
@@ -58,17 +59,31 @@ def MapView(settings: UserSettings):
             return
 
         try:
+            t0 = time.perf_counter()
             run_time = await service.latest_run(step_hours=0, param="msl")
+            t_probe = time.perf_counter()
             label = f"{run_time:%Y%m%d %Hz} IFS"
             request = ForecastRequest(run_time=run_time, step_hours=0, param="msl")
             ds = await service.fetch(request)
+            t_fetch = time.perf_counter()
             fig = await asyncio.to_thread(
                 render_msl, ds, projection="robinson", run_id=label,
             )
+            t_render = time.perf_counter()
             b64 = await asyncio.to_thread(_figure_to_png_b64, fig)
+            t_encode = time.perf_counter()
             set_image_b64(b64)
             set_run_label(label)
             set_state("ready")
+            logger.info(
+                "Map load timing: probe=%.2fs fetch+decode=%.2fs render=%.2fs "
+                "encode=%.2fs total=%.2fs",
+                t_probe - t0,
+                t_fetch - t_probe,
+                t_render - t_fetch,
+                t_encode - t_render,
+                t_encode - t0,
+            )
         except Exception as e:
             logger.exception("Map view failed to load forecast")
             set_error(f"{type(e).__name__}: {e}")
