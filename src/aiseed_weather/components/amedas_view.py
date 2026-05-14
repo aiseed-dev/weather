@@ -14,6 +14,7 @@ import logging
 
 import flet as ft
 
+from aiseed_weather.models.user_settings import UserSettings, resolved_data_dir
 from aiseed_weather.services.jma_amedas_service import JmaAmedasService
 
 logger = logging.getLogger(__name__)
@@ -29,13 +30,13 @@ VARIABLES = (
 
 
 @ft.component
-def AmedasView():
+def AmedasView(settings: UserSettings):
     state, set_state = ft.use_state("idle")
     snapshot, set_snapshot = ft.use_state(None)
     error, set_error = ft.use_state(None)
     variable, set_variable = ft.use_state("temperature")
 
-    service = JmaAmedasService()
+    service = JmaAmedasService(data_dir=resolved_data_dir(settings))
 
     async def load(force: bool = False):
         set_state("loading")

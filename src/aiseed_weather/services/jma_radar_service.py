@@ -31,7 +31,6 @@ from datetime import datetime
 from pathlib import Path
 
 import httpx
-from platformdirs import user_cache_dir
 
 from aiseed_weather.services import jma_endpoints
 
@@ -48,8 +47,8 @@ class RadarSnapshot:
 
 
 class JmaRadarService:
-    def __init__(self):
-        self._cache_dir = Path(user_cache_dir("aiseed-weather")) / "jma" / "radar"
+    def __init__(self, *, data_dir: Path):
+        self._cache_dir = data_dir / "jma" / "radar"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._meta_path = self._cache_dir / "_latest_meta.json"
 

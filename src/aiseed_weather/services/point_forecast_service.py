@@ -26,9 +26,12 @@ from pathlib import Path
 
 import httpx
 import numpy as np
-from platformdirs import user_cache_dir
 
-from aiseed_weather.models.user_settings import PointForecastSource, UserSettings
+from aiseed_weather.models.user_settings import (
+    PointForecastSource,
+    UserSettings,
+    resolved_data_dir,
+)
 
 
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -79,7 +82,7 @@ class PointForecastService:
             raise PointForecastDisabledError(
                 "Point forecast source is not configured."
             )
-        self._cache_dir = Path(user_cache_dir("aiseed-weather")) / "openmeteo"
+        self._cache_dir = resolved_data_dir(settings) / "openmeteo"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
     async def fetch(

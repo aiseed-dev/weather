@@ -14,18 +14,19 @@ import logging
 
 import flet as ft
 
+from aiseed_weather.models.user_settings import UserSettings, resolved_data_dir
 from aiseed_weather.services.jma_radar_service import JmaRadarService
 
 logger = logging.getLogger(__name__)
 
 
 @ft.component
-def RadarView():
+def RadarView(settings: UserSettings):
     state, set_state = ft.use_state("idle")  # idle | loading | ready | error
     snapshot, set_snapshot = ft.use_state(None)
     error, set_error = ft.use_state(None)
 
-    service = JmaRadarService()
+    service = JmaRadarService(data_dir=resolved_data_dir(settings))
 
     async def load(force: bool = False):
         set_state("loading")

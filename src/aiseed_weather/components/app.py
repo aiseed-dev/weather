@@ -23,8 +23,8 @@ def App():
     settings = result.settings
     body = {
         "map": lambda: MapView(settings=settings),
-        "radar": lambda: RadarView(),
-        "amedas": lambda: AmedasView(),
+        "radar": lambda: RadarView(settings=settings),
+        "amedas": lambda: AmedasView(settings=settings),
     }[active_view]()
 
     nav = ft.NavigationBar(

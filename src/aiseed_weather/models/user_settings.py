@@ -47,6 +47,7 @@ class UserSettings:
     reference_period_start: int = 1991
     reference_period_end: int = 2020
     accept_attribution: bool = False
+    data_dir: str | None = None  # None → default user_cache_dir("aiseed-weather")
 
     def has_forecast(self) -> bool:
         return self.forecast_source != ForecastSource.NONE
@@ -57,6 +58,19 @@ class UserSettings:
 
 def config_path() -> Path:
     return Path(user_config_dir("aiseed-weather")) / "config.toml"
+
+
+def resolved_data_dir(settings: UserSettings) -> Path:
+    """The on-disk root for caches and downloads.
+
+    Honors the user's ``data_dir`` setting (e.g. an external SSD); falls
+    back to ``user_cache_dir("aiseed-weather")`` if unset. ``~`` and
+    ``$HOME`` are expanded so the config file can be filesystem-friendly.
+    """
+    if settings.data_dir:
+        return Path(settings.data_dir).expanduser()
+    from platformdirs import user_cache_dir
+    return Path(user_cache_dir("aiseed-weather"))
 
 
 _TEMPLATE = """\
@@ -102,6 +116,18 @@ reference_period_end = 2020
 # confirm you understand and will not remove attribution when sharing.
 # Export buttons stay disabled until this is true.
 accept_attribution = false
+
+# ---- Data storage ----
+# Cached downloads (ECMWF GRIB2, JMA tiles/snapshots, Open-Meteo JSON) live
+# under this directory, organized by source:
+#   <data_dir>/ecmwf/{YYYYMMDD}/{HH}z/{param}_{step}h.grib2
+#   <data_dir>/jma/radar/...
+#   <data_dir>/jma/amedas/...
+#   <data_dir>/openmeteo/...
+# Leave commented out to use ~/.cache/aiseed-weather ($XDG_CACHE_HOME honored).
+# Set it explicitly if you want data on a different disk (e.g. an external
+# SSD). Tilde and $HOME are expanded.
+# data_dir = "/mnt/wxdata/aiseed-weather"
 """
 
 
@@ -156,6 +182,7 @@ def _enum_field(data: dict, key: str, enum_cls, default):
 
 
 def _from_mapping(data: dict) -> UserSettings:
+    raw_data_dir = data.get("data_dir")
     return UserSettings(
         forecast_source=_enum_field(
             data, "forecast_source", ForecastSource, _DEFAULTS.forecast_source,
@@ -175,4 +202,5 @@ def _from_mapping(data: dict) -> UserSettings:
         accept_attribution=bool(
             data.get("accept_attribution", _DEFAULTS.accept_attribution),
         ),
+        data_dir=str(raw_data_dir) if raw_data_dir else None,
     )

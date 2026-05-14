@@ -23,7 +23,6 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from platformdirs import user_cache_dir
 
 from aiseed_weather.services import jma_endpoints
 
@@ -53,8 +52,8 @@ class AmedasSnapshot:
 
 
 class JmaAmedasService:
-    def __init__(self):
-        self._cache_dir = Path(user_cache_dir("aiseed-weather")) / "jma" / "amedas"
+    def __init__(self, *, data_dir: Path):
+        self._cache_dir = data_dir / "jma" / "amedas"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._latest_path = self._cache_dir / "_latest_snapshot.json"
         self._station_table_path = self._cache_dir / "amedastable.json"

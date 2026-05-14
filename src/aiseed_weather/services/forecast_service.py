@@ -27,9 +27,12 @@ from pathlib import Path
 
 import xarray as xr
 from ecmwf.opendata import Client
-from platformdirs import user_cache_dir
 
-from aiseed_weather.models.user_settings import ForecastSource, UserSettings
+from aiseed_weather.models.user_settings import (
+    ForecastSource,
+    UserSettings,
+    resolved_data_dir,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +64,7 @@ class ForecastService:
             )
         client_source = _CLIENT_SOURCE[settings.forecast_source]
         self._client = Client(source=client_source)
-        self._cache_dir = Path(user_cache_dir("aiseed-weather")) / "grib"
+        self._cache_dir = resolved_data_dir(settings) / "ecmwf"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
     async def fetch(self, request: ForecastRequest) -> xr.Dataset:
@@ -86,8 +89,11 @@ class ForecastService:
         return run
 
     def _cache_path(self, r: ForecastRequest) -> Path:
-        stamp = r.run_time.strftime("%Y%m%d_%Hz")
-        return self._cache_dir / f"{stamp}_{r.step_hours}h_{r.param}.grib2"
+        # Hierarchical layout so a single run gathers all its fields under
+        # one directory and many runs don't crowd a single flat folder.
+        run_dir = self._cache_dir / r.run_time.strftime("%Y%m%d") / r.run_time.strftime("%Hz")
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir / f"{r.param}_{r.step_hours}h.grib2"
 
     def _download(self, r: ForecastRequest, target: Path) -> None:
         self._client.retrieve(

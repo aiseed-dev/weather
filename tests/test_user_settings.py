@@ -56,6 +56,7 @@ def test_load_or_init_parses_valid_config(fake_config):
                 "reference_period_start = 1981",
                 "reference_period_end = 2010",
                 "accept_attribution = true",
+                'data_dir = "/mnt/wxdata/aiseed"',
             ],
         ),
         encoding="utf-8",
@@ -69,6 +70,20 @@ def test_load_or_init_parses_valid_config(fake_config):
     assert s.reference_period_start == 1981
     assert s.reference_period_end == 2010
     assert s.accept_attribution is True
+    assert s.data_dir == "/mnt/wxdata/aiseed"
+
+
+def test_resolved_data_dir_defaults_to_user_cache(monkeypatch):
+    from platformdirs import user_cache_dir
+    s = UserSettings()  # data_dir is None
+    assert user_settings.resolved_data_dir(s) == \
+        __import__("pathlib").Path(user_cache_dir("aiseed-weather"))
+
+
+def test_resolved_data_dir_honors_setting_and_expands_tilde(monkeypatch):
+    monkeypatch.setenv("HOME", "/home/test")
+    s = UserSettings(data_dir="~/wxdata")
+    assert str(user_settings.resolved_data_dir(s)) == "/home/test/wxdata"
 
 
 def test_load_or_init_reports_invalid_enum(fake_config):

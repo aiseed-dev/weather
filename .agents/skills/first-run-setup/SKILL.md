@@ -48,6 +48,23 @@ with the dataclass; do not introduce a second source of truth.
 | `reference_period_start` | int | `1991` | year |
 | `reference_period_end` | int | `2020` | year |
 | `accept_attribution` | bool | `false` | `true` gates export features |
+| `data_dir` | string \| omitted | omitted → `user_cache_dir("aiseed-weather")` | absolute path (e.g. `/mnt/wxdata/aiseed`); tilde and `$HOME` are expanded |
+
+## Data directory layout
+
+All cached downloads live under `data_dir` (or the default user cache):
+
+```
+<data_dir>/
+  ecmwf/{YYYYMMDD}/{HH}z/{param}_{step}h.grib2   # ECMWF Open Data GRIB2
+  jma/radar/...                                  # JMA radar tiles + meta
+  jma/amedas/...                                 # AMeDAS snapshots + station table
+  openmeteo/...                                  # Open-Meteo JSON cache
+```
+
+The hierarchical ECMWF layout means a single run gathers all its fields
+under one directory, which scales much better than a flat `grib/` folder
+when many runs × many params × many steps are cached.
 
 JMA radar and AMeDAS are intentionally not in the config — JMA endpoints
 need no credentials and using the feature is itself the act of choosing
