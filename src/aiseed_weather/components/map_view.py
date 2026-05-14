@@ -71,7 +71,7 @@ def _step_dropdown(value: int, on_change) -> ft.Control:
             ft.dropdown.Option(key=str(h), text=_step_label(h))
             for h in STEP_OPTIONS
         ],
-        on_change=on_change,
+        on_select=on_change,
     )
 
 

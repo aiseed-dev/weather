@@ -115,7 +115,7 @@ def AmedasView(settings: UserSettings):
             ft.Dropdown(
                 value=variable,
                 options=[ft.dropdown.Option(key=k, text=label) for k, label in VARIABLES],
-                on_change=lambda e: set_variable(e.control.value),
+                on_select=lambda e: set_variable(e.control.value),
             ),
             # TODO(agent): render the map of stations with the selected variable.
             # See figures/ for a Japan basemap with scatter markers colored by value.
