@@ -37,6 +37,39 @@ from aiseed_weather.models.user_settings import (
 logger = logging.getLogger(__name__)
 
 
+# ecmwf-opendata's Client.retrieve() does not forward retry kwargs to the
+# underlying multiurl downloader. multiurl's default is retry_after=120s
+# / maximum_tries=500 — fine for a one-off archival fetch, catastrophic
+# when sequentially preloading 65 animation frames: a single S3 "503 Slow
+# Down" pauses everything for 2 minutes, and S3 is happy to issue several
+# of those when we hammer one bucket prefix.
+#
+# Patch multiurl.http.robust() so it uses exponential backoff
+# (5s → 60s, ×2 per attempt) and caps retries at 10. Worst-case retry
+# budget per frame is now ~6 min instead of >16 hours.
+def _install_multiurl_backoff_patch() -> None:
+    import multiurl.http as _mh
+    if getattr(_mh, "_aiseed_patched", False):
+        return
+    _orig = _mh.robust
+
+    def _patched(call, maximum_tries=500, retry_after=120, mirrors=None):
+        if not isinstance(retry_after, (list, tuple)):
+            retry_after = (5, 60, 2)
+        if maximum_tries > 10:
+            maximum_tries = 10
+        return _orig(call, maximum_tries, retry_after, mirrors)
+
+    _mh.robust = _patched
+    _mh._aiseed_patched = True
+    logger.info(
+        "Patched multiurl.http.robust: retry_after=(5, 60, 2) max_tries=10"
+    )
+
+
+_install_multiurl_backoff_patch()
+
+
 _CLIENT_SOURCE = {
     ForecastSource.ECMWF_AWS: "aws",
     ForecastSource.ECMWF_AZURE: "azure",
@@ -73,6 +106,10 @@ class ForecastService:
         if not path.exists() or path.stat().st_size == 0:
             await asyncio.to_thread(self._download, request, path)
         return await asyncio.to_thread(self._decode, path)
+
+    def is_cached(self, request: ForecastRequest) -> bool:
+        path = self._cache_path(request)
+        return path.exists() and path.stat().st_size > 0
 
     async def latest_run(self, *, step_hours: int, param: str) -> datetime:
         """Return the run datetime of the most recent publicly available run

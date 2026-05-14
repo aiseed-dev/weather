@@ -46,7 +46,12 @@ logger = logging.getLogger(__name__)
 # is heavy to preload — figure roughly 10 min cold, 5 min cache-warm for
 # all frames on a typical laptop.
 STEP_OPTIONS = tuple(list(range(0, 145, 3)) + list(range(150, 241, 6)))
-FRAME_INTERVAL_SEC = 0.9  # animation frame duration
+FRAME_INTERVAL_SEC = 0.9  # animation playback frame duration
+# Spacing between consecutive S3 fetches during preload. S3's per-prefix
+# rate limit triggers "503 Slow Down" if we hammer one bucket prefix; a
+# small pause between requests keeps the rate below that threshold and
+# spares us from multi-second retry backoffs.
+PRELOAD_SPACING_SEC = 0.5
 
 
 def _step_label(h: int) -> str:
@@ -177,14 +182,20 @@ def MapView(settings: UserSettings):
             for i, step in enumerate(STEP_OPTIONS):
                 if step in new_frames:
                     continue
+                req = ForecastRequest(run_time=run_time, step_hours=step, param="msl")
+                hit_cache = service.is_cached(req)
                 set_progress(
                     f"Loading frame {i + 1}/{len(STEP_OPTIONS)} · "
-                    f"{_step_label(step)}…"
+                    f"{_step_label(step)}{' (cached)' if hit_cache else ''}…"
                 )
                 new_frames[step] = await _render_step(service, run_time, step)
                 # Push the partial dict to state so subsequent renders
                 # (e.g. seeking via the slider) can see frames already loaded.
                 set_frames(dict(new_frames))
+                # Polite spacing only after frames we actually downloaded —
+                # cache hits don't touch S3, no need to slow them down.
+                if not hit_cache and i + 1 < len(STEP_OPTIONS):
+                    await asyncio.sleep(PRELOAD_SPACING_SEC)
 
             set_progress("")
             set_state("ready")
