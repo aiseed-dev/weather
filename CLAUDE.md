@@ -59,9 +59,12 @@ See **AGENTS.md** for skill locations and ordering rules.
 
 ## Environment
 
+The environment is created **inside the repository** as `./.venv`, not as a
+named global environment. See `README.md` for the full rationale.
+
 ```bash
-mamba env create -f environment.yml
-mamba activate aiseed-weather
+mamba env create --prefix ./.venv -f environment.yml
+mamba activate ./.venv
 ```
 
 `pyproject.toml` is for packaging metadata. `environment.yml` is the source

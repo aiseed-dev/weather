@@ -12,12 +12,15 @@
 #
 # Setup:
 #   1. Install Miniforge: https://github.com/conda-forge/miniforge
-#   2. mamba env create -f environment.yml
-#      (or: conda env create -f environment.yml)
-#   3. mamba activate aiseed-weather
+#   2. mamba env create --prefix ./.venv -f environment.yml
+#      (or: conda env create --prefix ./.venv -f environment.yml)
+#   3. mamba activate ./.venv
 #   4. python -m aiseed_weather.main
+#
+# Note: this file intentionally has no `name:` field. The environment lives
+# inside the repository as `./.venv` (prefix-based), so a name would be unused
+# and could mislead anyone running plain `mamba env create -f environment.yml`.
 
-name: aiseed-weather
 channels:
   - conda-forge
 dependencies:
