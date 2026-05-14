@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
+# Matplotlib must be configured for headless rendering before anything else
+# imports pyplot. We render figures in worker threads via asyncio.to_thread,
+# and any GUI backend (TkAgg, QtAgg, GTK) hangs when used off the main thread.
+import matplotlib
+
+matplotlib.use("Agg")
+
 import logging
 import os
 import sys
