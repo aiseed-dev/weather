@@ -12,9 +12,12 @@ MatplotlibChart. Mount-time fetch + explicit Refresh, no polling
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 
 import flet as ft
-from flet.matplotlib_chart import MatplotlibChart
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 from aiseed_weather.figures.msl_chart import render_msl
 from aiseed_weather.models.user_settings import UserSettings
@@ -26,10 +29,20 @@ from aiseed_weather.services.forecast_service import (
 from aiseed_weather.services.run_selector import latest_available_run
 
 
+def _figure_to_png_b64(fig: Figure, *, dpi: int = 120) -> str:
+    # The on-screen render goes through PNG because Flet's MatplotlibChart
+    # bridge has moved to a separate package across Flet versions. PNG via
+    # `ft.Image(src_base64=...)` is the version-agnostic path.
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
 @ft.component
 def MapView(settings: UserSettings):
     state, set_state = ft.use_state("idle")  # idle | loading | ready | error | disabled
-    figure, set_figure = ft.use_state(None)
+    image_b64, set_image_b64 = ft.use_state(None)
     error, set_error = ft.use_state(None)
     run_label, set_run_label = ft.use_state("")
 
@@ -50,7 +63,8 @@ def MapView(settings: UserSettings):
             fig = await asyncio.to_thread(
                 render_msl, ds, projection="robinson", run_id=label,
             )
-            set_figure(fig)
+            b64 = await asyncio.to_thread(_figure_to_png_b64, fig)
+            set_image_b64(b64)
             set_run_label(label)
             set_state("ready")
         except Exception as e:
@@ -112,7 +126,11 @@ def MapView(settings: UserSettings):
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
             ),
             ft.Container(
-                content=MatplotlibChart(figure=figure, expand=True, isolated=True),
+                content=ft.Image(
+                    src_base64=image_b64,
+                    fit=ft.ImageFit.CONTAIN,
+                    expand=True,
+                ),
                 expand=True,
             ),
         ],
