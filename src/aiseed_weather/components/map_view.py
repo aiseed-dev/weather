@@ -303,7 +303,10 @@ def _valid_time_display(base_time, step_hours: int) -> str:
 
 
 @ft.component
-def MapView(settings: UserSettings):
+def MapView(settings: UserSettings, fetch_session: dict | None = None):
+    # fetch_session is owned by App so the download lifecycle survives
+    # tab navigation. We read/write its keys instead of holding
+    # component-local state. None is allowed for standalone testing.
     state, set_state = ft.use_state("idle")  # idle | loading | ready | error | disabled
     image_bytes, set_image_bytes = ft.use_state(None)
     error, set_error = ft.use_state(None)
@@ -338,19 +341,32 @@ def MapView(settings: UserSettings):
     # NOT cancel it; only the explicit Stop button does. The shared
     # mutable cancel_event lets us tell the loop to wind down without
     # a hard cancel (which can leave half-written files).
-    download_task_ref, _ = ft.use_state(
-        lambda: {"task": None, "cancel_event": None},
-    )
     # Render parameters the loop should use for any frame that needs
     # rendering. Updated every render so a region/layer change is
     # picked up by the next iteration of the loop without restarting
     # the download. The loop reads these via the holder rather than
     # closure-capturing them at task launch.
     render_params_ref, _ = ft.use_state(lambda: {})
-    download_running, set_download_running = ft.use_state(False)
-    download_progress, set_download_progress = ft.use_state(
-        lambda: {"done": 0, "total": 0}
-    )
+
+    # Download lifecycle is owned by App via fetch_session so it
+    # survives tab navigation. Fall back to local state if no
+    # session was injected (tests / standalone embedding).
+    if fetch_session is not None:
+        download_task_ref = fetch_session["task_ref"]
+        download_running = fetch_session["running"]
+        set_download_running = fetch_session["set_running"]
+        download_progress = fetch_session["progress"]
+        set_download_progress = fetch_session["set_progress"]
+        _set_fetch_status_text = fetch_session["set_status_text"]
+    else:
+        download_task_ref, _ = ft.use_state(
+            lambda: {"task": None, "cancel_event": None},
+        )
+        download_running, set_download_running = ft.use_state(False)
+        download_progress, set_download_progress = ft.use_state(
+            lambda: {"done": 0, "total": 0}
+        )
+        _set_fetch_status_text = lambda _x: None
 
     # User-facing selectors. region drives the chart projection +
     # extent; data_field_key picks which meteorological field to fetch
@@ -821,15 +837,19 @@ def MapView(settings: UserSettings):
                     f" [ext {src_cycle:%Hz}]" if src_cycle != cycle else ""
                 )
                 if hit_cache:
-                    set_progress(
+                    msg = (
                         f"Cache check {i + 1}/{total} · "
                         f"{_step_label(display_step)}{ext_tag}"
                     )
+                    set_progress(msg)
+                    _set_fetch_status_text(msg)
                 else:
-                    set_progress(
+                    msg = (
                         f"DL {i + 1}/{total} · "
                         f"{_step_label(display_step)}{ext_tag}…"
                     )
+                    set_progress(msg)
+                    _set_fetch_status_text(msg)
                     try:
                         await service.download(req)
                     except Exception:
@@ -881,6 +901,7 @@ def MapView(settings: UserSettings):
         finally:
             set_download_running(False)
             set_progress("")
+            _set_fetch_status_text("")
 
     def start_download():
         # Cancel any previous download first.
@@ -898,6 +919,12 @@ def MapView(settings: UserSettings):
         download_task_ref["cancel_event"] = cancel_event
 
     def stop_download():
+        # Defer to the App-level stop if we have a session, so the
+        # global banner clears in lockstep. Falls through to local
+        # stop logic when no session (tests / standalone).
+        if fetch_session is not None and "stop" in fetch_session:
+            fetch_session["stop"]()
+            return
         ev = download_task_ref.get("cancel_event")
         if ev is not None:
             ev.set()
