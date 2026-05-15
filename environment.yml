@@ -54,7 +54,12 @@ dependencies:
   - pytest-asyncio
   - ruff
 
-  # Flet via pip — beta with frequent releases, manage directly
+  # Flet via pip — beta with frequent releases, manage directly.
+  # `flet[all]` pulls flet-cli (the `flet run` / `flet pack` commands),
+  # flet-desktop (Flutter-based native window runtime), and flet-web
+  # (browser runtime). The core `flet` package alone is just the
+  # Python API — without the extras, `flet run` cannot launch a
+  # window.
   - pip
   - pip:
-      - flet>=0.85
+      - flet[all]>=0.85
