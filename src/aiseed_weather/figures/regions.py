@@ -42,7 +42,12 @@ ANTARCTIC = Region(
     projection="south_polar",
     extent=(-180.0, 180.0, -90.0, -30.0),
 )
-JAPAN = Region("japan", "日本周辺 / Japan", "platecarree", (115.0, 155.0, 20.0, 50.0))
+# Matches JMA ASAS (Asian Surface Analysis) standard chart extent —
+# 100°E to 180°E, equator to 60°N. The narrower zoom that just frames
+# the Japanese archipelago lost the synoptic context (Siberian high,
+# Pacific high, mid-latitude lows tracking off the continent) that
+# every JP analyst expects on a "日本周辺" chart.
+JAPAN = Region("japan", "日本周辺 / Japan", "platecarree", (100.0, 180.0, 0.0, 60.0))
 EAST_ASIA = Region("east_asia", "東アジア / East Asia", "platecarree", (95.0, 165.0, 5.0, 60.0))
 NORTH_PACIFIC = Region(
     "north_pacific", "北太平洋 / N. Pacific", "platecarree", (130.0, 240.0, 10.0, 65.0),
