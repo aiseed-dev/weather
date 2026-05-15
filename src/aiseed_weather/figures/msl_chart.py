@@ -98,16 +98,15 @@ def _palette_rgb_for(value_hpa: float) -> tuple[int, int, int]:
     return int(r), int(g), int(b)
 
 
-# ── Alpha-blend parameters ──────────────────────────────────────────
-# Calibration point — see skill. At 0.45 the saturated palette was
-# loud enough to swallow the 1 px coastline visually even though it
-# was stamped on top: high-chroma neighbouring pixels and a dark
-# thin line don't separate cleanly on a low-DPI display. Dropping
-# to 0.30 keeps the green / beige / brown bands legible as tinted
-# regions while leaving the coastline and the gray base map clearly
-# in front. The palette saturation absorbs the alpha cut without
-# washing the data out.
-_DATA_ALPHA = 0.30
+# ── Data overlay transparency ───────────────────────────────────────
+# Convention: 0 = opaque (data fully covers the base map),
+#             1 = fully transparent (data invisible, base only).
+# Matches the Japanese 透明度 reading; higher = more transparent.
+# Internally the blend math is base * t + data * (1 - t) so a value
+# of 0.70 means the final pixel is 30% data + 70% base — the data
+# colour reads as a clear tint while the base map and coastline
+# stay visibly in front.
+_DATA_TRANSPARENCY = 0.70
 
 
 # ── Pill label font ─────────────────────────────────────────────────
@@ -170,17 +169,18 @@ def _to_pixel_grid(
     return msl_hpa, longitudes, latitudes
 
 
-def _alpha_blend(
-    base: np.ndarray, overlay: np.ndarray, alpha: float,
+def _blend_with_transparency(
+    base: np.ndarray, overlay: np.ndarray, transparency: float,
 ) -> np.ndarray:
-    """Per-pixel ``base * (1-a) + overlay * a`` in uint8 land.
+    """Per-pixel ``base * t + overlay * (1-t)`` in uint8 land.
 
+    ``transparency`` follows the 透明度 convention: 0 = opaque (data
+    fully covers the base), 1 = fully transparent (data invisible).
     Doing the maths in float32 once and casting back is faster than
-    PIL's per-channel blend for a 1M-pixel image and avoids the alpha
-    channel allocation entirely.
+    PIL's per-channel blend and avoids an alpha-channel allocation.
     """
-    a = float(alpha)
-    out = base.astype(np.float32) * (1.0 - a) + overlay.astype(np.float32) * a
+    t = float(transparency)
+    out = base.astype(np.float32) * t + overlay.astype(np.float32) * (1.0 - t)
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
@@ -276,7 +276,7 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
         data_polar = apply_polar_reindex(data_rgb, region.key)
         base = base_map_rgb(region.key)
         if base is not None and base.shape == data_polar.shape:
-            final = _alpha_blend(base, data_polar, _DATA_ALPHA)
+            final = _blend_with_transparency(base, data_polar, _DATA_TRANSPARENCY)
         else:
             final = data_polar
         # Coastline ON TOP of the alpha-blended composite so the line
@@ -306,7 +306,7 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
         (msl_hpa - _VMIN_HPA) / (_VMAX_HPA - _VMIN_HPA), 0.0, 1.0,
     )
     data_rgb = _LUT[(norm * 255.0).astype(np.uint8)]
-    final = _alpha_blend(base, data_rgb, _DATA_ALPHA)
+    final = _blend_with_transparency(base, data_rgb, _DATA_TRANSPARENCY)
 
     # 3. isolines + pills (layers 3–4) — drawn on a SUPER-SAMPLED
     # copy. Upsample the composite with NEAREST so the gray base
