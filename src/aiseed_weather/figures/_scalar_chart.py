@@ -291,17 +291,30 @@ def _extract_value_at_level(var_names: tuple[str, ...], level: int | None = None
     return _fn
 
 
-# Geopotential height bin layouts per level. Climatological ranges
-# from ECMWF reanalysis (m); bin widths chosen so the standard
-# synoptic isolines (e.g. 5640 m at 500 hPa) land on a bin edge.
-_GH_BOUNDS_AND_PALETTE = {
-    925: np.arange(600, 880, 12, dtype=np.float32),
-    850: np.arange(1250, 1610, 16, dtype=np.float32),
-    700: np.arange(2700, 3300, 28, dtype=np.float32),
-    500: np.arange(5100, 6000, 40, dtype=np.float32),
-    300: np.arange(8400, 9900, 70, dtype=np.float32),
-    200: np.arange(11000, 13000, 95, dtype=np.float32),
+# Geopotential height bin layouts per level. Climatological centre
+# values from ECMWF reanalysis (m); each level spans roughly ±300 m
+# at low altitudes, growing to ±800 m at 50 hPa so the seasonal /
+# synoptic swing covers most of the palette.
+_GH_CENTRES = {
+    1000: 100, 925: 760, 850: 1460, 700: 3010,
+    600: 4360, 500: 5570, 400: 7180, 300: 9150,
+    250: 10350, 200: 11750, 150: 13620, 100: 16180, 50: 20580,
 }
+_GH_HALFRANGE = {
+    1000: 200, 925: 220, 850: 240, 700: 320,
+    600: 380, 500: 440, 400: 520, 300: 620,
+    250: 700, 200: 770, 150: 900, 100: 1050, 50: 1400,
+}
+
+
+def _gh_bounds_for(level: int) -> np.ndarray:
+    centre = _GH_CENTRES[level]
+    half = _GH_HALFRANGE[level]
+    # 21 edges → 22 bins, same shape as the temperature palette.
+    return np.linspace(
+        centre - half, centre + half, 21, dtype=np.float32,
+    )
+
 
 # Generic 22-stop palette reused for every gh level (cool blue at
 # the lower end → warm red at the upper end of the climatological
@@ -326,6 +339,62 @@ _W_PALETTE = (
 # under + len(bounds) bins; total = len(bounds) + 1 = 12. ✓
 
 
+# Wind component (u, v) bins — diverging around zero. Same scale for
+# every level so the eye can compare u@250 (jet) vs u@1000 (surface).
+_UV_BOUNDS = np.array(
+    [-60, -40, -25, -15, -10, -5, -2,
+     2, 5, 10, 15, 25, 40, 60],
+    dtype=np.float32,
+)
+_UV_PALETTE = (
+    "#1a0030",  # under: < -60
+    "#2c0a4d", "#3a4a9d", "#1b81c4", "#5cabc8", "#a8d3c4",
+    "#e0eab2", "#f5f0a8",  # near zero (cream)
+    "#facb68", "#f9b04e", "#ed7530", "#c93920", "#82130f",
+    "#3c0404", "#1f0000",  # over: > 60
+)
+# bounds 14 entries → 15 bins. palette 15 entries. ✓
+
+
+# Divergence (d) and vorticity (vo) are tiny numbers (∼10⁻⁵..10⁻⁴
+# 1/s). One symmetric layout reused for both, scaled by 10⁻⁴ so the
+# bin edges look like "-2..+2" mentally.
+_DV_BOUNDS = np.array(
+    [-2e-4, -1e-4, -5e-5, -2e-5, -1e-5,
+     1e-5, 2e-5, 5e-5, 1e-4, 2e-4],
+    dtype=np.float32,
+)
+_DV_PALETTE = (
+    "#1a0030", "#2c0a4d", "#3a4a9d", "#1b81c4", "#84c0c8",
+    "#f4f4f4",  # near zero
+    "#f9e088", "#f9b04e", "#c93920", "#82130f", "#3c0404",
+)
+# bounds 10 → 11 bins. palette 11. ✓
+
+
+# Specific humidity (q, kg/kg) — per-level bin layouts. Lower
+# atmosphere holds 5–25 g/kg; the stratosphere is near-zero.
+def _q_bounds_for(level: int) -> np.ndarray:
+    # Top of the bin grid scales with level, dropping by ~half per
+    # 100 hPa above 700 hPa. Below: bigger swings near surface.
+    top = {
+        1000: 0.025, 925: 0.022, 850: 0.020, 700: 0.014,
+        600: 0.010, 500: 0.006, 400: 0.003, 300: 0.001,
+        250: 0.0006, 200: 0.0003, 150: 0.0001, 100: 5e-5, 50: 2e-5,
+    }.get(level, 0.001)
+    # 11 edges → 12 bins.
+    return np.linspace(0, top, 11, dtype=np.float32)
+
+
+_Q_PALETTE = (
+    "#f4f4f4",  # under: ≤ 0
+    "#e8efe2", "#cfe2c8", "#a8d3b1", "#80c1a6",
+    "#5cae9c", "#3a8fa0", "#216e9c", "#16548a", "#0e3d6e",
+    "#0a3052", "#06223a",
+)
+# bounds 11 → 12 bins. palette 12. ✓
+
+
 # Relative humidity (%) bin layout. 70%+ is the "moist plume" range.
 _RH_BOUNDS = np.array(
     [10, 20, 30, 40, 50, 60, 70, 80, 90, 95], dtype=np.float32,
@@ -338,72 +407,99 @@ _RH_PALETTE = (
 # under + 10 bins = 11 entries. ✓
 
 
-def _make_t_config(level: int) -> ScalarLayerConfig:
-    return ScalarLayerConfig(
-        layer_key=f"t{level}",
-        bounds=_TEMP_BOUNDS,
-        palette=_TEMP_PALETTE,
-        extractor=_extract_kelvin_at_level(("t",), level=level),
-        isoline_value=0.0,
+def _pl_config_for(var: str, level: int) -> ScalarLayerConfig:
+    """Build a :class:`ScalarLayerConfig` for one (variable, level)
+    pair from ECMWF Open Data's pressure-level catalogue.
+
+    Every variable in PRESSURE_VARIABLES (catalog.py) maps here. The
+    bounds + palette are picked per variable family; gh and q also
+    vary their bounds by level."""
+    if var == "gh":
+        return ScalarLayerConfig(
+            layer_key=f"gh{level}",
+            bounds=_gh_bounds_for(level),
+            palette=_GH_PALETTE,
+            extractor=_extract_value_at_level(("gh", "z"), level=level),
+        )
+    if var == "t":
+        return ScalarLayerConfig(
+            layer_key=f"t{level}",
+            bounds=_TEMP_BOUNDS,
+            palette=_TEMP_PALETTE,
+            extractor=_extract_kelvin_at_level(("t",), level=level),
+            isoline_value=0.0,
+        )
+    if var == "u":
+        return ScalarLayerConfig(
+            layer_key=f"u{level}",
+            bounds=_UV_BOUNDS,
+            palette=_UV_PALETTE,
+            extractor=_extract_value_at_level(("u",), level=level),
+        )
+    if var == "v":
+        return ScalarLayerConfig(
+            layer_key=f"v{level}",
+            bounds=_UV_BOUNDS,
+            palette=_UV_PALETTE,
+            extractor=_extract_value_at_level(("v",), level=level),
+        )
+    if var == "w":
+        return ScalarLayerConfig(
+            layer_key=f"w{level}",
+            bounds=_W_BOUNDS,
+            palette=_W_PALETTE,
+            extractor=_extract_value_at_level(("w",), level=level),
+            isoline_value=0.0,
+        )
+    if var == "r":
+        return ScalarLayerConfig(
+            layer_key=f"r{level}",
+            bounds=_RH_BOUNDS,
+            palette=_RH_PALETTE,
+            extractor=_extract_value_at_level(("r",), level=level),
+        )
+    if var == "q":
+        return ScalarLayerConfig(
+            layer_key=f"q{level}",
+            bounds=_q_bounds_for(level),
+            palette=_Q_PALETTE,
+            extractor=_extract_value_at_level(("q",), level=level),
+        )
+    if var == "d":
+        return ScalarLayerConfig(
+            layer_key=f"d{level}",
+            bounds=_DV_BOUNDS,
+            palette=_DV_PALETTE,
+            extractor=_extract_value_at_level(("d",), level=level),
+        )
+    if var == "vo":
+        return ScalarLayerConfig(
+            layer_key=f"vo{level}",
+            bounds=_DV_BOUNDS,
+            palette=_DV_PALETTE,
+            extractor=_extract_value_at_level(("vo",), level=level),
+        )
+    raise ValueError(f"Unknown pressure-level variable {var!r}")
+
+
+# Build configs for every pressure-level (variable, level) combo
+# advertised in the catalogue. Wind speed (the derived √(u²+v²)
+# layer at every level) is handled by wind_chart, which adds the
+# direction arrows on top of the speed shading. Adding a new
+# (variable, level) entry to the catalogue picks up a renderer here
+# without further edits.
+def _build_pressure_configs() -> list[ScalarLayerConfig]:
+    from aiseed_weather.products.catalog import (
+        PRESSURE_LEVELS_HPA, PRESSURE_VARIABLES,
     )
+    out: list[ScalarLayerConfig] = []
+    for (var, *_rest) in PRESSURE_VARIABLES:
+        for level in PRESSURE_LEVELS_HPA:
+            out.append(_pl_config_for(var, level))
+    return out
 
 
-def _make_gh_config(level: int) -> ScalarLayerConfig:
-    return ScalarLayerConfig(
-        layer_key=f"gh{level}",
-        bounds=_GH_BOUNDS_AND_PALETTE[level],
-        palette=_GH_PALETTE,
-        extractor=_extract_value_at_level(("gh", "z"), level=level),
-    )
-
-
-def _make_wind_config(level: int) -> ScalarLayerConfig:
-    # Imported lazily to avoid a circular dep between modules; we just
-    # mirror wind_chart's bin grid here.
-    bounds = np.array(
-        [0, 2, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60],
-        dtype=np.float32,
-    )
-    palette = (
-        "#e6f4f5",
-        "#e6f4f5", "#b8e0e8", "#83c8d4", "#52b0c0", "#3a98ad",
-        "#7cba74", "#bccf4d", "#f3d33d", "#f59a35", "#e9572a",
-        "#a72333", "#5a155f", "#5a155f",
-    )
-    return ScalarLayerConfig(
-        layer_key=f"wind{level}",
-        bounds=bounds,
-        palette=palette,
-        extractor=_extract_wind_speed_at_level(level=level),
-    )
-
-
-def _make_w_config(level: int) -> ScalarLayerConfig:
-    return ScalarLayerConfig(
-        layer_key=f"w{level}",
-        bounds=_W_BOUNDS,
-        palette=_W_PALETTE,
-        extractor=_extract_value_at_level(("w",), level=level),
-        isoline_value=0.0,
-    )
-
-
-def _make_r_config(level: int) -> ScalarLayerConfig:
-    return ScalarLayerConfig(
-        layer_key=f"r{level}",
-        bounds=_RH_BOUNDS,
-        palette=_RH_PALETTE,
-        extractor=_extract_value_at_level(("r",), level=level),
-    )
-
-
-_PRESSURE_CONFIGS: list[ScalarLayerConfig] = (
-    [_make_gh_config(L) for L in (925, 850, 700, 500, 300, 200)]
-    + [_make_t_config(L) for L in (925, 850, 700, 500, 300)]
-    + [_make_wind_config(L) for L in (850, 500, 250)]
-    + [_make_w_config(L) for L in (700, 500)]
-    + [_make_r_config(L) for L in (925, 850, 700)]
-)
+_PRESSURE_CONFIGS: list[ScalarLayerConfig] = _build_pressure_configs()
 
 
 CONFIGS: dict[str, ScalarLayerConfig] = {

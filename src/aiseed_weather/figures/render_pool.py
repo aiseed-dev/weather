@@ -73,10 +73,20 @@ def render_layer(
                 ds, region=region, run_id=run_id,
                 msl_overlay_ds=msl_overlay_ds,
             )
-        if layer_key == "wind10m":
+        if layer_key.startswith("wind"):
+            # wind10m → surface 10 m; wind250 / wind500 / ... →
+            # pressure-level wind at that hPa. The wind renderer reads
+            # u and v from the multi-band GRIB and draws speed
+            # shading + direction arrows at any level.
             from aiseed_weather.figures.wind_chart import render_wind
+            from aiseed_weather.products.catalog import field_by_key
+            try:
+                fld = field_by_key(layer_key)
+                level = fld.level  # None for surface, int for pl
+            except KeyError:
+                level = None
             return render_wind(
-                ds, region=region, run_id=run_id,
+                ds, region=region, run_id=run_id, level=level,
                 msl_overlay_ds=msl_overlay_ds,
             )
         # Generic scalar layers (dewpoint, snow depth, total cloud

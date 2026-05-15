@@ -109,6 +109,22 @@ _W_CHIP_STOPS = [
     "#f0b894", "#7a1f15",
 ]
 
+# Diverging u/v wind component swatch (negative = west or south).
+_UV_CHIP_STOPS = [
+    "#3a4a9d", "#5cabc8", "#e0eab2",
+    "#facb68", "#c93920",
+]
+# Specific humidity: dry → moist (greenish-blue).
+_Q_CHIP_STOPS = [
+    "#f4f4f4", "#80c1a6", "#3a8fa0", "#16548a", "#06223a",
+]
+# Divergence / vorticity: symmetric around zero.
+_DV_CHIP_STOPS = [
+    "#3a4a9d", "#84c0c8", "#f4f4f4",
+    "#f9b04e", "#82130f",
+]
+
+
 _LAYER_GRADIENT_STOPS: dict[str, list[str]] = {
     "msl": ["#193282", "#ffffff", "#82194d"],
     "t2m": _TEMP_CHIP_STOPS,
@@ -126,18 +142,29 @@ _LAYER_GRADIENT_STOPS: dict[str, list[str]] = {
     ],
     "wind10m": _WIND_CHIP_STOPS,
 }
-# Pressure-level family chips share the same gradient as their
-# surface counterpart so the visual language stays consistent.
-for _L in (925, 850, 700, 500, 300, 200):
-    _LAYER_GRADIENT_STOPS[f"gh{_L}"] = _GH_CHIP_STOPS
-for _L in (925, 850, 700, 500, 300):
-    _LAYER_GRADIENT_STOPS[f"t{_L}"] = _TEMP_CHIP_STOPS
-for _L in (850, 500, 250):
+# Pressure-level family chips share a swatch per variable family, no
+# matter the level. Catalogue-derived so adding a (var, level) row
+# automatically lights up its chip.
+from aiseed_weather.products.catalog import (
+    PRESSURE_LEVELS_HPA as _PRESSURE_LEVELS_HPA,
+    PRESSURE_VARIABLES as _PRESSURE_VARIABLES,
+)
+_PL_FAMILY_STOPS = {
+    "gh": _GH_CHIP_STOPS,
+    "t":  _TEMP_CHIP_STOPS,
+    "u":  _UV_CHIP_STOPS,
+    "v":  _UV_CHIP_STOPS,
+    "w":  _W_CHIP_STOPS,
+    "r":  _RH_CHIP_STOPS,
+    "q":  _Q_CHIP_STOPS,
+    "d":  _DV_CHIP_STOPS,
+    "vo": _DV_CHIP_STOPS,
+}
+for _var, *_ in _PRESSURE_VARIABLES:
+    for _L in _PRESSURE_LEVELS_HPA:
+        _LAYER_GRADIENT_STOPS[f"{_var}{_L}"] = _PL_FAMILY_STOPS[_var]
+for _L in _PRESSURE_LEVELS_HPA:
     _LAYER_GRADIENT_STOPS[f"wind{_L}"] = _WIND_CHIP_STOPS
-for _L in (700, 500):
-    _LAYER_GRADIENT_STOPS[f"w{_L}"] = _W_CHIP_STOPS
-for _L in (925, 850, 700):
-    _LAYER_GRADIENT_STOPS[f"r{_L}"] = _RH_CHIP_STOPS
 
 
 # Legend tick labels per layer — Windy-style colorbar shown below the

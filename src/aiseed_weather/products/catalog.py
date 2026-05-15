@@ -1019,145 +1019,12 @@ FIELDS: tuple[DataField, ...] = (
         ecmwf_param="sp",
     ),
     # ---- Pressure levels ----
-    # Generated as one DataField per (variable, level) combination so
-    # the layer-dialog matrix has clean "variable row × level column"
-    # navigation. All marked IMPLEMENTED because render_pool dispatches
-    # them through the generic _scalar_chart pipeline.
-    DataField(
-        key="gh925", label_ja="925hPa高度",
-        label_en="Geopotential height (925 hPa)",
-        unit="m", level=925,
-        typical_layer="等高度線", status=Status.IMPLEMENTED,
-        ecmwf_param="gh",
-    ),
-    DataField(
-        key="gh850", label_ja="850hPa高度",
-        label_en="Geopotential height (850 hPa)",
-        unit="m", level=850,
-        typical_layer="等高度線", status=Status.IMPLEMENTED,
-        ecmwf_param="gh",
-    ),
-    DataField(
-        key="gh700", label_ja="700hPa高度",
-        label_en="Geopotential height (700 hPa)",
-        unit="m", level=700,
-        typical_layer="等高度線", status=Status.IMPLEMENTED,
-        ecmwf_param="gh",
-    ),
-    DataField(
-        key="gh500", label_ja="500hPa高度",
-        label_en="Geopotential height (500 hPa)",
-        unit="m", level=500,
-        typical_layer="等高度線 60 m, 5640 m 太線",
-        status=Status.IMPLEMENTED, ecmwf_param="gh",
-    ),
-    DataField(
-        key="gh300", label_ja="300hPa高度",
-        label_en="Geopotential height (300 hPa)",
-        unit="m", level=300,
-        typical_layer="等高度線", status=Status.IMPLEMENTED,
-        ecmwf_param="gh",
-    ),
-    DataField(
-        key="gh200", label_ja="200hPa高度",
-        label_en="Geopotential height (200 hPa)",
-        unit="m", level=200,
-        typical_layer="等高度線", status=Status.IMPLEMENTED,
-        ecmwf_param="gh",
-    ),
-    DataField(
-        key="t925", label_ja="925hPa気温",
-        label_en="Temperature (925 hPa)",
-        unit="°C", level=925,
-        typical_layer="カラーシェーディング 4°C", status=Status.IMPLEMENTED,
-        ecmwf_param="t",
-    ),
-    DataField(
-        key="t850", label_ja="850hPa気温",
-        label_en="Temperature (850 hPa)",
-        unit="°C", level=850,
-        typical_layer="カラーシェーディング 4°C, 0°C 太線",
-        status=Status.IMPLEMENTED, ecmwf_param="t",
-    ),
-    DataField(
-        key="t700", label_ja="700hPa気温",
-        label_en="Temperature (700 hPa)",
-        unit="°C", level=700,
-        typical_layer="カラーシェーディング 4°C", status=Status.IMPLEMENTED,
-        ecmwf_param="t",
-    ),
-    DataField(
-        key="t500", label_ja="500hPa気温",
-        label_en="Temperature (500 hPa)",
-        unit="°C", level=500,
-        typical_layer="カラーシェーディング 4°C", status=Status.IMPLEMENTED,
-        ecmwf_param="t",
-    ),
-    DataField(
-        key="t300", label_ja="300hPa気温",
-        label_en="Temperature (300 hPa)",
-        unit="°C", level=300,
-        typical_layer="カラーシェーディング 4°C", status=Status.IMPLEMENTED,
-        ecmwf_param="t",
-    ),
-    DataField(
-        key="wind850", label_ja="850hPa風速",
-        label_en="Wind speed (850 hPa)",
-        unit="m/s", level=850,
-        typical_layer="風速シェーディング", status=Status.IMPLEMENTED,
-        ecmwf_param="u/v",
-        notes="u/v 成分から √(u²+v²) を計算。方向矢印は未実装。",
-    ),
-    DataField(
-        key="wind500", label_ja="500hPa風速",
-        label_en="Wind speed (500 hPa)",
-        unit="m/s", level=500,
-        typical_layer="風速シェーディング", status=Status.IMPLEMENTED,
-        ecmwf_param="u/v",
-    ),
-    DataField(
-        key="wind250", label_ja="250hPa風速 (ジェット)",
-        label_en="Wind speed (250 hPa, jet)",
-        unit="m/s", level=250,
-        typical_layer="風速シェーディング", status=Status.IMPLEMENTED,
-        ecmwf_param="u/v",
-        notes="対流圏上部のジェット気流。100 m/s 級のコアが見える。",
-    ),
-    DataField(
-        key="w700", label_ja="700hPa鉛直流",
-        label_en="Vertical velocity ω (700 hPa)",
-        unit="Pa/s", level=700,
-        typical_layer="上昇流域シェーディング (負値=上昇)",
-        status=Status.IMPLEMENTED, ecmwf_param="w",
-    ),
-    DataField(
-        key="w500", label_ja="500hPa鉛直流",
-        label_en="Vertical velocity ω (500 hPa)",
-        unit="Pa/s", level=500,
-        typical_layer="上昇流域シェーディング",
-        status=Status.IMPLEMENTED, ecmwf_param="w",
-    ),
-    DataField(
-        key="r925", label_ja="925hPa相対湿度",
-        label_en="Relative humidity (925 hPa)",
-        unit="%", level=925,
-        typical_layer="湿域シェーディング", status=Status.IMPLEMENTED,
-        ecmwf_param="r",
-    ),
-    DataField(
-        key="r850", label_ja="850hPa相対湿度",
-        label_en="Relative humidity (850 hPa)",
-        unit="%", level=850,
-        typical_layer="湿域シェーディング", status=Status.IMPLEMENTED,
-        ecmwf_param="r",
-    ),
-    DataField(
-        key="r700", label_ja="700hPa相対湿度",
-        label_en="Relative humidity (700 hPa)",
-        unit="%", level=700,
-        typical_layer="湿域シェーディング (>70%)", status=Status.IMPLEMENTED,
-        ecmwf_param="r",
-    ),
+    # Generated programmatically across every (param, level) in
+    # ECMWF Open Data's pl product. The forecast service downloads
+    # all of these in a single multi-band GRIB per cycle/step (one
+    # request per kind), so switching variable or level at view time
+    # is a pure re-read — no network. See
+    # .agents/skills/data-flow/SKILL.md.
     # ---- Derived ----
     DataField(
         key="thickness_500_1000",
@@ -1180,6 +1047,68 @@ FIELDS: tuple[DataField, ...] = (
         notes="気温・湿度・気圧から計算。",
     ),
 )
+
+
+# ── Pressure-level catalogue (generated) ────────────────────────────
+# ECMWF Open Data publishes 9 variables on 13 standard hPa levels. We
+# expose every combination so the layer-dialog matrix presents the
+# full grid; the forecast service bundles all of them into one
+# multi-band GRIB per kind per step, so the catalogue size does not
+# multiply network round-trips.
+
+PRESSURE_LEVELS_HPA: tuple[int, ...] = (
+    1000, 925, 850, 700, 600, 500, 400, 300, 250, 200, 150, 100, 50,
+)
+
+# (ecmwf short, ja label, en label, unit, default style hint)
+PRESSURE_VARIABLES: tuple[tuple[str, str, str, str, str], ...] = (
+    ("gh", "高度",       "Geopotential height", "m",     "等高度線・カラーシェーディング"),
+    ("t",  "気温",       "Temperature",         "°C",    "カラーシェーディング 4°C"),
+    ("u",  "東西風成分", "U-component of wind", "m/s",   "西風 (正) ↔ 東風 (負) シェーディング"),
+    ("v",  "南北風成分", "V-component of wind", "m/s",   "北風 (正) ↔ 南風 (負) シェーディング"),
+    ("w",  "鉛直流",     "Vertical velocity ω", "Pa/s",  "上昇流 (負) シェーディング"),
+    ("r",  "相対湿度",   "Relative humidity",   "%",     "湿域シェーディング"),
+    ("q",  "比湿",       "Specific humidity",   "kg/kg", "水蒸気量シェーディング"),
+    ("d",  "発散",       "Divergence",          "1/s",   "発散 (正) ↔ 収束 (負) シェーディング"),
+    ("vo", "渦度",       "Vorticity (relative)", "1/s",  "正渦 (反時計) ↔ 負渦 (時計) シェーディング"),
+)
+
+_PRESSURE_FIELDS = tuple(
+    DataField(
+        key=f"{var}{level}",
+        label_ja=f"{level}hPa{ja}",
+        label_en=f"{en} ({level} hPa)",
+        unit=unit,
+        level=level,
+        typical_layer=style,
+        status=Status.IMPLEMENTED,
+        ecmwf_param=var,
+    )
+    for var, ja, en, unit, style in PRESSURE_VARIABLES
+    for level in PRESSURE_LEVELS_HPA
+)
+
+# Derived: √(u² + v²) — wind speed — at every pressure level. Sits
+# next to the u and v rows in the matrix so the user can pick either
+# the components or the magnitude.
+_WIND_SPEED_FIELDS = tuple(
+    DataField(
+        key=f"wind{level}",
+        label_ja=f"{level}hPa風速",
+        label_en=f"Wind speed ({level} hPa)",
+        unit="m/s",
+        level=level,
+        typical_layer="風速シェーディング",
+        status=Status.IMPLEMENTED,
+        # ecmwf_param 'u/v' marks this as a derived field; the
+        # service-side _params_for_kind splits on '/' so both
+        # components are still in the multi-band pl GRIB.
+        ecmwf_param="u/v",
+    )
+    for level in PRESSURE_LEVELS_HPA
+)
+
+FIELDS = FIELDS + _PRESSURE_FIELDS + _WIND_SPEED_FIELDS
 
 
 def field_by_key(k: str) -> DataField:
