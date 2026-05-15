@@ -203,6 +203,48 @@ def is_grib_cached(
     p = grib_cache_path(settings, run_time, step_hours, param)
     return p.exists() and p.stat().st_size > 0
 
+
+async def probe_cycle_complete(
+    cycle_dt: datetime,
+    last_step_h: int,
+    *,
+    timeout: float = 5.0,
+) -> bool:
+    """Quick HEAD against the cycle's last-step .index file on AWS S3.
+
+    Returns True if that file exists on the public AWS mirror; False
+    on 404, timeout, or any other transport error. We hit the AWS S3
+    mirror (s3.eu-central-1.amazonaws.com) rather than data.ecmwf.int
+    because the dissemination server returns 403 for unauthenticated
+    HEAD requests, while the S3 mirror accepts them on the public
+    bucket. The two are byte-identical so existence on S3 is also
+    truth on dissemination.
+
+    Because HRES publication is atomic per cycle, presence of the
+    last step's .index file means every step in the cycle is
+    available; absence means the cycle is not yet published.
+    """
+    import httpx
+
+    stamp = cycle_dt.strftime("%Y%m%d%H%M%S")
+    date_dir = cycle_dt.strftime("%Y%m%d")
+    hh = cycle_dt.strftime("%Hz")
+    url = (
+        f"https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com/"
+        f"{date_dir}/{hh}/ifs/0p25/oper/"
+        f"{stamp}-{last_step_h}h-oper-fc.index"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.head(url, follow_redirects=True)
+        return r.status_code == 200
+    except Exception as e:
+        logger.debug(
+            "probe_cycle_complete(%s, %dh) failed: %s",
+            cycle_dt, last_step_h, e,
+        )
+        return False
+
     async def latest_run(self, *, step_hours: int, param: str) -> datetime:
         """Return the run datetime of the most recent publicly available run
         that contains the requested field. Probes the server.

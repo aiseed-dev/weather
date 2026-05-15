@@ -56,6 +56,7 @@ from aiseed_weather.services.forecast_service import (
     ForecastRequest,
     ForecastService,
     is_grib_cached,
+    probe_cycle_complete,
 )
 
 
@@ -324,6 +325,11 @@ def MapView(settings: UserSettings):
     # to auto-probing the latest fully-published cycle (today's behaviour).
     # When set, we use this exact datetime as the run, skipping the probe.
     manual_cycle, set_manual_cycle = ft.use_state(None)
+    # Verified availability of recent cycles. {cycle.isoformat(): bool}.
+    # Populated by probes kicked off when the data dialog opens; the UI
+    # shows real ✓/✗ labels for cycles we've checked, predicted text
+    # for cycles we haven't.
+    cycle_check_results, set_cycle_check_results = ft.use_state({})
 
     # Forecast horizon and cadence (drive both the slider and the
     # animation preload size). Defaults match the previous hard-coded
@@ -1100,6 +1106,38 @@ def MapView(settings: UserSettings):
     draft_horizon_h, set_draft_horizon_h = ft.use_state(max_step_h)
     draft_cadence_h, set_draft_cadence_h = ft.use_state(cadence_h)
 
+    async def _probe_visible_cycles():
+        """Verify availability of every cycle the dialog will list.
+
+        Runs HEAD requests in parallel (capped at 8 concurrent so we
+        don't open a thundering herd of sockets). Each completed probe
+        merges into cycle_check_results, triggering a re-render of the
+        dialog with the verified label.
+        """
+        pending = [
+            c for c in _BASE_TIME_CHOICES
+            if c.isoformat() not in cycle_check_results
+        ]
+        if not pending:
+            return
+        sem = asyncio.Semaphore(8)
+
+        async def one(c):
+            last = (
+                _SHORT_CYCLE_HORIZON_H if c.hour in _SHORT_CYCLE_HOURS
+                else _LONG_CYCLE_HORIZON_H
+            )
+            async with sem:
+                ok = await probe_cycle_complete(c, last)
+            return c.isoformat(), ok
+
+        results = await asyncio.gather(*(one(c) for c in pending))
+        # Merge atomically; the existing dict carries cycles probed
+        # in earlier opens of the dialog (cache survives close/reopen).
+        set_cycle_check_results(
+            lambda prev: {**prev, **dict(results)},
+        )
+
     def _open_time_dialog():
         set_draft_base_choice(
             "auto" if manual_cycle is None else manual_cycle.isoformat()
@@ -1107,6 +1145,9 @@ def MapView(settings: UserSettings):
         set_draft_horizon_h(max_step_h)
         set_draft_cadence_h(cadence_h)
         set_show_time_dialog(True)
+        # Kick off availability probes in background. Labels update
+        # from "予測" to "確認済み ✓ / ✗" as each HEAD completes.
+        ft.context.page.run_task(_probe_visible_cycles)
 
     def _commit_cycle(_):
         # ---- base time ----
@@ -1156,17 +1197,21 @@ def MapView(settings: UserSettings):
     _preview_frame_count = len(_preview_steps)
 
     # Build base-time radio rows with horizon + publication info.
-    # HRES publication is atomic per cycle (single time), so the label
-    # has two states: 公開予定 / 公開済み. AIFS publishes progressively
-    # — when we wire AIFS Single, this label generator will need to
-    # know which model it's annotating.
+    # HRES publication is atomic per cycle, so two states for the
+    # predicted label (公開予定 / 公開済み(予測)). When a probe has
+    # actually verified availability we promote to ✓/✗ verified text.
     def _base_time_label(dt: datetime) -> str:
         pub_at = _publication_time(dt)
         now_utc = datetime.now(tz=timezone.utc)
-        if now_utc < pub_at:
-            pub_state = f"公開予定 {pub_at:%m/%d %H:%M}"
+        verified = cycle_check_results.get(dt.isoformat())
+        if verified is True:
+            pub_state = f"✓ 公開確認済み ({pub_at:%m/%d %H:%M})"
+        elif verified is False:
+            pub_state = f"✗ 未公開 (予測 {pub_at:%m/%d %H:%M})"
+        elif now_utc < pub_at:
+            pub_state = f"公開予定 {pub_at:%m/%d %H:%M} (確認中…)"
         else:
-            pub_state = f"公開済み ({pub_at:%m/%d %H:%M})"
+            pub_state = f"公開済み 推定 ({pub_at:%m/%d %H:%M}) (確認中…)"
         horizon = _cycle_horizon_h(dt)
         if _is_short_cycle(dt):
             ext = _prior_long_cycle(dt)
