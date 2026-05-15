@@ -7,20 +7,50 @@ The data source (AWS / Azure / GCP / direct) is chosen by the user via
 config.toml. This service reads that setting; it never defaults to a
 source on its own.
 
-Implementation notes:
-- "Latest run" is resolved by probing the server via Client.latest() —
-  ECMWF's publication delay is variable, so any client-side heuristic is
-  wrong some fraction of the time. The probe makes a few HEAD requests
-  and is cheap.
-- Decoding GRIB is CPU-bound; wrap with asyncio.to_thread in async methods.
-- If the user has set forecast_source to NONE, instantiation raises so the
-  UI can route to the historical-only flow.
+Download strategy: **bulk HTTPS GET per (cycle, step)**
+------------------------------------------------------
+We used to drive ``ecmwf-opendata`` ``Client.retrieve`` with a per-kind
+param list, which under the hood fetches an ``.index`` sidecar and
+issues HTTP Range requests for just the matching GRIB messages. That
+sounds efficient until you measure it from a Japan-routed network:
+each Range RTT against the Frankfurt S3 bucket cost ~250 ms, so a
+30-param ``sfc`` fetch took ~24 s, and a single step (sfc + pl + sol)
+took ~72 s. See ``tests/test_download_bench.py`` for the timings.
+
+The fix is to stop being clever. The Open Data file
+``{date}{time}-{step}h-oper-fc.grib2`` already contains every
+parameter at every advertised level for that step. The Google Cloud
+mirror serves the whole file in ~1.3 s from JP (edge-cached at
+storage.googleapis.com), so one HTTPS GET per step replaces three
+Range-pipelined retrievals — three orders of magnitude in TTFB cost.
+The 150 MB-per-step disk price (~12 GB for an 80-step extended run)
+is acceptable; CPU-side cfgrib decoding is far faster than network
+RTT, so we'd rather pay disk than wait on Frankfurt.
+
+Cache layout: one file per ``(cycle, step)``, kind-agnostic.
+``ForecastRequest.kind`` no longer affects the cached filename — it
+only steers the decode-time filter. Three concurrent ``download``
+calls for different kinds at the same step share one HTTPS GET via
+the per-path lock map.
+
+Implementation notes
+--------------------
+- "Latest run" is still resolved by probing the server via
+  ``ecmwf-opendata`` ``Client.latest()`` — ECMWF's publication delay
+  is variable, so any client-side heuristic is wrong some fraction of
+  the time. The probe makes a few HEAD requests and is cheap.
+- Decoding GRIB is CPU-bound; wrap with ``asyncio.to_thread`` in
+  async methods.
+- If the user has set forecast_source to NONE, instantiation raises
+  so the UI can route to the historical-only flow.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import shutil
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -119,6 +149,28 @@ _CLIENT_SOURCE = {
 }
 
 
+# Per-mirror base URL for the bulk oper-fc.grib2 file. Path layout
+# under each base is identical:
+#   {date}/{HH}z/ifs/0p25/oper/{date}{HH}0000-{step}h-oper-fc.grib2
+# Empirically (see tests/test_download_bench.py) the Google mirror is
+# 5-100x faster than AWS from JP-routed networks because GCS serves
+# from an Asia-Pacific edge PoP. AWS lands on Frankfurt direct.
+_BULK_BASE: dict[str, str] = {
+    "google": "https://storage.googleapis.com/ecmwf-open-data",
+    "aws":    "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com",
+    "ecmwf":  "https://data.ecmwf.int/forecasts",
+    "azure":  "https://ai4edataeuwest.blob.core.windows.net/ecmwf",
+}
+
+
+def _bulk_url(source: str, run_time: datetime, step_hours: int) -> str:
+    base = _BULK_BASE.get(source, _BULK_BASE["google"])
+    return (
+        f"{base}/{run_time:%Y%m%d}/{run_time:%H}z/ifs/0p25/oper/"
+        f"{run_time:%Y%m%d}{run_time:%H}0000-{step_hours}h-oper-fc.grib2"
+    )
+
+
 # Catalogue of ECMWF Open Data param names we fetch in one go per
 # kind. Computed once from the catalog so adding an implemented field
 # automatically pulls its variable into the next download.
@@ -208,6 +260,16 @@ class ForecastService:
         self._cache_dir = resolved_data_dir(settings) / "ecmwf"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self.client_source = client_source  # for logging / display
+        # Per-(cache-path) locks so concurrent download() calls for
+        # different kinds at the same (cycle, step) collapse onto one
+        # HTTPS GET. Allocated lazily.
+        self._dl_locks: dict[Path, asyncio.Lock] = {}
+
+    def _lock_for(self, path: Path) -> asyncio.Lock:
+        lock = self._dl_locks.get(path)
+        if lock is None:
+            lock = self._dl_locks[path] = asyncio.Lock()
+        return lock
 
     async def fetch(self, request: ForecastRequest, *, force: bool = False) -> xr.Dataset:
         """Download (if needed) and decode a single forecast field.
@@ -215,13 +277,12 @@ class ForecastService:
         With ``force=True`` the cached GRIB2 is re-downloaded even if it
         already exists on disk — used by the UI Refresh button.
         """
-        path = self._cache_path(request)
-        if force or not path.exists() or path.stat().st_size == 0:
-            await asyncio.to_thread(self._download, request, path)
-        return await asyncio.to_thread(self._decode, path)
+        path = await self.download(request, force=force)
+        return await asyncio.to_thread(self._decode, path, request.kind)
 
     async def download(self, request: ForecastRequest, *, force: bool = False) -> Path:
-        """Just download the GRIB to disk. No decode, no render.
+        """Bulk-download the per-step GRIB to disk if not already
+        cached. Idempotent and dedup-safe across kinds.
 
         Used by the background acquisition loop, which is decoupled
         from rendering: rendering happens later, on demand, against
@@ -230,8 +291,13 @@ class ForecastService:
         already present).
         """
         path = self._cache_path(request)
-        if force or not path.exists() or path.stat().st_size == 0:
-            await asyncio.to_thread(self._download, request, path)
+        if not force and path.exists() and path.stat().st_size > 0:
+            return path
+        async with self._lock_for(path):
+            # Re-check after acquiring: another coroutine may have
+            # raced ahead and filled the cache while we were waiting.
+            if force or not path.exists() or path.stat().st_size == 0:
+                await asyncio.to_thread(self._download, request, path)
         return path
 
     async def decode(self, request: ForecastRequest) -> xr.Dataset:
@@ -243,7 +309,7 @@ class ForecastService:
             raise FileNotFoundError(
                 f"No cached GRIB for {request}: {path}",
             )
-        return await asyncio.to_thread(self._decode, path)
+        return await asyncio.to_thread(self._decode, path, request.kind)
 
     def is_cached(self, request: ForecastRequest) -> bool:
         path = self._cache_path(request)
@@ -264,58 +330,148 @@ class ForecastService:
         return run
 
     def _cache_path(self, r: ForecastRequest) -> Path:
-        # Hierarchical layout so a single run gathers all its fields under
-        # one directory and many runs don't crowd a single flat folder.
+        # One bulk file per (cycle, step), kind-agnostic. Hierarchical
+        # layout so a single run gathers all its fields under one
+        # directory and many runs don't crowd a single flat folder.
         run_dir = self._cache_dir / r.run_time.strftime("%Y%m%d") / r.run_time.strftime("%Hz")
         run_dir.mkdir(parents=True, exist_ok=True)
-        return run_dir / f"{r.filename_part()}_{r.step_hours}h.grib2"
+        return run_dir / f"{r.step_hours}h.grib2"
 
     def _download(self, r: ForecastRequest, target: Path) -> None:
-        _verify_multiurl_patch()
-        params = _params_for_kind(r.kind)
-        if not params:
-            # No IMPLEMENTED field of this kind — nothing to fetch.
-            # Touch an empty file so is_cached() / retry logic doesn't
-            # spin on a missing target.
-            target.write_bytes(b"")
-            return
-        kwargs: dict = dict(
-            type="fc",
-            step=r.step_hours,
-            param=params,
-            date=r.run_time.strftime("%Y-%m-%d"),
-            time=r.run_time.hour,
-            target=str(target),
-        )
-        if r.kind == "pl":
-            kwargs["levtype"] = "pl"
-            kwargs["levelist"] = _levels_in_use("pl")
-        elif r.kind == "sol":
-            kwargs["levtype"] = "sol"
-            kwargs["levelist"] = _levels_in_use("sol")
-        self._client.retrieve(**kwargs)
+        """One HTTPS GET of the bulk per-step file from the user's mirror.
 
-    def _decode(self, path: Path) -> xr.Dataset:
-        return xr.open_dataset(path, engine="cfgrib")
+        Written to a ``.part`` sidecar then renamed atomically, so a
+        crash mid-download never leaves a half-cached file that
+        ``is_cached`` would mistake for valid.
+        """
+        url = _bulk_url(self.client_source, r.run_time, r.step_hours)
+        tmp = target.with_suffix(target.suffix + ".part")
+        logger.info("ECMWF bulk GET %s → %s", url, target.name)
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "aiseed-weather/1.0"},
+        )
+        with urllib.request.urlopen(req) as resp, tmp.open("wb") as f:
+            shutil.copyfileobj(resp, f, 1 << 20)
+        tmp.replace(target)
+
+    def _decode(self, path: Path, kind: str = "sfc") -> xr.Dataset:
+        return _decode_kind(path, kind)
+
+
+def _decode_kind(path: Path, kind: str) -> xr.Dataset:
+    """Open a bulk ECMWF Open Data GRIB and return the dataset that
+    matches the requested kind.
+
+    The bulk file is heterogeneous (msl at meanSea, 2t at
+    heightAboveGround=2, gh at 13 isobaric levels, sot at 4 soil
+    layers, …) so ``xr.open_dataset`` alone raises
+    ``DatasetBuildError``. We use ``cfgrib.open_datasets`` to get one
+    hypercube per ``typeOfLevel`` and then:
+
+    * ``"pl"``  → the single hypercube on ``isobaricInhPa``
+    * ``"sol"`` → the single hypercube on the soil-layer axis (cfgrib
+      may name it ``soilLayer`` or ``depthBelowLandLayer`` depending
+      on eccodes version, so we accept either)
+    * ``"sfc"`` → merge every remaining hypercube. Each surface
+      variable lives in exactly one hypercube; merging with
+      ``compat="override"`` lets the renderer keep using
+      ``ds["2t"]``-style access.
+    """
+    import cfgrib
+
+    dss = cfgrib.open_datasets(str(path))
+
+    if kind == "pl":
+        for d in dss:
+            if "isobaricInhPa" in d.dims:
+                return d
+        raise KeyError(f"no pressure-level data in {path}")
+
+    if kind == "sol":
+        for d in dss:
+            if "soilLayer" in d.dims or "depthBelowLandLayer" in d.dims:
+                return d
+        raise KeyError(f"no soil data in {path}")
+
+    # sfc: everything that is neither pressure-level nor soil
+    sfc = [
+        d for d in dss
+        if "isobaricInhPa" not in d.dims
+        and "soilLayer" not in d.dims
+        and "depthBelowLandLayer" not in d.dims
+    ]
+    if not sfc:
+        raise KeyError(f"no surface data in {path}")
+    # Each hypercube carries its own scalar typeOfLevel coordinate,
+    # which is what triggers the DatasetBuildError on a plain
+    # open_dataset. compat='override' tells xr.merge that conflicting
+    # non-dimension coords are OK to drop — we don't care which scalar
+    # 'typeOfLevel' wins because every data_var still knows its own.
+    merged = xr.merge(sfc, compat="override")
+    return _restore_grib_shortnames(merged)
+
+
+# cfgrib applies a "make the xarray name nicer" rewrite for surface
+# height-above-ground parameters: it moves the height suffix to the
+# right of the variable name, producing ``t2m`` for ECMWF's ``2t``,
+# ``u10`` for ``10u``, ``fg10`` for ``10fg``, etc. The rest of this
+# codebase, the catalog, and ECMWF documentation all use the
+# GRIB-native names with the height on the left. Rather than chase
+# the dual form into every renderer, we put the canonical name back
+# at decode time. Adding (not replacing) keeps the cfgrib-style name
+# also accessible, so existing code that probed both forms keeps
+# working — there's nothing to migrate.
+_GRIB_NATIVE_ALIASES: dict[str, str] = {
+    # cfgrib name -> GRIB-native short name
+    "t2m":   "2t",
+    "d2m":   "2d",
+    "u10":   "10u",
+    "v10":   "10v",
+    "fg10":  "10fg",
+    "i10fg": "10fg",   # instantaneous form, same physical quantity
+    "u100":  "100u",
+    "v100":  "100v",
+}
+
+
+def _restore_grib_shortnames(ds: xr.Dataset) -> xr.Dataset:
+    """Add GRIB-native aliases (``2t``, ``10u``, …) for any cfgrib
+    auto-renamed surface variable.
+
+    We add rather than rename so both forms resolve. Aliases share
+    the underlying DataArray — no copy, no extra memory.
+    """
+    additions = {
+        native: ds[cfg]
+        for cfg, native in _GRIB_NATIVE_ALIASES.items()
+        if cfg in ds.data_vars and native not in ds.data_vars
+    }
+    if additions:
+        ds = ds.assign(**additions)
+    return ds
 
 
 def grib_cache_path(
     settings: UserSettings,
     run_time: datetime,
     step_hours: int,
-    kind: str = "sfc",
+    kind: str = "sfc",  # kept for API compat; bulk file is kind-agnostic
 ) -> Path:
-    """Compute the on-disk cache path for one (cycle, step, kind) GRIB.
+    """Compute the on-disk cache path for one (cycle, step) bulk GRIB.
 
-    Mirrors ForecastService._cache_path but is a free function so UI
-    code can inspect cache state without going through the (potentially
-    expensive, requires-network-ready settings) full service object.
+    Mirrors :meth:`ForecastService._cache_path` but is a free function
+    so UI code can inspect cache state without going through the
+    (potentially expensive, requires-network-ready settings) full
+    service object. The ``kind`` argument is accepted for backward
+    compatibility with the per-kind cache layout and is intentionally
+    ignored — every kind shares the same bulk file.
     """
+    del kind
     return (
         resolved_data_dir(settings) / "ecmwf"
         / run_time.strftime("%Y%m%d")
         / run_time.strftime("%Hz")
-        / f"{step_hours}h-{kind}.grib2"
+        / f"{step_hours}h.grib2"
     )
 
 
@@ -327,6 +483,14 @@ def is_grib_cached(
 ) -> bool:
     p = grib_cache_path(settings, run_time, step_hours, kind)
     return p.exists() and p.stat().st_size > 0
+
+
+def decode_kind(path: Path, kind: str) -> xr.Dataset:
+    """Public wrapper around :func:`_decode_kind` for code outside
+    this module that opens cached bulk GRIBs directly (the render
+    worker, mostly).
+    """
+    return _decode_kind(path, kind)
 
 
 async def probe_cycle_complete(

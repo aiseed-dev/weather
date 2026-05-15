@@ -51,12 +51,24 @@ def render_layer(
     loop; slower ones (t2m/tp/wind still on matplotlib) freeze the UI
     until migrated.
     """
-    import xarray as xr  # local: keeps module import light
+    # The cached file is the bulk per-step oper-fc.grib2, which mixes
+    # surface / pressure / soil hypercubes. A plain xr.open_dataset
+    # raises on it. Route through decode_kind, which picks (and for
+    # surface, merges) the right subset based on layer_key's kind.
+    from aiseed_weather.products.catalog import field_by_key
+    from aiseed_weather.services.forecast_service import decode_kind
 
-    ds = xr.open_dataset(grib_path, engine="cfgrib")
-    msl_overlay_ds = None
-    if msl_overlay_path:
-        msl_overlay_ds = xr.open_dataset(msl_overlay_path, engine="cfgrib")
+    try:
+        kind = field_by_key(layer_key).kind
+    except KeyError:
+        # Unknown layer key — fall back to surface so msl-like layers
+        # still render rather than erroring out before the renderer
+        # gets a chance to produce a 'no data' placeholder.
+        kind = "sfc"
+
+    ds = decode_kind(grib_path, kind)
+    # MSL overlay is always surface.
+    msl_overlay_ds = decode_kind(msl_overlay_path, "sfc") if msl_overlay_path else None
     try:
         if layer_key == "msl":
             from aiseed_weather.figures.msl_chart import render_msl
