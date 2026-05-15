@@ -851,6 +851,34 @@ def MapView(settings: UserSettings, fetch=None):
             # step. Move out of "loading" so the main area shows the chart.
             set_state("ready")
 
+    async def _render_missing_in_background():
+        """Render every step whose GRIB is on disk but PNG isn't in
+        memory yet, with concurrency bounded by the render pool size.
+
+        Idempotent — _ensure_rendered is a no-op for frames already
+        rendered AND for frames whose GRIB isn't on disk yet, so
+        repeated calls just walk step_options cheaply. Called after a
+        download finishes and on mount when cached GRIBs are detected,
+        so the user doesn't have to scrub through the timeline to
+        populate each frame individually.
+
+        Without the semaphore, scheduling N renders fire-and-forget
+        let the process pool spawn every worker at once and pile up
+        N matplotlib figures in memory. With it, in-flight renders
+        never exceed the pool's worker count.
+        """
+        from aiseed_weather.figures.render_pool import _default_workers
+        sem = asyncio.Semaphore(_default_workers())
+
+        async def _one(step):
+            async with sem:
+                await _ensure_rendered(step)
+
+        await asyncio.gather(
+            *(_one(s) for s in step_options),
+            return_exceptions=True,
+        )
+
     async def _download_loop(cycle, plan, cancel_event):
         """Pure background download. No rendering inside the loop —
         rendering is on demand via _ensure_rendered. Region/layer
@@ -1003,21 +1031,24 @@ def MapView(settings: UserSettings, fetch=None):
                 # in place: in-place dict mutation does notify, but
                 # whole-replace is more readable and the dict is tiny.
                 session.progress = {**session.progress, "done": i + 1}
-                # Render every frame as soon as its GRIB lands. The
-                # visible step is awaited so the user sees their selected
-                # frame come alive immediately; non-visible steps are
-                # fire-and-forget so the download loop keeps moving while
-                # the render pool serialises the actual work in parallel
-                # across CPU cores. Without this, only the visible step
-                # ever rendered and "描画 1 · GRIB 64" stayed stuck.
+                # Render the visible step inline so the user sees their
+                # selected frame come alive as soon as its bytes land.
+                # Non-visible frames are NOT scheduled per-iteration —
+                # piling 64 fire-and-forget asyncio tasks at once
+                # spawned every render-pool worker simultaneously and
+                # blew up memory + CPU. The finally block below kicks a
+                # single background task that renders the rest with
+                # bounded concurrency (one task per pool worker).
                 if display_step == step_hours:
                     await _ensure_rendered(display_step)
-                else:
-                    ft.context.page.run_task(_ensure_rendered, display_step)
         finally:
             session.running = False
             set_progress("")
             session.status_text = ""
+            # Background-fill the remaining frames with bounded
+            # concurrency. Skipped if the user cancelled the download.
+            if not cancel_event.is_set() and primary_cycle is not None:
+                ft.context.page.run_task(_render_missing_in_background)
 
     def start_download():
         # Cancel any previous download first.
@@ -1145,6 +1176,17 @@ def MapView(settings: UserSettings, fetch=None):
         _maybe_render_visible,
         [step_hours, region, data_field_key, primary_cycle],
     )
+
+    # When a base cycle is known, background-fill every frame whose
+    # GRIB is already on disk (e.g. cached from a previous session).
+    # Bounded concurrency lives inside the function. Deps are limited
+    # to primary_cycle so a region/layer change doesn't re-kick the
+    # whole walk — region/layer changes are handled by _render_queue.
+    def _kick_background_fill():
+        if primary_cycle is None:
+            return
+        ft.context.page.run_task(_render_missing_in_background)
+    ft.use_effect(_kick_background_fill, [primary_cycle])
 
     # On mount: probe only the most recent few cycles so the bootstrap
     # can lock onto the latest published base time. Full dialog probe
