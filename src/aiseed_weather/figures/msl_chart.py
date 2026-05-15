@@ -51,20 +51,25 @@ _VANCHOR_HPA = 1013.0
 
 
 def _build_diverging_lut() -> np.ndarray:
-    """256 × 3 uint8 LUT, green-low to brown-high through pale beige.
+    """256 × 3 uint8 LUT, green-low to brown-high through warm beige.
 
-    The LUT is built once at import. The center (LUT index where
-    1013 hPa lands) is the lightest neutral; values fall away
-    symmetrically in luminance toward the green and brown ends.
+    The previous calibration desaturated the anchors to compensate
+    for an opaque alpha-blend, which then forced alpha up to make
+    the colours visible, which hid the base map. Inverting the
+    trade-off: pull the anchors back toward pure hues so the colours
+    carry weight at a lower alpha, letting the gray land/sea cue
+    show through cleanly.
     """
-    # Anchor (data_value, RGB) pairs. The data_value is mapped to a
-    # normalised position in [0, 1] using vmin / vmax.
+    # Anchor (data_value, RGB). Anchors clustered near the typical
+    # data range (980–1030 hPa over a regional view) so the visible
+    # part of the LUT lands in the saturated middle bands, not in
+    # the pale centre.
     anchors: list[tuple[float, tuple[int, int, int]]] = [
-        (940.0,  (74, 122, 78)),    # deep green
-        (990.0,  (138, 176, 136)),  # pale green
-        (1013.0, (216, 208, 184)),  # pale beige (atmosphere mean)
-        (1030.0, (184, 144, 112)),  # tan
-        (1064.0, (110, 72, 48)),    # dark brown
+        (940.0,  (38, 110, 55)),    # deep saturated green
+        (990.0,  (115, 180, 110)),  # lime green
+        (1013.0, (230, 210, 165)),  # warm beige (atmosphere mean)
+        (1030.0, (215, 140, 75)),   # saturated orange-tan
+        (1064.0, (135, 55, 25)),    # deep rust brown
     ]
     xs = np.array(
         [(v - _VMIN_HPA) / (_VMAX_HPA - _VMIN_HPA) for v, _ in anchors],
@@ -92,12 +97,13 @@ def _palette_rgb_for(value_hpa: float) -> tuple[int, int, int]:
 
 
 # ── Alpha-blend parameters ──────────────────────────────────────────
-# Calibration point — see skill. Higher alpha = stronger data colour,
-# lower visibility for the base map. 0.7 keeps land/sea cue legible
-# at coastlines and through low-saturation parts of the palette while
-# the data colour reads as a definite tinted region rather than a
-# whisper.
-_DATA_ALPHA = 0.7
+# Calibration point — see skill. Tied to the palette saturation:
+# bumping the LUT anchors toward pure hues lets us drop alpha back
+# to 0.45 so the gray base map (land vs sea) reads clearly under
+# the data. The two knobs trade off — saturated palette + low
+# alpha beats desaturated palette + high alpha because the latter
+# kills the geographic cue.
+_DATA_ALPHA = 0.45
 
 
 # ── Pill label font ─────────────────────────────────────────────────
