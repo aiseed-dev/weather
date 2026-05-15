@@ -23,6 +23,7 @@ Animation:
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import time
 
@@ -2432,7 +2433,13 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                 ),
                 ft.Container(
                     content=ft.Image(
-                        src=image_bytes,
+                        # Flet 0.85's Image typing claims bytes are
+                        # accepted, but in practice the desktop frontend
+                        # renders a blank tile when fed raw PNG bytes.
+                        # Base64-encoded strings — which the Flet docs
+                        # also list as a supported src form — work
+                        # reliably across versions.
+                        src=base64.b64encode(image_bytes).decode("ascii"),
                         fit=ft.BoxFit.CONTAIN,
                         expand=True,
                     ),

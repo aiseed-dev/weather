@@ -61,7 +61,12 @@ WIND_COLORS = [
     "#a72333",  # 40-50 crimson (storm)
     "#5a155f",  # 50-60+ purple (hurricane)
 ]
-WIND_CMAP = mcolors.ListedColormap(WIND_COLORS)
+# BoundaryNorm with extend="max" needs ncolors == (len(BOUNDS) - 1) + 1
+# (internal bins plus one slot for over-range). The palette had 12
+# entries against 13 bounds, which is one too few — pad to 13.
+while len(WIND_COLORS) < len(WIND_BOUNDS_MS):
+    WIND_COLORS.append(WIND_COLORS[-1])
+WIND_CMAP = mcolors.ListedColormap(WIND_COLORS[: len(WIND_BOUNDS_MS)])
 WIND_CMAP.set_under(WIND_COLORS[0])
 WIND_CMAP.set_over(WIND_COLORS[-1])
 WIND_NORM = mcolors.BoundaryNorm(WIND_BOUNDS_MS, WIND_CMAP.N, extend="max")

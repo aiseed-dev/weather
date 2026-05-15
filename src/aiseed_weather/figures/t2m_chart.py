@@ -50,10 +50,15 @@ T2M_COLORS = [
     "#f9b04e", "#f5933a", "#ed7530", "#de5526", "#c93920",
     "#a82418", "#82130f", "#580808", "#3c0404",
 ]
-# Pad to one less than levels count (BoundaryNorm wants N colors for N+1 boundaries).
-while len(T2M_COLORS) < len(T2M_LEVELS) - 1:
+# With extend="both", BoundaryNorm needs ncolors == (len(LEVELS) - 1) + 2.
+# That's the internal bins plus one slot each for under-range and
+# over-range. ListedColormap counts the slots passed in, so we pad the
+# palette to that exact length and let BoundaryNorm use ncolors=N.
+_INTERNAL_BINS = len(T2M_LEVELS) - 1
+_EXTENDED_BINS = _INTERNAL_BINS + 2
+while len(T2M_COLORS) < _EXTENDED_BINS:
     T2M_COLORS.append(T2M_COLORS[-1])
-T2M_CMAP = mcolors.ListedColormap(T2M_COLORS[: len(T2M_LEVELS) - 1])
+T2M_CMAP = mcolors.ListedColormap(T2M_COLORS[:_EXTENDED_BINS])
 T2M_CMAP.set_under("#1a0030")
 T2M_CMAP.set_over("#1f0000")
 T2M_NORM = mcolors.BoundaryNorm(T2M_LEVELS, T2M_CMAP.N, extend="both")
