@@ -1158,7 +1158,7 @@ def MapView(settings: UserSettings):
 
     catalog_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("プロダクト選択 / Select product"),
+        title=ft.Text("気象モデル選択 / Select weather model"),
         content=ft.Container(
             width=620,
             height=520,
@@ -1303,7 +1303,7 @@ def MapView(settings: UserSettings):
                 spacing=8,
                 controls=[
                     ft.Text(
-                        f"プロダクト: {selected_product.bilingual_label()}",
+                        f"気象モデル: {selected_product.bilingual_label()}",
                         size=11, color=ft.Colors.GREY,
                     ),
                     ft.Text(
@@ -1545,7 +1545,7 @@ def MapView(settings: UserSettings):
 
     time_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("データ / Data (base time + 範囲)"),
+        title=ft.Text("GPV データ / GPV (base time + range)"),
         content=ft.Container(
             width=560,
             height=540,
@@ -1555,7 +1555,7 @@ def MapView(settings: UserSettings):
                 scroll=ft.ScrollMode.ADAPTIVE,
                 controls=[
                     ft.Text(
-                        "現在の base time / Current",
+                        "現在の GPV (base time)",
                         size=11, color=ft.Colors.GREY,
                     ),
                     ft.Text(
@@ -1886,7 +1886,7 @@ def MapView(settings: UserSettings):
 
                 ft.Divider(height=14),
                 ft.Text(
-                    "プロダクト / Product", size=11,
+                    "気象モデル / Weather model", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Text(
@@ -1919,7 +1919,7 @@ def MapView(settings: UserSettings):
                 # ── Data: base time + acquisition status + range ──
                 ft.Divider(height=14),
                 ft.Text(
-                    "データ / Data (base time)", size=11,
+                    "GPV データ / GPV (base time)", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Text(
@@ -1964,7 +1964,7 @@ def MapView(settings: UserSettings):
                 ),
                 cache_bar,
                 ft.TextButton(
-                    content=ft.Text("データ変更 / Change data…", size=12),
+                    content=ft.Text("GPV データ変更 / Change GPV…", size=12),
                     icon=ft.Icons.SCHEDULE,
                     on_click=lambda _: _open_time_dialog(),
                 ),
