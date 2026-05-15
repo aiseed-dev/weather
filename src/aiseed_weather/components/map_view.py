@@ -358,6 +358,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         download_progress = fetch_session["progress"]
         set_download_progress = fetch_session["set_progress"]
         _set_fetch_status_text = fetch_session["set_status_text"]
+        _set_fetch_items = fetch_session["set_items"]
     else:
         download_task_ref, _ = ft.use_state(
             lambda: {"task": None, "cancel_event": None},
@@ -367,6 +368,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
             lambda: {"done": 0, "total": 0}
         )
         _set_fetch_status_text = lambda _x: None
+        _set_fetch_items = lambda _x: None
 
     # User-facing selectors. region drives the chart projection +
     # extent; data_field_key picks which meteorological field to fetch
@@ -810,9 +812,32 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         """Pure background download. No rendering inside the loop —
         rendering is on demand via _ensure_rendered. Region/layer
         changes during the loop don't restart it.
+
+        Maintains a per-frame ``items`` list in the App-level fetch
+        session so the Fetch tab can render pip install-style detail
+        (status / size / duration per row).
         """
         set_download_running(True)
         set_error(None)
+        # Seed the items list — one row per plan entry, all "pending"
+        # until the loop visits them.
+        items = [
+            {
+                "step": disp,
+                "param": selected_field.ecmwf_param,
+                "stitched": (src_c != cycle),
+                "status": "pending",
+                "size_bytes": None,
+                "duration_s": None,
+            }
+            for (disp, src_c, _src_s) in plan
+        ]
+        _set_fetch_items(list(items))
+
+        def _push():
+            # Functional snapshot push so Flet detects the change.
+            _set_fetch_items(list(items))
+
         try:
             service = ForecastService(settings, override_source=data_source_key)
         except ForecastDisabledError as e:
@@ -828,14 +853,20 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                     logger.info(
                         "Download loop cancelled at frame %d/%d", i, total,
                     )
+                    for it in items[i:]:
+                        it["status"] = "cancelled"
+                    _push()
                     break
                 req = ForecastRequest(
-                    run_time=src_cycle, step_hours=src_step, param=selected_field.ecmwf_param,
+                    run_time=src_cycle, step_hours=src_step,
+                    param=selected_field.ecmwf_param,
                 )
-                hit_cache = service.is_cached(req)
                 ext_tag = (
                     f" [ext {src_cycle:%Hz}]" if src_cycle != cycle else ""
                 )
+                items[i]["status"] = "checking"
+                _push()
+                hit_cache = service.is_cached(req)
                 if hit_cache:
                     msg = (
                         f"Cache check {i + 1}/{total} · "
@@ -843,6 +874,15 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                     )
                     set_progress(msg)
                     _set_fetch_status_text(msg)
+                    try:
+                        items[i]["size_bytes"] = (
+                            service._cache_path(req).stat().st_size
+                        )
+                    except OSError:
+                        pass
+                    items[i]["status"] = "cached"
+                    items[i]["duration_s"] = 0.0
+                    _push()
                 else:
                     msg = (
                         f"DL {i + 1}/{total} · "
@@ -850,6 +890,9 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                     )
                     set_progress(msg)
                     _set_fetch_status_text(msg)
+                    items[i]["status"] = "downloading"
+                    _push()
+                    t0 = time.perf_counter()
                     try:
                         await service.download(req)
                     except Exception:
@@ -857,17 +900,26 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                             "Download of step=%dh (src=%s/%dh) failed",
                             display_step, src_cycle, src_step,
                         )
-                        # Don't abort the whole loop on one failure — the
-                        # next iteration may succeed and the failed step
-                        # is reflected as "未取得" in the cache bar.
+                        items[i]["status"] = "failed"
+                        _push()
                         continue
+                    items[i]["duration_s"] = time.perf_counter() - t0
+                    try:
+                        items[i]["size_bytes"] = (
+                            service._cache_path(req).stat().st_size
+                        )
+                    except OSError:
+                        pass
+                    items[i]["status"] = "done"
+                    _push()
                     if not cancel_event.is_set() and i + 1 < total:
                         await asyncio.sleep(PRELOAD_SPACING_SEC)
 
-                # Also pull the MSL overlay GRIB if the user has the
-                # overlay toggled on and the base isn't already MSL.
-                # Read overlay state from the shared ref so a mid-loop
-                # toggle takes effect without restarting.
+                # MSL overlay companion download (when user has the
+                # toggle on and the base isn't already MSL). We don't
+                # add a separate row for this — it's the same display
+                # step, and the overlay file's bytes are added into
+                # the same item's size_bytes accumulator.
                 want_overlay = (
                     render_params_ref.get("msl_overlay", msl_overlay)
                     and render_params_ref.get(
@@ -881,6 +933,14 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                     if not service.is_cached(msl_req):
                         try:
                             await service.download(msl_req)
+                            try:
+                                extra = service._cache_path(msl_req).stat().st_size
+                                items[i]["size_bytes"] = (
+                                    items[i].get("size_bytes") or 0
+                                ) + extra
+                                _push()
+                            except OSError:
+                                pass
                             if not cancel_event.is_set() and i + 1 < total:
                                 await asyncio.sleep(PRELOAD_SPACING_SEC)
                         except Exception:
