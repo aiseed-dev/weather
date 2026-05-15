@@ -52,7 +52,9 @@ if TYPE_CHECKING:
 # occur in the operational record.
 _VMIN_HPA = 990.0
 _VMAX_HPA = 1030.0
-_VANCHOR_HPA = 1013.0
+# Legend-tick anchor positions in hPa. Used elsewhere when drawing
+# the legend bar so the ticks line up with the palette breakpoints.
+_LEGEND_TICKS_HPA = (990.0, 1000.0, 1010.0, 1020.0, 1030.0)
 
 
 def _build_diverging_lut() -> np.ndarray:
@@ -65,16 +67,22 @@ def _build_diverging_lut() -> np.ndarray:
     carry weight at a lower alpha, letting the gray land/sea cue
     show through cleanly.
     """
-    # Anchors spread across the Windy 990 .. 1030 hPa legend so the
-    # full palette is visible on a typical analysis chart. 1013 hPa
-    # (the standard atmosphere) lands at the warm-beige neutral
-    # band, which puts the green / brown halves on the
-    # mid-latitude-low and subtropical-high sides respectively.
+    # Anchors aligned with the legend ticks Windy shows (990, 1000,
+    # 1010, 1020, 1030 hPa — every 10 hPa). Round numbers, not the
+    # textbook 1013.25 standard atmosphere, because:
+    #   * the legend bar and the palette share their reference
+    #     values, so a tick label and the colour it sits on line up
+    #     exactly — no off-by-3-hPa ambiguity for the analyst
+    #   * 10 hPa cadence matches the synoptic conventions for
+    #     legend ticks on every other map service
+    #   * 1010 is closer to the real global / regional mean pressure
+    #     than 1013 anyway; the textbook standard atmosphere was a
+    #     reflexive choice with no meteorological necessity
     anchors: list[tuple[float, tuple[int, int, int]]] = [
         (990.0,  (38, 110, 55)),    # deep saturated green   (low)
-        (1002.0, (115, 180, 110)),  # lime green
-        (1013.0, (230, 210, 165)),  # warm beige (atmosphere mean)
-        (1022.0, (215, 140, 75)),   # saturated orange-tan
+        (1000.0, (115, 180, 110)),  # lime green
+        (1010.0, (230, 210, 165)),  # warm beige             (centre)
+        (1020.0, (215, 140, 75)),   # saturated orange-tan
         (1030.0, (135, 55, 25)),    # deep rust brown        (high)
     ]
     xs = np.array(
