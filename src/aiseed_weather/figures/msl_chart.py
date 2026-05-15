@@ -92,9 +92,12 @@ def _palette_rgb_for(value_hpa: float) -> tuple[int, int, int]:
 
 
 # ── Alpha-blend parameters ──────────────────────────────────────────
-# Calibration point — see skill. 0.5 keeps the gray base map clearly
-# visible while the data colour still reads as a tinted region.
-_DATA_ALPHA = 0.5
+# Calibration point — see skill. Higher alpha = stronger data colour,
+# lower visibility for the base map. 0.7 keeps land/sea cue legible
+# at coastlines and through low-saturation parts of the palette while
+# the data colour reads as a definite tinted region rather than a
+# whisper.
+_DATA_ALPHA = 0.7
 
 
 # ── Pill label font ─────────────────────────────────────────────────
