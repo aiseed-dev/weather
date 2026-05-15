@@ -97,5 +97,5 @@ def render_tp(
     info.add_text("Source", "ECMWF Open Data (CC-BY-4.0)")
     info.add_text("Run", run_id)
     info.add_text("Layer", "tp")
-    img.save(buf, format="PNG", pnginfo=info)
+    img.save(buf, format="PNG", compress_level=1, pnginfo=info)
     return buf.getvalue()

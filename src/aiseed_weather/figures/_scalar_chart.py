@@ -89,8 +89,10 @@ def render_scalar(
         draw = ImageDraw.Draw(img)
         for line in cgen.lines(float(config.isoline_value)):
             if len(line) >= 2:
+                # int + .tolist() to skip the Python-per-vertex
+                # float() conversion that dominated the GLOBAL profile.
                 draw.line(
-                    [(float(p[0]), float(p[1])) for p in line],
+                    line.astype(np.int32).tolist(),
                     fill=config.isoline_color, width=2,
                 )
 
@@ -102,7 +104,9 @@ def render_scalar(
     info.add_text("Source", "ECMWF Open Data (CC-BY-4.0)")
     info.add_text("Run", run_id)
     info.add_text("Layer", config.layer_key)
-    img.save(buf, format="PNG", pnginfo=info)
+    # compress_level=1: viewer-grade PNG, ~5x faster encode than the
+    # default level=6. See msl_chart for the trade-off rationale.
+    img.save(buf, format="PNG", compress_level=1, pnginfo=info)
     return buf.getvalue()
 
 
