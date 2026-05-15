@@ -99,6 +99,9 @@ def _worker_render(
         if layer_key == "tp":
             from aiseed_weather.figures.tp_chart import render_tp
             return render_tp(ds, region=region, run_id=run_id)
+        if layer_key == "wind10m":
+            from aiseed_weather.figures.wind_chart import render_wind
+            return render_wind(ds, region=region, run_id=run_id)
         raise ValueError(f"No renderer wired for layer {layer_key!r}")
     finally:
         ds.close()

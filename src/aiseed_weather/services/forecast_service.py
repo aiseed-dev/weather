@@ -123,7 +123,22 @@ _CLIENT_SOURCE = {
 class ForecastRequest:
     run_time: datetime  # UTC
     step_hours: int
-    param: str          # ECMWF short name: "t2m", "msl", "u10", "v10", "tp", "gh"
+    # ECMWF short name(s): "msl", "2t", "tp". Use "/" to request several
+    # fields in one GRIB ("10u/10v" → ecmwf-opendata downloads both
+    # variables into one file, which is how we get 10m wind). The
+    # caller doesn't care about cache filename collisions — that's
+    # handled by filename_part() below.
+    param: str
+
+    def param_list(self):
+        """Return what to hand to ``ecmwf-opendata Client.retrieve(param=...)``."""
+        if "/" in self.param:
+            return self.param.split("/")
+        return self.param
+
+    def filename_part(self) -> str:
+        """Filesystem-safe identifier for this param set."""
+        return self.param.replace("/", "-")
 
 
 class ForecastDisabledError(RuntimeError):
@@ -210,12 +225,15 @@ def grib_cache_path(
     Mirrors ForecastService._cache_path but is a free function so UI
     code can inspect cache state without going through the (potentially
     expensive, requires-network-ready settings) full service object.
+    ``param`` may be a multi-param string like "10u/10v"; the cache
+    filename uses "-" in place of "/" for filesystem safety.
     """
+    filename_part = param.replace("/", "-")
     return (
         resolved_data_dir(settings) / "ecmwf"
         / run_time.strftime("%Y%m%d")
         / run_time.strftime("%Hz")
-        / f"{param}_{step_hours}h.grib2"
+        / f"{filename_part}_{step_hours}h.grib2"
     )
 
 
@@ -289,14 +307,14 @@ async def probe_cycle_complete(
         # one directory and many runs don't crowd a single flat folder.
         run_dir = self._cache_dir / r.run_time.strftime("%Y%m%d") / r.run_time.strftime("%Hz")
         run_dir.mkdir(parents=True, exist_ok=True)
-        return run_dir / f"{r.param}_{r.step_hours}h.grib2"
+        return run_dir / f"{r.filename_part()}_{r.step_hours}h.grib2"
 
     def _download(self, r: ForecastRequest, target: Path) -> None:
         _verify_multiurl_patch()
         self._client.retrieve(
             type="fc",
             step=r.step_hours,
-            param=r.param,
+            param=r.param_list(),  # str or list[str] for multi-param
             date=r.run_time.strftime("%Y-%m-%d"),
             time=r.run_time.hour,
             target=str(target),

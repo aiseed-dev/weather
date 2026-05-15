@@ -920,15 +920,16 @@ FIELDS: tuple[DataField, ...] = (
         ecmwf_param="2d",
     ),
     DataField(
-        key="10wind",
+        key="wind10m",
         label_ja="10m風",
         label_en="10-metre wind (u, v)",
         unit="m/s",
         level=None,
-        typical_layer="風向風速バーブ + 等風速線",
-        status=Status.PLANNED,
-        ecmwf_param="",  # composite of 10u + 10v, fetched separately
-        notes="ECMWF Open Data の u10/v10 を組合せて描画。",
+        typical_layer="風速シェーディング + 矢印 (ECMWF風)",
+        status=Status.IMPLEMENTED,
+        ecmwf_param="10u/10v",  # multi-param: single GRIB with both fields
+        notes="ECMWF Open Data の 10u/10v を 1 ファイルで取得して合成描画。"
+              "粒子アニメーションは未実装、当面は静的矢印。",
     ),
     DataField(
         key="gust",
