@@ -34,13 +34,14 @@ def _load() -> dict[str, np.ndarray]:
 # Module-level cache: loaded once at first import.
 _MASKS: dict[str, np.ndarray] = _load()
 
-# Thin near-black line — kept at 1 px so it traces the geography
-# without covering data, and dark enough to read against every
-# palette colour the renderers ship (cool-blue ends, warm-red ends,
-# white-zero precipitation, gray base map). The previous near-white
-# choice came from a commercial-app aesthetic and lost the line
-# entirely on charts with a white-to-blue precipitation palette.
-_COASTLINE_RGB: np.ndarray = np.array([24, 24, 28], dtype=np.uint8)  # #18181c
+# Near-pure black coastline. The first calibration was #18181c (a
+# faint blue cast); on the layered chart with a saturated data
+# overlay the line still read as muddy rather than as a definite
+# boundary. Pure black would clip against any genuinely-dark patch
+# (deep low-pressure green, post-frontal rain etc.) so we keep a
+# whisper of value separation at #050508 — visually black to the
+# eye but not literal (0, 0, 0).
+_COASTLINE_RGB: np.ndarray = np.array([5, 5, 8], dtype=np.uint8)  # #050508
 
 
 def apply_coastlines(rgb: np.ndarray, region_key: str) -> None:

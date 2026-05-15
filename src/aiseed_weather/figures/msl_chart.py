@@ -306,16 +306,16 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
     data_rgb = _LUT[(norm * 255.0).astype(np.uint8)]
     final = _alpha_blend(base, data_rgb, _DATA_ALPHA)
 
-    # 3. coastline (layer 3) — stamped ON TOP of the blend so it
-    # doesn't get diluted to a mid-tone.
-    apply_coastlines(final, region.key)
-
-    # 4. isolines + pills (layers 4–5) — drawn on a SUPER-SAMPLED
-    # copy. Upsample the composite with NEAREST so the gray base /
-    # coastline stay crisp, then draw white lines at width=1 in the
+    # 3. isolines + pills (layers 3–4) — drawn on a SUPER-SAMPLED
+    # copy. Upsample the composite with NEAREST so the gray base
+    # stays crisp, then draw white lines at width=1 in the
     # supersample frame. A final LANCZOS downsample yields an
-    # antialiased ~0.5 px line on the native frame — visibly thinner
-    # than ImageDraw can stroke directly at native resolution.
+    # antialiased ~0.5 px line on the native frame.
+    #
+    # The coastline is deliberately NOT stamped on the composite
+    # yet — it would be blurred by the LANCZOS round-trip, washing
+    # out from the chosen near-black to a muddy mid-tone. We stamp
+    # it after step 5 instead.
     ss = _ISOLINE_SUPERSAMPLE
     H, W = h * ss, w * ss
     img_ss = Image.fromarray(final, mode="RGB").resize(
@@ -362,6 +362,14 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
         )
 
     img = img_ss.resize((w, h), Image.LANCZOS)
+
+    # 5. coastline (layer 5) — stamped on the native-resolution
+    # output so it stays as a crisp 1 px near-black line. Earlier
+    # this was applied before the supersample round-trip and the
+    # LANCZOS downsample blurred it to a muddy mid-tone.
+    final_arr = np.asarray(img, dtype=np.uint8).copy()
+    apply_coastlines(final_arr, region.key)
+    img = Image.fromarray(final_arr, mode="RGB")
 
     buf = io.BytesIO()
     img.save(

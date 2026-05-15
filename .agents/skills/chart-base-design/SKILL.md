@@ -43,22 +43,27 @@ The renderer composites in this order:
    cooler, land slightly warmer, same luminance band). From
    `_basemap.base_map_rgb(region_key)`. The base map is the SAME
    across every variable in a given region. **Coastlines are NOT
-   baked into this layer** — they go on top (see step 3) so the
-   alpha-blend doesn't dilute them.
+   baked into this layer.**
 2. **Data overlay** — partially transparent colour from the variable's
    continuous LUT, alpha-blended over the base. Where the variable
    is "below threshold" or has no meaningful value (e.g. precipitation
    below 0.1 mm), alpha = 0 so the base shows through unchanged.
-3. **Coastlines** — thin near-black 1 px line, stamped on top of the
-   alpha-blended composite. Must be drawn after the blend, otherwise
-   a 0.45 alpha turns a #18181c coastline into a #807a78 mid-tone
-   that reads almost-white on a light-beige data area.
-4. **Isolines** — single colour (white) thin lines at the variable's
-   convention interval. **The colour is the same across all levels;
-   the line position carries information, not its hue.**
-5. **Pill labels** — rounded-rectangle value markers placed ON the
+3. **Isolines** — single colour (white) thin lines at the variable's
+   convention interval, drawn on a 2× supersampled copy of the
+   composite. **The colour is the same across all levels; the line
+   position carries information, not its hue.**
+4. **Pill labels** — rounded-rectangle value markers placed ON the
    isolines (not next to them), with the pill background coloured by
    the same data palette at that isoline's value. White text on top.
+   Drawn at supersample with a 2× font so they Lanczos-downsample
+   to the intended visual size.
+5. **Coastlines** — thin near-black 1 px line, stamped on the
+   **native-resolution downsampled output**. Stamping before the
+   supersample round-trip puts the line through a LANCZOS filter
+   that washes it out from #050508 to a muddy mid-tone; stamping
+   after keeps it crisp at full luminance. The coastline is the
+   one layer that genuinely wants aliased 1 px hard edges, not
+   antialiased ones.
 
 ## Luminance hierarchy
 
@@ -82,7 +87,9 @@ readability that makes the chart work.
 ```
 SEA_RGB             = #585c64
 LAND_RGB            = #767a80
-COASTLINE_RGB       = #18181c
+COASTLINE_RGB       = #050508  (near-pure black; the line is stamped
+                                AFTER the supersample/downsample
+                                round-trip to stay crisp)
 ISOLINE_RGB         = #ffffff
 ISOLINE_WIDTH_THIN  = 1 px (at supersample resolution)
 ISOLINE_WIDTH_BOLD  = 2 px (at supersample resolution)
