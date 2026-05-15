@@ -1804,14 +1804,9 @@ def MapView(settings: UserSettings):
         on_select=lambda e: apply_region(region_by_key(e.control.value)),
     )
 
-    # Status badge for the currently-selected product (green for fully
-    # wired through, amber for "planned, viewing only").
-    if selected_product.status == Status.IMPLEMENTED:
-        product_status_color = ft.Colors.GREEN
-        product_status_text = "実装済み / wired"
-    else:
-        product_status_color = ft.Colors.AMBER
-        product_status_text = "閲覧のみ / catalog only"
+    # (Status badge for the panel-displayed weather model was removed:
+    # only implemented models are ever displayed there, so the badge
+    # would always read "wired" — redundant.)
 
     # Per-step cache status for the bar in the Data section.
     # green        = rendered PNG in memory (primary cycle)
@@ -1884,6 +1879,8 @@ def MapView(settings: UserSettings):
                 # 1. 気象モデル / Weather model
                 # Pick this first — base time is meaningless without
                 # knowing which model's cycle we're talking about.
+                # Only implemented models are ever displayed here, so
+                # no status badge is needed (would always be "wired").
                 # Visually understated because most users settle on
                 # one model and rarely change.
                 # ───────────────────────────────────────────────
@@ -1891,26 +1888,29 @@ def MapView(settings: UserSettings):
                     "気象モデル / Weather model", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
-                ft.Text(
-                    selected_product.bilingual_label(),
-                    size=12, weight=ft.FontWeight.BOLD,
-                ),
                 ft.Row(
-                    spacing=6,
+                    spacing=4,
                     controls=[
-                        ft.Container(
-                            width=8, height=8, bgcolor=product_status_color,
-                            border_radius=4,
-                        ),
                         ft.Text(
-                            product_status_text,
-                            size=10, color=ft.Colors.GREY,
+                            selected_product.bilingual_label(),
+                            size=12, weight=ft.FontWeight.BOLD,
+                            expand=True,
+                        ),
+                        # Hover for spec / agency / backend / license
+                        # so the panel stays clean.
+                        ft.Container(
+                            content=ft.Icon(
+                                ft.Icons.INFO_OUTLINE,
+                                size=14, color=ft.Colors.GREY,
+                            ),
+                            tooltip=(
+                                f"{selected_product.spec}\n"
+                                f"{selected_product.agency} · "
+                                f"{selected_product.backend}\n"
+                                f"License: {selected_product.license_info}"
+                            ),
                         ),
                     ],
-                ),
-                ft.Text(
-                    selected_product.spec,
-                    size=10, color=ft.Colors.GREY,
                 ),
                 ft.TextButton(
                     content=ft.Text("モデル変更 / Change…", size=12),
@@ -2003,17 +2003,27 @@ def MapView(settings: UserSettings):
                     "レイヤー / Layer", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
-                ft.Text(
-                    selected_field.bilingual_label() + selected_field.level_suffix(),
-                    size=12, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    f"{selected_field.key} · {selected_field.unit}",
-                    size=10, color=ft.Colors.GREY,
-                ),
-                ft.Text(
-                    selected_field.typical_layer,
-                    size=10, color=ft.Colors.GREY,
+                ft.Row(
+                    spacing=4,
+                    controls=[
+                        ft.Text(
+                            selected_field.bilingual_label()
+                            + selected_field.level_suffix(),
+                            size=12, weight=ft.FontWeight.BOLD,
+                            expand=True,
+                        ),
+                        ft.Container(
+                            content=ft.Icon(
+                                ft.Icons.INFO_OUTLINE,
+                                size=14, color=ft.Colors.GREY,
+                            ),
+                            tooltip=(
+                                f"{selected_field.key} · "
+                                f"{selected_field.unit}\n"
+                                f"{selected_field.typical_layer}"
+                            ),
+                        ),
+                    ],
                 ),
                 ft.TextButton(
                     content=ft.Text("レイヤー変更 / Change layer…", size=12),
