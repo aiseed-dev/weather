@@ -74,6 +74,12 @@ FRAME_INTERVAL_SEC = 0.9  # animation playback frame duration
 # spares us from multi-second retry backoffs.
 PRELOAD_SPACING_SEC = 0.5
 
+# Max distinct (cycle, region, layer, step) PNGs held in memory. At
+# ~500KB per PNG this caps memory at ~250MB. Eviction is FIFO (oldest
+# insertion dropped) which is a reasonable proxy for LRU here since
+# the typical access pattern is "fill in time order, replay".
+FRAMES_CACHE_LIMIT = 500
+
 # Choices we expose in the Data dialog. Horizon caps where the animation
 # stops; cadence is the spacing between frames. ECMWF only publishes 6h
 # after T+144h, so a 3h cadence past 144h actually yields 6h there.
@@ -267,11 +273,14 @@ def MapView(settings: UserSettings):
     progress, set_progress = ft.use_state("")
     step_hours, set_step_hours = ft.use_state(0)
 
-    # Animation state.
-    # frames maps step_hours -> rendered PNG bytes for that frame.
-    # run_time_holder remembers the IFS cycle the frames belong to;
-    # when we need to load more frames we reuse the same cycle so the
-    # animation is consistent.
+    # Rendered-PNG cache. Each render takes ~5s (cartopy + matplotlib)
+    # so we keep results across region/layer/cycle changes by keying on
+    # the full (cycle, region, layer, step) tuple — the same combination
+    # the user might revisit later in the session is then instant.
+    #
+    # Bounded by FRAMES_CACHE_LIMIT entries (FIFO eviction) so memory
+    # doesn't grow without limit if the user explores many regions ×
+    # layers × cycles. At ~500KB per PNG, 500 entries = ~250MB.
     frames, set_frames = ft.use_state({})
     is_playing, set_is_playing = ft.use_state(False)
     run_time_holder, set_run_time_holder = ft.use_state(None)
@@ -387,6 +396,29 @@ def MapView(settings: UserSettings):
     render_params_ref["source_lookup"] = source_lookup
     render_params_ref["data_source_key"] = data_source_key
 
+    def _frame_key(step, *, cycle=None, region_=None, layer=None):
+        """Build the composite key used by the frames PNG cache.
+
+        Defaults pull from the current MapView render scope, but
+        callers (e.g. the download loop reading from render_params_ref)
+        can override.
+        """
+        c = cycle if cycle is not None else primary_cycle
+        r = region_ if region_ is not None else region
+        ly = layer if layer is not None else data_field_key
+        cycle_iso = c.isoformat() if c is not None else "none"
+        return (cycle_iso, r.key, ly, step)
+
+    def _get_frame(step, **kw):
+        return frames.get(_frame_key(step, **kw))
+
+    def _put_frame(prev, key, png):
+        new = {**prev, key: png}
+        if len(new) > FRAMES_CACHE_LIMIT:
+            oldest = next(iter(new))
+            del new[oldest]
+        return new
+
     async def _render_one(
         service,
         src_cycle,
@@ -465,13 +497,9 @@ def MapView(settings: UserSettings):
             t0 = time.perf_counter()
             run_time, did_probe = await _resolve_run_time(service, force=force)
             t_probe = time.perf_counter()
-            # If we just locked onto a different cycle, drop the frame
-            # cache so the animation stays internally consistent.
-            cycle_changed = (
-                run_time_holder is not None and run_time != run_time_holder
-            )
-            if cycle_changed:
-                set_frames({})
+            # The frames cache is keyed by (cycle, region, layer, step)
+            # so a cycle change no longer needs to invalidate it — old
+            # cycle entries stay around for revisit.
             set_run_time_holder(run_time)
 
             # Resolve the actual (source_cycle, source_step) for the
@@ -517,12 +545,8 @@ def MapView(settings: UserSettings):
 
             set_image_bytes(png_bytes)
             set_run_label(label)
-            # Cache this frame; cycle invariance is preserved because we
-            # just dropped the dict above if the cycle changed.
-            if cycle_changed:
-                set_frames({step: png_bytes})
-            else:
-                set_frames(lambda prev: {**prev, step: png_bytes})
+            key = _frame_key(step, cycle=run_time, region_=region_used)
+            set_frames(lambda prev: _put_frame(prev, key, png_bytes))
             set_progress("")
             set_state("ready")
             logger.info(
@@ -541,6 +565,47 @@ def MapView(settings: UserSettings):
             set_error(f"{type(e).__name__}: {e}")
             set_state("error")
 
+    async def _render_queue(target_region_key: str, target_layer_key: str):
+        """Background fill: render every step_options for the given
+        (cycle, region, layer) combo from cached GRIBs.
+
+        Only renders frames that are missing from memory and whose
+        GRIB is on disk — so it costs CPU only, no network. Stops
+        early if the region/layer has changed in the meantime
+        (the user moved on; renders for an old combo would be wasted).
+        """
+        cycle = primary_cycle
+        if cycle is None:
+            return
+        for display_step in step_options:
+            # Bail if user has navigated to a different render combo.
+            cur_region_key = render_params_ref.get(
+                "region", region,
+            ).key
+            cur_layer_key = render_params_ref.get(
+                "data_field", data_field_key,
+            )
+            if (
+                cur_region_key != target_region_key
+                or cur_layer_key != target_layer_key
+            ):
+                logger.info(
+                    "Render queue stopped: region/layer changed (now %s/%s)",
+                    cur_region_key, cur_layer_key,
+                )
+                return
+            key = _frame_key(
+                display_step, cycle=cycle,
+                region_=region_by_key(target_region_key)
+                    if target_region_key != "custom" else region,
+                layer=target_layer_key,
+            )
+            if key in frames:
+                continue
+            await _ensure_rendered(display_step)
+            # Tiny yield so the UI thread can update.
+            await asyncio.sleep(0.01)
+
     async def _ensure_rendered(display_step: int):
         """Render one display step from cached GRIB into the frames dict.
 
@@ -553,9 +618,16 @@ def MapView(settings: UserSettings):
         """
         cur_region = render_params_ref.get("region", region)
         cur_primary = render_params_ref.get("primary", primary_cycle)
+        cur_layer = render_params_ref.get("data_field", data_field_key)
         cur_lookup = render_params_ref.get("source_lookup", source_lookup)
         cur_source = render_params_ref.get("data_source_key", data_source_key)
-        if display_step in frames:
+        cache_key = _frame_key(
+            display_step, cycle=cur_primary, region_=cur_region, layer=cur_layer,
+        )
+        if cache_key in frames:
+            # Still serve it as the visible image if it matches.
+            if display_step == step_hours:
+                set_image_bytes(frames[cache_key])
             return
         src_cycle, src_step = cur_lookup.get(
             display_step, (cur_primary, display_step),
@@ -590,8 +662,9 @@ def MapView(settings: UserSettings):
         except Exception:
             logger.exception("Render of step=%dh failed", display_step)
             return
-        # Functional update so we don't clobber concurrent renders.
-        set_frames(lambda prev: {**prev, display_step: png})
+        # Functional update with FIFO bound so we don't clobber
+        # concurrent renders or grow without limit.
+        set_frames(lambda prev: _put_frame(prev, cache_key, png))
         # Only swap the visible image if this is still the current step.
         if display_step == step_hours:
             set_image_bytes(png)
@@ -717,7 +790,7 @@ def MapView(settings: UserSettings):
         # If the user's selected step isn't downloaded yet, we'll still
         # start the loop; the tick will just stall on missing frames.
         for _ in range(40):  # up to ~10s
-            if step_hours in frames or download_progress.get("done", 0) > 0:
+            if _get_frame(step_hours) is not None or download_progress.get("done", 0) > 0:
                 break
             await asyncio.sleep(0.25)
         set_is_playing(True)
@@ -733,13 +806,15 @@ def MapView(settings: UserSettings):
         except ValueError:
             return
         next_step = step_options[(idx + 1) % len(step_options)]
-        next_png = frames.get(next_step)
+        next_png = _get_frame(next_step)
         if next_png is None:
-            # Missing frame — stop rather than stall.
-            set_is_playing(False)
-            return
+            # Missing frame — try lazy render then carry on; if still
+            # nothing, advance silently (don't stall the whole loop).
+            await _ensure_rendered(next_step)
+            next_png = _get_frame(next_step)
         set_step_hours(next_step)
-        set_image_bytes(next_png)
+        if next_png is not None:
+            set_image_bytes(next_png)
         set_run_label(
             f"{run_time_holder:%Y%m%d %Hz} IFS · {_step_label(next_step)}"
             if run_time_holder else _step_label(next_step)
@@ -787,50 +862,52 @@ def MapView(settings: UserSettings):
         if new_step == step_hours:
             return
         set_is_playing(False)
+        # _maybe_render_visible (effect on step_hours) will load the
+        # cached PNG or kick a render. We just update step + label.
         set_step_hours(new_step)
-        cached = frames.get(new_step)
+        cached = _get_frame(new_step)
         if cached is not None:
             set_image_bytes(cached)
-            set_run_label(
-                f"{run_time_holder:%Y%m%d %Hz} IFS · {_step_label(new_step)}"
-                if run_time_holder else _step_label(new_step)
-            )
-        else:
-            ft.context.page.run_task(load, step=new_step)
+        set_run_label(
+            f"{run_time_holder:%Y%m%d %Hz} IFS · {_step_label(new_step)}"
+            if run_time_holder else _step_label(new_step)
+        )
 
     def step_by(delta: int):
         idx = step_options.index(step_hours)
         new_step = step_options[(idx + delta) % len(step_options)]
         set_is_playing(False)
         set_step_hours(new_step)
-        cached = frames.get(new_step)
+        cached = _get_frame(new_step)
         if cached is not None:
             set_image_bytes(cached)
-            set_run_label(
-                f"{run_time_holder:%Y%m%d %Hz} IFS · {_step_label(new_step)}"
-                if run_time_holder else _step_label(new_step)
-            )
-        else:
-            ft.context.page.run_task(load, step=new_step)
+        set_run_label(
+            f"{run_time_holder:%Y%m%d %Hz} IFS · {_step_label(new_step)}"
+            if run_time_holder else _step_label(new_step)
+        )
 
     def apply_region(new_region: Region):
-        # Region change invalidates the rendered-PNG cache but NOT the
-        # GRIB2 cache on disk. The download loop (if running) is left
-        # alone — it doesn't care about region. _maybe_render_visible
-        # (effect, deps include region) re-renders the visible step
-        # from disk. Other frames are re-rendered lazily on demand.
+        # Region change does NOT clear the frame cache (entries are
+        # keyed by region, so old-region renders stay reachable for
+        # instant switch-back). The visible step is re-rendered for
+        # the new region by _maybe_render_visible. Other steps are
+        # filled in by the background re-render queue if needed.
         if new_region == region:
             set_show_region_dialog(False)
             return
         set_region(new_region)
-        set_frames({})
         set_show_region_dialog(False)
+        # Background fill: render all step_options for the new region
+        # from cached GRIBs. Skips frames already in the memory cache.
+        if primary_cycle is not None:
+            ft.context.page.run_task(_render_queue, new_region.key, data_field_key)
 
     def toggle_play(_):
         if is_playing:
             set_is_playing(False)
             return
-        missing = [s for s in step_options if s not in frames]
+        # Missing means "not in memory cache for current view".
+        missing = [s for s in step_options if _get_frame(s) is None]
         if missing:
             ft.context.page.run_task(load_all_steps_and_play)
         else:
@@ -876,8 +953,10 @@ def MapView(settings: UserSettings):
         set_product_key(key)
         if key != product_key:
             set_data_source_key(_initial_source_for(key))
-            # Different product → its frames are not comparable. Drop.
-            set_frames({})
+            # The frames cache is keyed by (cycle, region, layer, step)
+            # — products don't affect cache validity directly. Future
+            # work: if products start providing different fields, key
+            # by product too.
         set_show_catalog_dialog(False)
         # Today only ECMWF HRES is wired through. If the user picks a
         # planned product, we update the display and the chart area
@@ -1012,9 +1091,11 @@ def MapView(settings: UserSettings):
     def _select_data_field(key: str):
         if key != data_field_key:
             set_data_field_key(key)
-            # Different field → cached PNGs are wrong (we'd be showing
-            # the old field's rendering). Drop the cache.
-            set_frames({})
+            # Cache is keyed by layer, so old-layer renders stay
+            # cached for instant switch-back. Background fill the
+            # new layer for current region+cycle.
+            if primary_cycle is not None:
+                ft.context.page.run_task(_render_queue, region.key, key)
         set_show_data_dialog(False)
 
     def _build_field_card(f) -> ft.Control:
@@ -1301,9 +1382,10 @@ def MapView(settings: UserSettings):
             if step_hours not in new_options and new_options:
                 nearest = min(new_options, key=lambda s: abs(s - step_hours))
                 set_step_hours(nearest)
-        if cycle_changed or horizon_changed:
-            # Different cycle or different frame set → drop in-memory PNGs.
-            set_frames({})
+        # Cache is keyed by cycle so old-cycle renders persist for
+        # instant switch-back. Horizon/cadence change just re-derives
+        # step_options; old PNGs that match the new step keys still
+        # work, others sit dormant.
         set_show_time_dialog(False)
 
     cycle_now_display = (
@@ -1530,7 +1612,7 @@ def MapView(settings: UserSettings):
         current_idx = step_options.index(step_hours)
     except ValueError:
         current_idx = 0
-    loaded_count = len(frames)
+    loaded_count = sum(1 for s in step_options if _get_frame(s) is not None)
     total_count = len(step_options)
     all_loaded = loaded_count >= total_count
     has_image = image_bytes is not None
@@ -1649,12 +1731,14 @@ def MapView(settings: UserSettings):
     # grey         = nothing. We probe the SOURCE cycle for each
     #                display step so stitched frames are accounted for.
     if primary_cycle is not None and stitch_plan:
-        cache_rendered = sum(1 for s in step_options if s in frames)
+        cache_rendered = sum(
+            1 for s in step_options if _get_frame(s) is not None
+        )
         cache_grib = 0
         cache_cells = []
         for display_step, src_cycle, src_step in stitch_plan:
             stitched = (src_cycle != primary_cycle)
-            if display_step in frames:
+            if _get_frame(display_step) is not None:
                 color = (
                     ft.Colors.LIGHT_GREEN if stitched else ft.Colors.GREEN
                 )
