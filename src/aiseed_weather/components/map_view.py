@@ -1687,10 +1687,21 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         pub_at = _publication_time(dt)
         now_utc = datetime.now(tz=timezone.utc)
         verified = cycle_check_results.get(dt.isoformat())
+        # ECMWF Open Data retention is asymmetric: long cycles
+        # (00z/12z) stay for ~5 days, short cycles (06z/18z) drop off
+        # at ~3 days. A 404 therefore means one of two very different
+        # things — "not published yet" vs "aged out of retention" —
+        # and the label has to distinguish them so the user doesn't
+        # try to refetch a cycle that no longer exists upstream.
         if verified is True:
             pub_state = f"✓ 公開確認済み ({pub_at:%m/%d %H:%M})"
         elif verified is False:
-            pub_state = f"✗ 未公開 (予測 {pub_at:%m/%d %H:%M})"
+            if now_utc < pub_at:
+                pub_state = f"✗ 未公開 (予測 {pub_at:%m/%d %H:%M})"
+            else:
+                pub_state = (
+                    f"✗ リテンション切れ (公開: {pub_at:%m/%d %H:%M})"
+                )
         elif now_utc < pub_at:
             pub_state = f"公開予定 {pub_at:%m/%d %H:%M} (確認中…)"
         else:
