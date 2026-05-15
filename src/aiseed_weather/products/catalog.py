@@ -893,7 +893,9 @@ FIELDS: tuple[DataField, ...] = (
         label_en="Mean sea level pressure",
         unit="hPa",
         level=None,
-        typical_layer="等圧線 4 hPa, 太線 20 hPa (synoptic convention)",
+        typical_layer=(
+            "発散カラー (1013 hPa 中心) + 等圧線 4 hPa / 太線 20 hPa"
+        ),
         status=Status.IMPLEMENTED,
         ecmwf_param="msl",
     ),
