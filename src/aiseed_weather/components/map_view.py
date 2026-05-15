@@ -814,6 +814,11 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         if display_step == step_hours:
             set_image_bytes(png)
             set_run_label(label)
+            # _ensure_rendered runs as a background task and is the only
+            # path that paints a PNG when a download finishes the visible
+            # step. Move out of "idle" so the main area drops the
+            # "Press 取得" placeholder and actually shows the chart.
+            set_state("ready")
 
     async def _download_loop(cycle, plan, cancel_event):
         """Pure background download. No rendering inside the loop —
@@ -1862,6 +1867,13 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
 
     def _confirm_fetch(_):
         set_show_fetch_confirm(False)
+        # Move out of "idle" right away so the main area swaps the
+        # "Press 取得" placeholder for the loading spinner. The
+        # download loop runs in the background and won't itself
+        # touch state — _ensure_rendered promotes to "ready" once
+        # the visible frame is painted.
+        if state == "idle":
+            set_state("loading")
         start_download()
 
     fetch_confirm_dialog = ft.AlertDialog(
