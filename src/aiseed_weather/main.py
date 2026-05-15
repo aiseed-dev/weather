@@ -16,6 +16,9 @@ import sys
 # forecast_service installs a multiurl monkey-patch at module import and
 # logs a confirmation that we want to see in the dev terminal. If we wait
 # until main() to configure logging, that patch message gets swallowed.
+# (Third-party deprecation noise — the cfgrib / xarray FutureWarning —
+# is silenced in the package __init__.py so it covers tests and scripts
+# too, not only this entry point.)
 _LOG_LEVEL = os.environ.get("AISEED_WEATHER_LOG", "INFO").upper()
 logging.basicConfig(
     level=_LOG_LEVEL,
