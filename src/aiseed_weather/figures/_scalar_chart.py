@@ -232,11 +232,24 @@ def _squeeze_2d(arr: np.ndarray) -> np.ndarray:
     return arr
 
 
-def _extract_kelvin_at_level(var_names: tuple[str, ...]):
+def _select_level(da, level: int):
+    """Slice a pressure-level DataArray down to one hPa level.
+
+    cfgrib exposes the level axis as ``isobaricInhPa`` for upper-air
+    fields; multi-band GRIBs from the new fetch pipeline carry many
+    levels in one variable. Falls back gracefully if the array is
+    already 2D (single-level GRIB)."""
+    if "isobaricInhPa" in da.dims:
+        return da.sel(isobaricInhPa=level)
+    return da
+
+
+def _extract_kelvin_at_level(var_names: tuple[str, ...], level: int | None = None):
     def _fn(ds):
         for n in var_names:
             if n in ds.data_vars:
-                return _squeeze_2d(np.asarray(ds[n].values, dtype=np.float32)) - 273.15
+                da = ds[n] if level is None else _select_level(ds[n], level)
+                return _squeeze_2d(np.asarray(da.values, dtype=np.float32)) - 273.15
         raise ValueError(
             f"None of {var_names!r} found in dataset; "
             f"vars={list(ds.data_vars)}",
@@ -244,16 +257,18 @@ def _extract_kelvin_at_level(var_names: tuple[str, ...]):
     return _fn
 
 
-def _extract_wind_speed_at_level():
+def _extract_wind_speed_at_level(level: int | None = None):
     def _fn(ds):
         u = v = None
         for n in ("u", "U"):
             if n in ds.data_vars:
-                u = _squeeze_2d(np.asarray(ds[n].values, dtype=np.float32))
+                da = ds[n] if level is None else _select_level(ds[n], level)
+                u = _squeeze_2d(np.asarray(da.values, dtype=np.float32))
                 break
         for n in ("v", "V"):
             if n in ds.data_vars:
-                v = _squeeze_2d(np.asarray(ds[n].values, dtype=np.float32))
+                da = ds[n] if level is None else _select_level(ds[n], level)
+                v = _squeeze_2d(np.asarray(da.values, dtype=np.float32))
                 break
         if u is None or v is None:
             raise ValueError(
@@ -263,11 +278,12 @@ def _extract_wind_speed_at_level():
     return _fn
 
 
-def _extract_value_at_level(var_names: tuple[str, ...]):
+def _extract_value_at_level(var_names: tuple[str, ...], level: int | None = None):
     def _fn(ds):
         for n in var_names:
             if n in ds.data_vars:
-                return _squeeze_2d(np.asarray(ds[n].values, dtype=np.float32))
+                da = ds[n] if level is None else _select_level(ds[n], level)
+                return _squeeze_2d(np.asarray(da.values, dtype=np.float32))
         raise ValueError(
             f"None of {var_names!r} found in dataset; "
             f"vars={list(ds.data_vars)}",
@@ -327,7 +343,7 @@ def _make_t_config(level: int) -> ScalarLayerConfig:
         layer_key=f"t{level}",
         bounds=_TEMP_BOUNDS,
         palette=_TEMP_PALETTE,
-        extractor=_extract_kelvin_at_level(("t",)),
+        extractor=_extract_kelvin_at_level(("t",), level=level),
         isoline_value=0.0,
     )
 
@@ -337,7 +353,7 @@ def _make_gh_config(level: int) -> ScalarLayerConfig:
         layer_key=f"gh{level}",
         bounds=_GH_BOUNDS_AND_PALETTE[level],
         palette=_GH_PALETTE,
-        extractor=_extract_value_at_level(("gh", "z")),
+        extractor=_extract_value_at_level(("gh", "z"), level=level),
     )
 
 
@@ -358,7 +374,7 @@ def _make_wind_config(level: int) -> ScalarLayerConfig:
         layer_key=f"wind{level}",
         bounds=bounds,
         palette=palette,
-        extractor=_extract_wind_speed_at_level(),
+        extractor=_extract_wind_speed_at_level(level=level),
     )
 
 
@@ -367,7 +383,7 @@ def _make_w_config(level: int) -> ScalarLayerConfig:
         layer_key=f"w{level}",
         bounds=_W_BOUNDS,
         palette=_W_PALETTE,
-        extractor=_extract_value_at_level(("w",)),
+        extractor=_extract_value_at_level(("w",), level=level),
         isoline_value=0.0,
     )
 
@@ -377,7 +393,7 @@ def _make_r_config(level: int) -> ScalarLayerConfig:
         layer_key=f"r{level}",
         bounds=_RH_BOUNDS,
         palette=_RH_PALETTE,
-        extractor=_extract_value_at_level(("r",)),
+        extractor=_extract_value_at_level(("r",), level=level),
     )
 
 

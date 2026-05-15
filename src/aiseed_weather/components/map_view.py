@@ -79,6 +79,13 @@ PRELOAD_SPACING_SEC = 0.5
 # the typical access pattern is "fill in time order, replay".
 FRAMES_CACHE_LIMIT = 500
 
+# Kinds of GRIB the download loop fetches per step. ``sfc`` carries
+# every IMPLEMENTED surface field bundled in one multi-band file;
+# ``pl`` carries every IMPLEMENTED pressure-level field × every level
+# in another. Both are always fetched so layer change never triggers a
+# follow-up download — see .agents/skills/data-flow/SKILL.md.
+_ACTIVE_KINDS: tuple[str, ...] = ("sfc", "pl")
+
 # Windy-style thumbnail gradients for the in-panel layer cards. Color
 # stops sampled from each layer's actual LUT so the chip previews the
 # rendered chart at a glance — no separate art asset to maintain.
@@ -853,7 +860,7 @@ def MapView(settings: UserSettings, fetch=None):
         if not want_msl:
             return None
         msl_req = ForecastRequest(
-            run_time=src_cycle, step_hours=src_step, param="msl",
+            run_time=src_cycle, step_hours=src_step, kind="sfc",
         )
         if not service.is_cached(msl_req):
             try:
@@ -864,7 +871,7 @@ def MapView(settings: UserSettings, fetch=None):
                     "rendering without overlay", src_step,
                 )
                 return None
-        return grib_cache_path(settings, src_cycle, src_step, param="msl")
+        return grib_cache_path(settings, src_cycle, src_step, kind="sfc")
 
     async def _render_one(
         service,
@@ -884,7 +891,7 @@ def MapView(settings: UserSettings, fetch=None):
         """
         request = ForecastRequest(
             run_time=src_cycle, step_hours=src_step,
-            param=selected_field.ecmwf_param, level=selected_field.level,
+            kind=selected_field.kind,
         )
         # Worker process handles decode + render. Main process never
         # holds the xr.Dataset — keeps memory + GIL out of the loop.
@@ -925,7 +932,10 @@ def MapView(settings: UserSettings, fetch=None):
         set_progress(
             f"Probing latest fully-published ECMWF run (need T+{MAX_STEP}h)…"
         )
-        new_run = await service.latest_run(step_hours=MAX_STEP, param=selected_field.ecmwf_param)
+        # Probe with MSL: it's surface, single-band, and always
+        # present, so the HEAD request is fast and doesn't depend on
+        # which layer the user happens to be looking at.
+        new_run = await service.latest_run(step_hours=MAX_STEP, param="msl")
         return new_run, True
 
     async def load(*, step: int, region_: Region | None = None, force: bool = False):
@@ -979,7 +989,7 @@ def MapView(settings: UserSettings, fetch=None):
                 )
             request = ForecastRequest(
                 run_time=src_cycle, step_hours=src_step,
-                param=selected_field.ecmwf_param, level=selected_field.level,
+                kind=selected_field.kind,
             )
             hit_cache = service.is_cached(request)
             set_progress(
@@ -1108,7 +1118,7 @@ def MapView(settings: UserSettings, fetch=None):
         src_cycle, src_step = cur_lookup.get(
             display_step, (cur_primary, display_step),
         )
-        if src_cycle is None or not is_grib_cached(settings, src_cycle, src_step, param=cur_field.ecmwf_param, level=cur_field.level):
+        if src_cycle is None or not is_grib_cached(settings, src_cycle, src_step, kind=cur_field.kind):
             # No GRIB for this layer/cycle yet. If we're failing to
             # render the *visible* step, clear the on-screen image so
             # the user doesn't keep staring at the previous layer's
@@ -1131,17 +1141,17 @@ def MapView(settings: UserSettings, fetch=None):
                 f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
             )
         # Worker process decodes + renders. We just hand it the path.
-        gpath = grib_cache_path(settings, src_cycle, src_step, param=cur_field.ecmwf_param, level=cur_field.level)
+        gpath = grib_cache_path(settings, src_cycle, src_step, kind=cur_field.kind)
         # Overlay GRIB path — must be cached already; we don't kick off
         # a download here because _ensure_rendered runs in latency-
         # sensitive paths (slider scrubbing, animation). If not cached,
         # render the base only and let the background loop pick it up.
         overlay_path = None
         if want_msl_overlay and is_grib_cached(
-            settings, src_cycle, src_step, param="msl"
+            settings, src_cycle, src_step, kind="sfc"
         ):
             overlay_path = grib_cache_path(
-                settings, src_cycle, src_step, param="msl",
+                settings, src_cycle, src_step, kind="sfc",
             )
         # Visible step about to render: transition state so the main
         # area drops the "press 取得 / Fetch" idle placeholder and shows
@@ -1282,7 +1292,7 @@ def MapView(settings: UserSettings, fetch=None):
                             continue
                         if not is_grib_cached(
                             snap_settings, src_cycle, src_step,
-                            param=fld.ecmwf_param, level=fld.level,
+                            kind=fld.kind,
                         ):
                             continue
                         cache_key = (
@@ -1292,7 +1302,7 @@ def MapView(settings: UserSettings, fetch=None):
                             continue
                         gpath = grib_cache_path(
                             snap_settings, src_cycle, src_step,
-                            param=fld.ecmwf_param, level=fld.level,
+                            kind=fld.kind,
                         )
                         if src_cycle == snap_cycle:
                             label = (
@@ -1401,99 +1411,67 @@ def MapView(settings: UserSettings, fetch=None):
                         it["status"] = "cancelled"
                     _push()
                     break
-                req = ForecastRequest(
-                    run_time=src_cycle, step_hours=src_step,
-                    param=selected_field.ecmwf_param,
-                    level=selected_field.level,
-                )
                 ext_tag = (
                     f" [ext {src_cycle:%Hz}]" if src_cycle != cycle else ""
                 )
                 items[i]["status"] = "checking"
                 _push()
-                hit_cache = service.is_cached(req)
-                if hit_cache:
+
+                # Per step we fetch one GRIB per kind. Each multi-band
+                # GRIB carries every IMPLEMENTED field of its kind, so
+                # the user never has to come back to re-fetch after a
+                # layer switch. The overlay (MSL contours) reads from
+                # the same sfc GRIB it would have anyway, so no
+                # separate overlay-fetch path is needed.
+                total_bytes = 0
+                total_duration = 0.0
+                fetched_any = False
+                failed_any = False
+
+                for kind in _ACTIVE_KINDS:
+                    req = ForecastRequest(
+                        run_time=src_cycle, step_hours=src_step, kind=kind,
+                    )
+                    if service.is_cached(req):
+                        try:
+                            total_bytes += service._cache_path(req).stat().st_size
+                        except OSError:
+                            pass
+                        continue
                     msg = (
-                        f"Cache check {i + 1}/{total} · "
-                        f"{_step_label(display_step)}{ext_tag}"
+                        f"DL {i + 1}/{total} · {_step_label(display_step)}"
+                        f"{ext_tag} · {kind}…"
                     )
                     set_progress(msg)
                     session.status_text = msg
-                    try:
-                        items[i]["size_bytes"] = (
-                            service._cache_path(req).stat().st_size
-                        )
-                    except OSError:
-                        pass
-                    items[i]["status"] = "cached"
-                    items[i]["duration_s"] = 0.0
-                    _push()
-                else:
-                    msg = (
-                        f"DL {i + 1}/{total} · "
-                        f"{_step_label(display_step)}{ext_tag}…"
-                    )
-                    set_progress(msg)
-                    session.status_text = msg
-                    items[i]["status"] = "downloading"
+                    items[i]["status"] = f"downloading ({kind})"
                     _push()
                     t0 = time.perf_counter()
                     try:
                         await service.download(req)
+                        fetched_any = True
                     except Exception:
                         logger.exception(
-                            "Download of step=%dh (src=%s/%dh) failed",
-                            display_step, src_cycle, src_step,
+                            "Download failed: step=%dh src=%s/%dh kind=%s",
+                            display_step, src_cycle, src_step, kind,
                         )
-                        items[i]["status"] = "failed"
-                        _push()
+                        failed_any = True
                         continue
-                    items[i]["duration_s"] = time.perf_counter() - t0
+                    total_duration += time.perf_counter() - t0
                     try:
-                        items[i]["size_bytes"] = (
-                            service._cache_path(req).stat().st_size
-                        )
+                        total_bytes += service._cache_path(req).stat().st_size
                     except OSError:
                         pass
-                    items[i]["status"] = "done"
-                    _push()
-                    if not cancel_event.is_set() and i + 1 < total:
+                    if not cancel_event.is_set():
                         await asyncio.sleep(PRELOAD_SPACING_SEC)
 
-                # MSL overlay companion download (when user has the
-                # toggle on and the base isn't already MSL). We don't
-                # add a separate row for this — it's the same display
-                # step, and the overlay file's bytes are added into
-                # the same item's size_bytes accumulator.
-                want_overlay = (
-                    render_params_ref.get("msl_overlay", msl_overlay)
-                    and render_params_ref.get(
-                        "data_field", data_field_key,
-                    ) != "msl"
+                items[i]["size_bytes"] = total_bytes
+                items[i]["duration_s"] = total_duration
+                items[i]["status"] = (
+                    "failed" if failed_any
+                    else ("done" if fetched_any else "cached")
                 )
-                if want_overlay and not cancel_event.is_set():
-                    msl_req = ForecastRequest(
-                        run_time=src_cycle, step_hours=src_step, param="msl",
-                    )
-                    if not service.is_cached(msl_req):
-                        try:
-                            await service.download(msl_req)
-                            try:
-                                extra = service._cache_path(msl_req).stat().st_size
-                                items[i]["size_bytes"] = (
-                                    items[i].get("size_bytes") or 0
-                                ) + extra
-                                _push()
-                            except OSError:
-                                pass
-                            if not cancel_event.is_set() and i + 1 < total:
-                                await asyncio.sleep(PRELOAD_SPACING_SEC)
-                        except Exception:
-                            logger.exception(
-                                "MSL overlay DL failed for step=%dh; "
-                                "rendering will skip overlay for this frame",
-                                src_step,
-                            )
+                _push()
 
                 # Whole-dict assign rather than mutating session.progress
                 # in place: in-place dict mutation does notify, but
@@ -2475,22 +2453,27 @@ def MapView(settings: UserSettings, fetch=None):
     )
 
     # ----- Fetch confirmation dialog -----
-    # Tally how many of the requested frames are already on disk for
-    # this (cycle, layer) combo. Shown in the dialog so the user can
-    # see at a glance how much work the fetch will actually do.
+    # Tally how many GRIB files are still missing for this cycle. Each
+    # step has one GRIB per kind (sfc + pl), so a full fetch is
+    # len(stitch_plan) * len(_ACTIVE_KINDS) downloads. After this fetch
+    # every IMPLEMENTED layer is renderable — no per-layer re-fetch.
     if primary_cycle is not None and stitch_plan:
-        already_cached_count = sum(
-            1 for (_disp, src_c, src_s) in stitch_plan
-            if is_grib_cached(
-                settings, src_c, src_s,
-                param=selected_field.ecmwf_param,
-                level=selected_field.level,
-            )
+        sfc_to_fetch = sum(
+            1 for (_d, src_c, src_s) in stitch_plan
+            if not is_grib_cached(settings, src_c, src_s, kind="sfc")
         )
-        to_fetch_count = len(stitch_plan) - already_cached_count
+        pl_to_fetch = sum(
+            1 for (_d, src_c, src_s) in stitch_plan
+            if not is_grib_cached(settings, src_c, src_s, kind="pl")
+        )
+        total_grib_count = len(stitch_plan) * len(_ACTIVE_KINDS)
+        to_fetch_count = sfc_to_fetch + pl_to_fetch
+        already_cached_count = total_grib_count - to_fetch_count
     else:
+        sfc_to_fetch = pl_to_fetch = 0
+        total_grib_count = len(step_options) * len(_ACTIVE_KINDS)
         already_cached_count = 0
-        to_fetch_count = len(step_options)
+        to_fetch_count = total_grib_count
 
     def _confirm_fetch(_):
         set_show_fetch_confirm(False)
@@ -2523,26 +2506,30 @@ def MapView(settings: UserSettings, fetch=None):
                         size=11, color=ft.Colors.GREY,
                     ),
                     ft.Text(
-                        f"レイヤー: {selected_field.bilingual_label()}"
-                        f"{selected_field.level_suffix()}"
-                        + (" + MSL 等圧線" if msl_overlay and data_field_key != "msl" else ""),
+                        "対象: 全実装レイヤー (地表面 + 気圧面まとめて取得)。"
+                        "一度取れば レイヤー / 気圧面 / 地域 の切替は再取得不要。",
                         size=11, color=ft.Colors.GREY,
                     ),
                     ft.Text(
                         f"範囲: T+0..T+{MAX_STEP}h, 粒度 {cadence_h}h "
-                        f"({len(step_options)} frames)",
+                        f"({len(step_options)} frames × {len(_ACTIVE_KINDS)} kinds "
+                        f"= {len(step_options) * len(_ACTIVE_KINDS)} GRIB)",
                         size=11, color=ft.Colors.GREY,
                     ),
                     ft.Divider(height=8),
                     ft.Text(
-                        f"取得済: {already_cached_count} / {len(step_options)} "
-                        f"frames  ·  新規取得: {to_fetch_count}",
+                        f"取得済: {already_cached_count} / {total_grib_count} GRIB"
+                        f"  ·  新規取得: {to_fetch_count}",
                         size=12, weight=ft.FontWeight.BOLD,
                     ),
                     ft.Text(
-                        "推定取得時間: 1 frame あたり ~5-10 秒。"
-                        "並列ワーカーで分散実行。バックグラウンドで"
-                        "進行し、いつでも停止できます。",
+                        f"  内訳: 地表面 {sfc_to_fetch} 個, "
+                        f"気圧面 {pl_to_fetch} 個",
+                        size=10, color=ft.Colors.GREY,
+                    ),
+                    ft.Text(
+                        "推定取得時間: 1 GRIB あたり ~5-10 秒。"
+                        "バックグラウンドで進行し、いつでも停止できます。",
                         size=10, color=ft.Colors.GREY,
                     ),
                 ],
@@ -2701,7 +2688,7 @@ def MapView(settings: UserSettings, fetch=None):
                 color = (
                     ft.Colors.LIGHT_GREEN if stitched else ft.Colors.GREEN
                 )
-            elif is_grib_cached(settings, src_cycle, src_step, param=selected_field.ecmwf_param, level=selected_field.level):
+            elif is_grib_cached(settings, src_cycle, src_step, kind=selected_field.kind):
                 color = ft.Colors.AMBER
                 cache_grib += 1
             else:

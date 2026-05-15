@@ -894,6 +894,18 @@ class DataField:
     def level_suffix(self) -> str:
         return "" if self.level is None else f" @ {self.level} hPa"
 
+    @property
+    def kind(self) -> str:
+        """Which multi-band GRIB file this field lives in.
+
+        ``"sfc"`` for surface / single-level fields (msl, 2t, sd, …);
+        ``"pl"`` for pressure-level fields (gh / t / u / v / w / r at
+        a specific hPa level). The forecast service downloads one
+        multi-band GRIB per ``(cycle, step, kind)``; layer change
+        within the same kind doesn't trigger a fetch.
+        """
+        return "pl" if self.level is not None else "sfc"
+
 
 FIELDS: tuple[DataField, ...] = (
     # ---- Surface ----

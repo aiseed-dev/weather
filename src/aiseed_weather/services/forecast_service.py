@@ -119,34 +119,59 @@ _CLIENT_SOURCE = {
 }
 
 
+# Catalogue of ECMWF Open Data param names we fetch in one go per
+# kind. Computed once from the catalog so adding an implemented field
+# automatically pulls its variable into the next download.
+def _params_for_kind(kind: str) -> list[str]:
+    """Distinct ECMWF Open Data param short-names that need to land in
+    the multi-band GRIB for this kind."""
+    # Local import to avoid an import cycle (catalog imports nothing
+    # from services).
+    from aiseed_weather.products.catalog import FIELDS, Status
+
+    out: set[str] = set()
+    for f in FIELDS:
+        if f.status != Status.IMPLEMENTED:
+            continue
+        if f.kind != kind:
+            continue
+        for p in f.ecmwf_param.split("/"):
+            if p:
+                out.add(p)
+    return sorted(out)
+
+
+def _levels_in_use() -> list[int]:
+    """Distinct pressure levels (hPa) referenced by any IMPLEMENTED
+    pressure-level field. The download fetches them all in one call so
+    layer × level switches stay local."""
+    from aiseed_weather.products.catalog import FIELDS, Status
+
+    return sorted(
+        {f.level for f in FIELDS
+         if f.status == Status.IMPLEMENTED and f.kind == "pl"
+         and f.level is not None}
+    )
+
+
 @dataclass(frozen=True)
 class ForecastRequest:
+    """One unit of GRIB download / cache work.
+
+    A request is a *(cycle, step, kind)* triple. The service downloads
+    a single multi-band GRIB per request, containing every IMPLEMENTED
+    param in the catalog that matches this kind (and, for ``pl``,
+    every level we render at). The catalog is the single source of
+    truth for what goes in.
+    """
+
     run_time: datetime  # UTC
     step_hours: int
-    # ECMWF short name(s): "msl", "2t", "tp". Use "/" to request several
-    # fields in one GRIB ("10u/10v" → ecmwf-opendata downloads both
-    # variables into one file, which is how we get 10m wind). The
-    # caller doesn't care about cache filename collisions — that's
-    # handled by filename_part() below.
-    param: str
-    # Pressure level in hPa for upper-air fields (gh / t / u / v / w /
-    # r at e.g. 500 hPa). ``None`` means surface / single-level. The
-    # ecmwf-opendata client takes this as ``levelist=`` and the cache
-    # path embeds it so the on-disk file is unambiguous.
-    level: int | None = None
-
-    def param_list(self):
-        """Return what to hand to ``ecmwf-opendata Client.retrieve(param=...)``."""
-        if "/" in self.param:
-            return self.param.split("/")
-        return self.param
+    kind: str = "sfc"  # "sfc" or "pl"
 
     def filename_part(self) -> str:
-        """Filesystem-safe identifier for this param set + level."""
-        base = self.param.replace("/", "-")
-        if self.level is None:
-            return base
-        return f"{base}@{self.level}"
+        """Filesystem-safe identifier for this kind."""
+        return self.kind
 
 
 class ForecastDisabledError(RuntimeError):
@@ -244,20 +269,24 @@ class ForecastService:
 
     def _download(self, r: ForecastRequest, target: Path) -> None:
         _verify_multiurl_patch()
+        params = _params_for_kind(r.kind)
+        if not params:
+            # No IMPLEMENTED field of this kind — nothing to fetch.
+            # Touch an empty file so is_cached() / retry logic doesn't
+            # spin on a missing target.
+            target.write_bytes(b"")
+            return
         kwargs: dict = dict(
             type="fc",
             step=r.step_hours,
-            param=r.param_list(),  # str or list[str] for multi-param
+            param=params,
             date=r.run_time.strftime("%Y-%m-%d"),
             time=r.run_time.hour,
             target=str(target),
         )
-        if r.level is not None:
-            # Pressure-level field: ecmwf-opendata wants levelist (hPa).
-            # Type "pl" selects the pressure-level product set.
-            kwargs["type"] = "fc"
+        if r.kind == "pl":
             kwargs["levtype"] = "pl"
-            kwargs["levelist"] = r.level
+            kwargs["levelist"] = _levels_in_use()
         self._client.retrieve(**kwargs)
 
     def _decode(self, path: Path) -> xr.Dataset:
@@ -268,26 +297,19 @@ def grib_cache_path(
     settings: UserSettings,
     run_time: datetime,
     step_hours: int,
-    param: str = "msl",
-    level: int | None = None,
+    kind: str = "sfc",
 ) -> Path:
-    """Compute the on-disk cache path for an ECMWF GRIB2 frame.
+    """Compute the on-disk cache path for one (cycle, step, kind) GRIB.
 
     Mirrors ForecastService._cache_path but is a free function so UI
     code can inspect cache state without going through the (potentially
     expensive, requires-network-ready settings) full service object.
-    ``param`` may be a multi-param string like "10u/10v"; the cache
-    filename uses "-" in place of "/" for filesystem safety. ``level``
-    is appended as ``@<level>`` for pressure-level fields.
     """
-    filename_part = param.replace("/", "-")
-    if level is not None:
-        filename_part = f"{filename_part}@{level}"
     return (
         resolved_data_dir(settings) / "ecmwf"
         / run_time.strftime("%Y%m%d")
         / run_time.strftime("%Hz")
-        / f"{filename_part}_{step_hours}h.grib2"
+        / f"{step_hours}h-{kind}.grib2"
     )
 
 
@@ -295,10 +317,9 @@ def is_grib_cached(
     settings: UserSettings,
     run_time: datetime,
     step_hours: int,
-    param: str = "msl",
-    level: int | None = None,
+    kind: str = "sfc",
 ) -> bool:
-    p = grib_cache_path(settings, run_time, step_hours, param, level)
+    p = grib_cache_path(settings, run_time, step_hours, kind)
     return p.exists() and p.stat().st_size > 0
 
 
