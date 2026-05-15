@@ -320,7 +320,7 @@ CATALOG: tuple[Product, ...] = (
         category=Category.MEDIUM_RANGE,
         agency="ECMWF",
         spec="0.25° / 00z+12z は T+360h まで (0..144h 3h, 144..360h 6h); "
-             "06z+18z は T+90h まで 3h / 4 cycles/day (00,06,12,18 UTC)",
+             "06z+18z は T+144h まで 3h / 4 cycles/day (00,06,12,18 UTC)",
         source_url="https://www.ecmwf.int/en/forecasts/datasets/open-data",
         backend="ecmwf-opendata client → GRIB2 from s3://ecmwf-forecasts",
         license_info="CC-BY-4.0",

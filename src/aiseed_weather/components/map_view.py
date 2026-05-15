@@ -124,21 +124,27 @@ def _recent_base_times(n: int = 20):
 
 # HRES IFS 0p25 oper publishes 4 cycles per day with two different
 # forecast horizons. 00z and 12z run to T+360h (15 days); 06z and 18z
-# only run to T+90h (~3.75 days), giving forecasters short-range
-# refreshes between the long cycles. To get a smooth animation past
-# T+90h from a short cycle, we stitch its short-range steps with
-# extension steps from the most recent long cycle preceding it.
+# stop at T+144h (6 days), giving forecasters short-range refreshes
+# between the long cycles. To get a smooth animation past T+144h from
+# a short cycle, we stitch its short-range steps with extension steps
+# from the most recent long cycle preceding it.
 #
 # Publication is ATOMIC per cycle — every step's GRIB2 appears with
-# the same scheduled timestamp on the dissemination index, roughly
-# cycle + 7.5h after the nominal cycle time. Earlier docs said "7 to
-# 9 hours" but observation of the index page confirms a single
-# publication moment, not a progressive window.
+# the same scheduled timestamp on the dissemination index. Lag from
+# nominal cycle time to that timestamp depends on cycle hour:
+#   00z, 12z (T+360h, ~85 files)  →  ~7.5h
+#   06z, 18z (T+144h, ~49 files)  →  ~6.5h
+# The shorter run finishes faster.
+#
+# Empirical reference (from data.ecmwf.int dissemination index):
+#   20260514 00z run scheduled 14-05-2026 07:34 (= cycle + 7h34m)
+#   20260514 06z run scheduled 14-05-2026 12:27 (= cycle + 6h27m)
 _LONG_CYCLE_HORIZON_H = 360
-_SHORT_CYCLE_HORIZON_H = 90
+_SHORT_CYCLE_HORIZON_H = 144
 _LONG_CYCLE_HOURS = (0, 12)
 _SHORT_CYCLE_HOURS = (6, 18)
-_PUBLICATION_LAG_H = 7.5  # cycle → publication time, observed atomic
+_PUBLICATION_LAG_LONG_H = 7.5   # cycle → atomic publication, 00z / 12z
+_PUBLICATION_LAG_SHORT_H = 6.5  # cycle → atomic publication, 06z / 18z
 
 
 def _is_short_cycle(cycle_dt) -> bool:
@@ -171,13 +177,21 @@ def _publication_time(cycle_dt):
 
     ECMWF Open Data publishes a cycle ATOMICALLY — all GRIB2 files for
     a cycle appear on the dissemination index with the same scheduled
-    timestamp, roughly cycle_time + 7.5h. Empirical: the 20260514 00z
-    run's index showed every step file scheduled at 14-05-2026 07:34,
-    confirming simultaneous publication, not the progressive window
-    older docs implied.
+    timestamp. Empirical reference times observed on data.ecmwf.int:
+
+      20260514 00z run scheduled 14-05-2026 07:34 → +7h34m
+      20260514 06z run scheduled 14-05-2026 12:27 → +6h27m
+
+    Long cycles (00z/12z) take longer because they produce ~85 GRIB2
+    files reaching T+360h; short cycles (06z/18z) only produce ~49
+    files reaching T+144h.
     """
     from datetime import timedelta
-    return cycle_dt + timedelta(hours=_PUBLICATION_LAG_H)
+    lag = (
+        _PUBLICATION_LAG_SHORT_H if cycle_dt.hour in _SHORT_CYCLE_HOURS
+        else _PUBLICATION_LAG_LONG_H
+    )
+    return cycle_dt + timedelta(hours=lag)
 
 
 def _stitch_plan(
