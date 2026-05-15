@@ -34,10 +34,13 @@ def _load() -> dict[str, np.ndarray]:
 # Module-level cache: loaded once at first import.
 _MASKS: dict[str, np.ndarray] = _load()
 
-# Soft off-white — Windy-style. Reads cleanly against the cool-blue
-# ends of the diverging palettes (MSL low pressure, cold T2m, wet TP)
-# AND against the warm-red ends, without competing with the data.
-_COASTLINE_RGB: np.ndarray = np.array([235, 235, 230], dtype=np.uint8)
+# Thin near-black line — kept at 1 px so it traces the geography
+# without covering data, and dark enough to read against every
+# palette colour the renderers ship (cool-blue ends, warm-red ends,
+# white-zero precipitation, gray base map). The previous near-white
+# choice came from a commercial-app aesthetic and lost the line
+# entirely on charts with a white-to-blue precipitation palette.
+_COASTLINE_RGB: np.ndarray = np.array([24, 24, 28], dtype=np.uint8)  # #18181c
 
 
 def apply_coastlines(rgb: np.ndarray, region_key: str) -> None:

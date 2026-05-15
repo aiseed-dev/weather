@@ -228,6 +228,116 @@ def _rasterise_polar_mask(
     return np.asarray(img, dtype=bool)
 
 
+def _extract_land_polygons(resolution: str = "110m"):
+    """Yield Natural Earth land polygons as (lon, lat) vertex arrays.
+
+    Used to rasterise filled land masks per region, the base layer of
+    every chart. Coastlines (a thin polyline drawn on top) are NOT
+    derived from these — they come from the dedicated coastline
+    shapefile via :func:`_extract_lonlat_polylines`.
+    """
+    from cartopy.io.shapereader import Reader, natural_earth
+
+    shp_path = natural_earth(
+        resolution=resolution, category="physical", name="land",
+    )
+    for geom in Reader(shp_path).geometries():
+        kind = geom.geom_type
+        if kind == "Polygon":
+            yield np.asarray(geom.exterior.coords, dtype=np.float32)[:, :2]
+        elif kind == "MultiPolygon":
+            for poly in geom.geoms:
+                yield np.asarray(poly.exterior.coords, dtype=np.float32)[:, :2]
+
+
+def _rasterise_land_mask(
+    polygons: list[np.ndarray],
+    extent: tuple[float, float, float, float],
+    h: int,
+    w: int,
+) -> np.ndarray:
+    """Fill land polygons to a boolean mask (True = land)."""
+    lon_min, lon_max, lat_min, lat_max = extent
+    img = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(img)
+    sx = w / (lon_max - lon_min)
+    sy = h / (lat_max - lat_min)
+    for poly in polygons:
+        if poly.shape[0] < 3:
+            continue
+        lons = poly[:, 0]
+        lats = poly[:, 1]
+        if (
+            lons.max() < lon_min or lons.min() > lon_max
+            or lats.max() < lat_min or lats.min() > lat_max
+        ):
+            continue
+        xs = (lons - lon_min) * sx
+        ys = (lat_max - lats) * sy
+        draw.polygon(
+            list(zip(xs.tolist(), ys.tolist())), fill=255, outline=None,
+        )
+    return np.asarray(img, dtype=bool)
+
+
+def _polar_project_polygons(
+    polygons: list[np.ndarray], is_north: bool,
+    out_size: int = _POLAR_OUT_SIZE,
+) -> tuple[int, int, list[list[tuple[float, float]]]]:
+    """Forward-project land polygon vertices to polar pixels."""
+    h = w = out_size
+    cx = cy = (out_size - 1) / 2.0
+    radius = (out_size - 1) / 2.0
+    out: list[list[tuple[float, float]]] = []
+    for poly in polygons:
+        if poly.shape[0] < 3:
+            continue
+        lons = poly[:, 0]
+        lats = poly[:, 1]
+        if is_north:
+            co_lat = 90.0 - lats
+            lon_rad = np.deg2rad(lons)
+            r_norm = co_lat / _POLAR_BOUNDARY_COLAT_DEG
+            x = cx + r_norm * radius * np.sin(lon_rad)
+            y = cy - r_norm * radius * np.cos(lon_rad)
+            in_disc = co_lat <= _POLAR_BOUNDARY_COLAT_DEG
+        else:
+            co_lat = lats - (-90.0)
+            lon_rad = np.deg2rad(lons)
+            r_norm = co_lat / _POLAR_BOUNDARY_COLAT_DEG
+            x = cx + r_norm * radius * np.sin(lon_rad)
+            y = cy + r_norm * radius * np.cos(lon_rad)
+            in_disc = co_lat <= _POLAR_BOUNDARY_COLAT_DEG
+        # For filled polygons we still ship the full polygon; the
+        # in-disc mask just confirms the shape touches the hemisphere
+        # before paying to project it.
+        if not bool(in_disc.any()):
+            continue
+        seg = [(float(x[j]), float(y[j])) for j in range(len(in_disc))]
+        out.append(seg)
+    return h, w, out
+
+
+def _rasterise_polar_land_mask(
+    polygons: list[np.ndarray], is_north: bool,
+) -> np.ndarray:
+    h, w, polys = _polar_project_polygons(polygons, is_north)
+    img = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(img)
+    cx = cy = (h - 1) / 2.0
+    radius = (h - 1) / 2.0
+    for poly in polys:
+        if len(poly) >= 3:
+            draw.polygon(poly, fill=255, outline=None)
+    # Clip to the disc — projected polygons may spill across the disc
+    # boundary as straight chords; we don't want those bleed regions
+    # contributing to "land".
+    yy, xx = np.indices((h, w), dtype=np.float32)
+    inside_disc = np.hypot(xx - cx, yy - cy) <= radius
+    mask = np.asarray(img, dtype=bool) & inside_disc
+    return mask
+
+
 def build(out_dir: Path | None = None, resolution: str = "110m") -> Path:
     from aiseed_weather.figures.regions import PRESETS
 
@@ -240,6 +350,8 @@ def build(out_dir: Path | None = None, resolution: str = "110m") -> Path:
         f"Extracted {len(polylines)} polylines "
         f"({sum(len(p) for p in polylines)} vertices) at {resolution}",
     )
+    land_polygons = list(_extract_land_polygons(resolution=resolution))
+    print(f"Extracted {len(land_polygons)} land polygons")
 
     masks: dict[str, np.ndarray] = {}
     polar_arrays: dict[str, np.ndarray] = {}
@@ -252,10 +364,12 @@ def build(out_dir: Path | None = None, resolution: str = "110m") -> Path:
             polar_arrays[f"{region.key}__lon_col"] = lon_col
             polar_arrays[f"{region.key}__valid"] = valid
             mask = _rasterise_polar_mask(polylines, is_north)
+            land = _rasterise_polar_land_mask(land_polygons, is_north)
             masks[region.key] = mask
+            masks[f"{region.key}__land"] = land
             print(
                 f"  region={region.key:14s}  polar  shape={mask.shape}  "
-                f"coast_pixels={int(mask.sum()):>6d}",
+                f"coast={int(mask.sum()):>6d}  land={int(land.sum()):>7d}",
             )
             continue
         h, w = _region_dims(region.extent)
@@ -265,10 +379,12 @@ def build(out_dir: Path | None = None, resolution: str = "110m") -> Path:
             else region.extent
         )
         mask = _rasterise_mask(polylines, extent, h, w)
+        land = _rasterise_land_mask(land_polygons, extent, h, w)
         masks[region.key] = mask
+        masks[f"{region.key}__land"] = land
         print(
             f"  region={region.key:14s}  flat   shape={(h, w)}  "
-            f"coast_pixels={int(mask.sum()):>6d}",
+            f"coast={int(mask.sum()):>6d}  land={int(land.sum()):>7d}",
         )
 
     np.savez_compressed(masks_path, **masks)
