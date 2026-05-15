@@ -124,10 +124,21 @@ _TEMPLATE = """\
 # ---- Forecast (future grids, ECMWF Open Data) ----
 # Options:
 #   "none"          : operate in historical / nowcast-only mode
-#   "ecmwf_aws"     : ECMWF Open Data via AWS (fastest globally)
-#   "ecmwf_azure"   : ECMWF Open Data via Azure
-#   "ecmwf_gcp"     : ECMWF Open Data via GCP (often best from Asia-Pacific)
-#   "ecmwf_direct"  : ECMWF direct (500-connection limit; use only if mirrors fail)
+#   "ecmwf_gcp"     : ECMWF Open Data via Google Cloud  ← recommended
+#                     (storage.googleapis.com edge-caches the bulk
+#                     oper-fc.grib2 in Asia-Pacific; ~1-2 s/step
+#                     from Japan, the only mirror that's actually
+#                     usable from JP since we switched to per-step
+#                     bulk downloads)
+#   "ecmwf_aws"     : ECMWF Open Data via AWS S3 (eu-central-1)
+#                     — slow from JP: ~24 s/step at the 150 MB
+#                     bulk size, because the bucket is Frankfurt-
+#                     only with no Asia edge.
+#   "ecmwf_azure"   : ECMWF Open Data via Azure (West Europe);
+#                     similar latency profile to AWS from JP.
+#   "ecmwf_direct"  : ECMWF direct (data.ecmwf.int); 500-connection
+#                     limit, often 403s anonymous traffic. Last
+#                     resort only.
 forecast_source = "none"
 
 # ---- Historical (past grids, ERA5) ----

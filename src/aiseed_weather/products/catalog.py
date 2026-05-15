@@ -121,7 +121,26 @@ class DataSource:
 # ECMWF Open Data sources are shared by every product served via the
 # ecmwf-opendata Python client (HRES, AIFS Single, ENS, AIFS Ensemble).
 # Source keys match the strings ecmwf-opendata's Client(source=...) accepts.
+# Order matters: this list drives both the catalog dialog ordering
+# and which mirror the bench/docs treat as the canonical first
+# choice. Google is first because we now download the bulk
+# oper-fc.grib2 per step rather than Range-fetching individual
+# params, and GCS is the only mirror that edge-caches into
+# Asia-Pacific. From Japan it's ~1-2 s/step; AWS Frankfurt is
+# ~20-30 s for the same payload. See tests/test_download_bench.py.
 _ECMWF_OPENDATA_SOURCES: tuple[DataSource, ...] = (
+    DataSource(
+        key="google",
+        label="GCP (Google Cloud mirror, edge-cached)",
+        endpoint="https://storage.googleapis.com/ecmwf-open-data",
+        transport="http",
+        region="global-edge",
+        status=Status.IMPLEMENTED,
+        notes=(
+            "推奨。Asia-Pacific エッジから配信されるため日本から "
+            "150 MB の per-step bulk が 1-2 秒で取れる。"
+        ),
+    ),
     DataSource(
         key="aws",
         label="AWS (s3://ecmwf-forecasts, eu-central-1)",
@@ -129,7 +148,10 @@ _ECMWF_OPENDATA_SOURCES: tuple[DataSource, ...] = (
         transport="s3",
         region="eu-central-1",
         status=Status.IMPLEMENTED,
-        notes="ecmwf-opendata の既定。低レイテンシ・広帯域。",
+        notes=(
+            "Frankfurt 直配信。欧州/北米からは速いが、日本からは "
+            "RTT がそのまま乗って 1 ステップ 20-30 秒。"
+        ),
     ),
     DataSource(
         key="azure",
@@ -138,16 +160,7 @@ _ECMWF_OPENDATA_SOURCES: tuple[DataSource, ...] = (
         transport="http",
         region="west-europe",
         status=Status.IMPLEMENTED,
-        notes="ecmwf-opendata Client(source='azure')",
-    ),
-    DataSource(
-        key="google",
-        label="GCP (Google Cloud mirror, europe-west)",
-        endpoint="gs://ecmwf-open-data",
-        transport="http",
-        region="europe-west",
-        status=Status.IMPLEMENTED,
-        notes="ecmwf-opendata Client(source='google')",
+        notes="AWS と同じ欧州配置。レイテンシ特性も近い。",
     ),
     DataSource(
         key="ecmwf",
@@ -156,7 +169,10 @@ _ECMWF_OPENDATA_SOURCES: tuple[DataSource, ...] = (
         transport="http",
         region="reading-uk",
         status=Status.IMPLEMENTED,
-        notes="本家サーバー。ミラーへの分散前段。混雑時は遅い。",
+        notes=(
+            "本家サーバー。500-connection 制限で 403 を返すことが多い。"
+            "ミラーが全部落ちた時の最後の手段。"
+        ),
     ),
 )
 
