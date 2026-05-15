@@ -375,6 +375,12 @@ def MapView(settings: UserSettings):
     # gh@500 isohypsae and 10m wind arrows are planned.
     msl_overlay, set_msl_overlay = ft.use_state(False)
 
+    # Fetch confirmation dialog state — surfaces from "取得開始" and
+    # "更新" so the user explicitly acknowledges the (multi-minute)
+    # download. Dialog body shows base time, frame count, and how
+    # many are already cached.
+    show_fetch_confirm, set_show_fetch_confirm = ft.use_state(False)
+
     # Selected data source per product. Initial value for ECMWF HRES
     # comes from config.toml (settings.forecast_source) so the user's
     # config-time preference is honoured before they touch the dialog.
@@ -1002,6 +1008,33 @@ def MapView(settings: UserSettings):
     def _probe_on_mount():
         ft.context.page.run_task(_probe_visible_cycles)
     ft.use_effect(_probe_on_mount, [])
+
+    # First-run bootstrap: if the disk had no cache to load and the
+    # mount-time probe has landed at least one verified cycle, set
+    # run_time_holder to that cycle. So the GPV card displays the
+    # latest available base time even before the user fetches
+    # anything; the "取得開始 / Start fetch" button at the bottom is
+    # then the obvious next step.
+    def _bootstrap_run_time_from_probe():
+        if run_time_holder is not None:
+            return
+        if not cycle_check_results:
+            return
+        from datetime import datetime as _dt
+        verified = []
+        for iso, ok in cycle_check_results.items():
+            if not ok:
+                continue
+            try:
+                verified.append(_dt.fromisoformat(iso))
+            except ValueError:
+                pass
+        if verified:
+            set_run_time_holder(max(verified))
+    ft.use_effect(
+        _bootstrap_run_time_from_probe,
+        [cycle_check_results, run_time_holder],
+    )
 
     def handle_slider_change(e):
         idx = int(e.control.value)
@@ -1717,11 +1750,92 @@ def MapView(settings: UserSettings):
         ],
     )
 
+    # ----- Fetch confirmation dialog -----
+    # Tally how many of the requested frames are already on disk for
+    # this (cycle, layer) combo. Shown in the dialog so the user can
+    # see at a glance how much work the fetch will actually do.
+    if primary_cycle is not None and stitch_plan:
+        already_cached_count = sum(
+            1 for (_disp, src_c, src_s) in stitch_plan
+            if is_grib_cached(
+                settings, src_c, src_s,
+                param=selected_field.ecmwf_param,
+            )
+        )
+        to_fetch_count = len(stitch_plan) - already_cached_count
+    else:
+        already_cached_count = 0
+        to_fetch_count = len(step_options)
+
+    def _confirm_fetch(_):
+        set_show_fetch_confirm(False)
+        start_download()
+
+    fetch_confirm_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("GPV データ取得 / Fetch GPV"),
+        content=ft.Container(
+            width=440,
+            content=ft.Column(
+                tight=True,
+                spacing=8,
+                controls=[
+                    ft.Text(
+                        f"Base time: "
+                        f"{primary_cycle:%Y-%m-%d %H:%M UTC}"
+                        if primary_cycle else "Base time: 未取得",
+                        size=14, weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Text(
+                        f"気象モデル: {selected_product.bilingual_label()}",
+                        size=11, color=ft.Colors.GREY,
+                    ),
+                    ft.Text(
+                        f"レイヤー: {selected_field.bilingual_label()}"
+                        f"{selected_field.level_suffix()}"
+                        + (" + MSL 等圧線" if msl_overlay and data_field_key != "msl" else ""),
+                        size=11, color=ft.Colors.GREY,
+                    ),
+                    ft.Text(
+                        f"範囲: T+0..T+{MAX_STEP}h, 粒度 {cadence_h}h "
+                        f"({len(step_options)} frames)",
+                        size=11, color=ft.Colors.GREY,
+                    ),
+                    ft.Divider(height=8),
+                    ft.Text(
+                        f"取得済: {already_cached_count} / {len(step_options)} "
+                        f"frames  ·  新規取得: {to_fetch_count}",
+                        size=12, weight=ft.FontWeight.BOLD,
+                    ),
+                    ft.Text(
+                        "推定取得時間: 1 frame あたり ~5-10 秒。"
+                        "並列ワーカーで分散実行。バックグラウンドで"
+                        "進行し、いつでも停止できます。",
+                        size=10, color=ft.Colors.GREY,
+                    ),
+                ],
+            ),
+        ),
+        actions=[
+            ft.TextButton(
+                "キャンセル",
+                on_click=lambda _: set_show_fetch_confirm(False),
+            ),
+            ft.FilledButton(
+                "取得開始 / Start fetch",
+                icon=ft.Icons.DOWNLOAD,
+                on_click=_confirm_fetch,
+                disabled=(primary_cycle is None or to_fetch_count == 0),
+            ),
+        ],
+    )
+
     # Show whichever dialog is open. Passing None dismisses; the hook
     # diffs the dialog dataclass field-by-field, so re-rendering with
     # updated draft state preserves cursor / focus.
     ft.use_dialog(
-        catalog_dialog if show_catalog_dialog
+        fetch_confirm_dialog if show_fetch_confirm
+        else catalog_dialog if show_catalog_dialog
         else layer_dialog if show_data_dialog
         else region_dialog if show_region_dialog
         else time_dialog if show_time_dialog
@@ -1815,7 +1929,7 @@ def MapView(settings: UserSettings):
                     content=ft.Text("取得開始 / Start fetch"),
                     width=208,
                     icon=ft.Icons.DOWNLOAD,
-                    on_click=lambda _: start_download(),
+                    on_click=lambda _: _request_fetch(),
                 ),
                 ft.FilledTonalButton(
                     content=ft.Text("単発取得 (現 step)"),
@@ -1836,7 +1950,7 @@ def MapView(settings: UserSettings):
                     content=ft.Text("取得開始 / Start fetch"),
                     width=208,
                     icon=ft.Icons.DOWNLOAD,
-                    on_click=lambda _: start_download(),
+                    on_click=lambda _: _request_fetch(),
                 ),
                 ft.FilledTonalButton(
                     content=ft.Text("再取得 / Refresh (現 step)"),
@@ -1886,16 +2000,28 @@ def MapView(settings: UserSettings):
             newer_cycle = max(verified_newer)
 
     def _apply_newer_cycle(target):
-        # Switch the auto-locked cycle to the newer one. We don't set
-        # manual_cycle — the user wanted "latest available", so we
-        # just refresh run_time_holder. Frames cache stays (keyed by
-        # cycle), background DL loop should be re-kicked for the new
-        # frames if the user wants animation; single-step render of
-        # the current step lands via _maybe_render_visible.
+        # Switch the auto-locked cycle to the newer one and then ask
+        # the user to confirm download (which takes minutes).
         set_run_time_holder(target)
-        # Clear any manual override since the user is explicitly
-        # asking for "the newer cycle".
         set_manual_cycle(None)
+        # Drop visible image so the user sees we're on a new cycle
+        # with no data yet. The new cycle's GPV card is the focus.
+        set_image_bytes(None)
+        set_show_fetch_confirm(True)
+
+    def _request_fetch():
+        """User-facing entry point for starting a fetch.
+
+        Routes through fetch_confirm_dialog so the user understands
+        they're about to commit minutes of background download. The
+        dialog body lists the base time / model / layer / frame count
+        / how many of those frames are already on disk.
+        """
+        if primary_cycle is None:
+            # No probed cycle yet — fall back to direct probe+DL kick.
+            start_download()
+            return
+        set_show_fetch_confirm(True)
 
     # Per-step cache status for the bar in the Data section.
     # green        = rendered PNG in memory (primary cycle)
