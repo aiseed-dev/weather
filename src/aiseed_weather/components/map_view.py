@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 
 import flet as ft
@@ -35,7 +36,7 @@ from aiseed_weather.figures.regions import (
     by_key as region_by_key,
     custom_region,
 )
-from aiseed_weather.figures.render_pool import render_layer_in_pool
+from aiseed_weather.figures.render_pool import render_layer, render_layer_in_pool
 from aiseed_weather.models.user_settings import UserSettings
 from aiseed_weather.products.catalog import (
     CATEGORY_LABELS,
@@ -979,21 +980,146 @@ def MapView(settings: UserSettings, fetch=None):
             # step. Move out of "loading" so the main area shows the chart.
             set_state("ready")
 
+    # Background precompute: a single threading.Thread fills the
+    # frame cache for every (region × implemented_layer × step) combo
+    # whose GRIB is already on disk. Sequential renders (the matrix
+    # pipeline is fast enough — 4–330 ms/frame — that parallelism
+    # buys nothing and only fights for memory). State updates push
+    # back to the asyncio loop via call_soon_threadsafe.
+    #
+    # Ref holds the live worker + a stop_event so a cycle change can
+    # cancel the prior run cleanly without leaving it churning on
+    # stale params.
+    bg_ref = ft.use_ref(
+        lambda: {"thread": None, "stop_event": None},
+    )
+
     async def _render_missing_in_background():
-        """Fill every step whose GRIB is on disk but PNG isn't in
-        memory yet.
+        """Compatibility shim for the download-loop tail.
 
-        Sequential — renderers in :mod:`aiseed_weather.figures` finish
-        in a few hundred ms (numpy + contourpy + PIL, all C-backed),
-        so a pool is pure overhead. Walk step_options once and let
-        ``_ensure_rendered`` no-op cached frames and frames whose GRIB
-        isn't on disk. Repeat calls are cheap.
-
-        Idempotent: called from the download-loop tail and from a
-        mount-time effect, both of which may overlap.
+        Kept as a coroutine because ``_download_loop.finally`` already
+        schedules it via ``run_task``; we just delegate to the
+        threading-based precompute. Async overhead is one
+        ``run_task`` hop — the actual work happens in the thread.
         """
-        for step in step_options:
-            await _ensure_rendered(step)
+        _start_bg_precompute()
+
+    def _start_bg_precompute():
+        """Kick a fresh background precompute thread.
+
+        Cancels any existing thread first; snapshots the render scope
+        (cycle, stitch plan, settings) so the worker isn't affected
+        by subsequent state changes; iterates every region × every
+        implemented layer × every step, rendering whichever ones
+        have GRIBs on disk and aren't already in the frame cache.
+        """
+        if primary_cycle is None:
+            return
+        _stop_bg_precompute()
+
+        stop_event = threading.Event()
+        snap_cycle = primary_cycle
+        snap_lookup = dict(source_lookup)
+        snap_steps = tuple(step_options)
+        snap_settings = settings
+        snap_source = data_source_key
+        loop = asyncio.get_running_loop()
+
+        # The worker reads the current frame cache lazily through a
+        # holder so newly-arrived frames from foreground renders
+        # (slider scrub, animation) aren't re-rendered.
+        frames_view_ref = bg_ref.current
+
+        def _apply(cache_key, png):
+            set_frames(lambda prev: _put_frame(prev, cache_key, png))
+
+        def worker():
+            seen: set = set(frames.keys())
+            cycle_iso = snap_cycle.isoformat()
+            # Foreground priorities first: current region + current
+            # layer get filled, then expand outwards.
+            ordered_regions = (
+                [region]
+                + [r for r in REGION_PRESETS if r.key != region.key]
+            )
+            implemented = [
+                f for f in DATA_FIELDS if f.status == Status.IMPLEMENTED
+            ]
+            ordered_fields = (
+                [selected_field]
+                + [f for f in implemented if f.key != selected_field.key]
+            )
+            for rg in ordered_regions:
+                for fld in ordered_fields:
+                    for step in snap_steps:
+                        if stop_event.is_set():
+                            return
+                        src_cycle, src_step = snap_lookup.get(
+                            step, (snap_cycle, step),
+                        )
+                        if src_cycle is None:
+                            continue
+                        if not is_grib_cached(
+                            snap_settings, src_cycle, src_step,
+                            param=fld.ecmwf_param,
+                        ):
+                            continue
+                        cache_key = (
+                            cycle_iso, rg.key, fld.key, (), step,
+                        )
+                        if cache_key in seen:
+                            continue
+                        gpath = grib_cache_path(
+                            snap_settings, src_cycle, src_step,
+                            param=fld.ecmwf_param,
+                        )
+                        if src_cycle == snap_cycle:
+                            label = (
+                                f"{snap_cycle:%Y%m%d %Hz} IFS "
+                                f"· {_step_label(step)}"
+                            )
+                        else:
+                            label = (
+                                f"{snap_cycle:%Y%m%d %Hz} IFS "
+                                f"+ {src_cycle:%Y%m%d %Hz} ext "
+                                f"· {_step_label(step)}"
+                            )
+                        try:
+                            png = render_layer(
+                                gpath, rg, label, fld.key,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Background render failed: %s/%s/%dh",
+                                rg.key, fld.key, step,
+                            )
+                            seen.add(cache_key)  # don't retry forever
+                            continue
+                        seen.add(cache_key)
+                        loop.call_soon_threadsafe(
+                            _apply, cache_key, png,
+                        )
+                        # Short cooperative sleep so the foreground
+                        # event loop and any active foreground render
+                        # have CPU time. 30 ms is much less than the
+                        # 100–300 ms per global frame so it doesn't
+                        # noticeably stretch total fill time.
+                        if stop_event.wait(0.03):
+                            return
+
+        t = threading.Thread(
+            target=worker, daemon=True, name="aiseed-bg-precompute",
+        )
+        bg_ref.current["thread"] = t
+        bg_ref.current["stop_event"] = stop_event
+        t.start()
+
+    def _stop_bg_precompute():
+        ev = bg_ref.current.get("stop_event")
+        if ev is not None:
+            ev.set()
+        bg_ref.current["thread"] = None
+        bg_ref.current["stop_event"] = None
 
     async def _download_loop(cycle, plan, cancel_event):
         """Pure background download. No rendering inside the loop —
@@ -1293,16 +1419,14 @@ def MapView(settings: UserSettings, fetch=None):
         [step_hours, region, data_field_key, primary_cycle],
     )
 
-    # When a base cycle is known, background-fill every frame whose
-    # GRIB is already on disk (e.g. cached from a previous session).
-    # Bounded concurrency lives inside the function. Deps are limited
-    # to primary_cycle so a region/layer change doesn't re-kick the
-    # whole walk — region/layer changes are handled by _render_queue.
-    def _kick_background_fill():
-        if primary_cycle is None:
-            return
-        ft.context.page.run_task(_render_missing_in_background)
-    ft.use_effect(_kick_background_fill, [primary_cycle])
+    # When a base cycle is known, kick the background precompute that
+    # fills every (region × layer × step) frame whose GRIB is on disk.
+    # The cleanup function cancels the worker thread when primary_cycle
+    # changes or the component unmounts, so we don't leak a thread
+    # churning on a stale cycle.
+    def _kick_bg():
+        _start_bg_precompute()
+    ft.use_effect(_kick_bg, [primary_cycle], _stop_bg_precompute)
 
     # On mount: probe only the most recent few cycles so the bootstrap
     # can lock onto the latest published base time. Full dialog probe
