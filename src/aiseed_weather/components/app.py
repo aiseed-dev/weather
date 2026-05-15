@@ -10,20 +10,25 @@ from aiseed_weather.models import user_settings
 from aiseed_weather.models.user_settings import LoadResult
 
 
+# Path → tab index mapping used by both the NavigationBar (active tab
+# highlight) and the Route table. "/" is map by convention because it's
+# the highest-traffic view and the natural landing page.
+_NAV_PATHS: tuple[str, ...] = ("/", "/radar", "/amedas")
+
+
 @ft.component
 def App():
-    # Config is read once at startup. Editing the TOML and restarting is the
-    # only way to change sources — see the `first-run-setup` skill.
+    # Config is read once at startup. Editing the TOML and restarting is
+    # the only way to change sources — see the `first-run-setup` skill.
     result, _ = ft.use_state(user_settings.load_or_init())
-    active_view, set_active_view = ft.use_state("map")
 
     # ──────────────────────────────────────────────────────────
     # App-level GPV fetch session.
     #
-    # Lives at App scope (not MapView) so the running download
-    # survives tab navigation. The Map view kicks off fetches but
-    # the lifecycle is owned here; the global banner above the nav
-    # shows progress + stop button from any tab.
+    # Owned here (not in MapView) so the running download survives
+    # tab navigation. MapView kicks off fetches but the lifecycle
+    # lives at App scope; the bottom panel + Stop button stay
+    # reachable from any tab.
     # ──────────────────────────────────────────────────────────
     fetch_running, set_fetch_running = ft.use_state(False)
     fetch_progress, set_fetch_progress = ft.use_state(
@@ -33,7 +38,7 @@ def App():
     # Per-frame fetch items so the Fetch tab can render pip install-
     # style detailed progress: status icon + label + size + duration.
     # Each item is a dict:
-    #   {"step": int, "label": str, "param": str, "stitched": bool,
+    #   {"step": int, "param": str, "stitched": bool,
     #    "status": "pending"|"checking"|"downloading"|"done"|"cached"
     #              |"failed"|"cancelled",
     #    "size_bytes": int|None, "duration_s": float|None}
@@ -71,14 +76,62 @@ def App():
     }
 
     if result.status != "ok":
-        return ft.SafeArea(expand=True, content=ConfigStatusPanel(result=result))
+        return ft.SafeArea(
+            expand=True, content=ConfigStatusPanel(result=result),
+        )
 
     settings = result.settings
-    body = {
-        "map": lambda: MapView(settings=settings, fetch_session=fetch_session),
-        "radar": lambda: RadarView(settings=settings),
-        "amedas": lambda: AmedasView(settings=settings),
-    }[active_view]()
+
+    # Route component wrappers. ft.Route invokes `component` with no
+    # arguments, so a closure is the canonical way to inject settings
+    # and the shared fetch_session.
+    def render_shell():
+        return AppShell(
+            settings=settings,
+            fetch_session=fetch_session,
+        )
+
+    def render_map():
+        return MapView(settings=settings, fetch_session=fetch_session)
+
+    def render_radar():
+        return RadarView(settings=settings)
+
+    def render_amedas():
+        return AmedasView(settings=settings)
+
+    return ft.Router(
+        routes=[
+            ft.Route(
+                component=render_shell,
+                outlet=True,
+                children=[
+                    ft.Route(index=True, component=render_map),
+                    ft.Route(path="radar", component=render_radar),
+                    ft.Route(path="amedas", component=render_amedas),
+                ],
+            ),
+        ],
+    )
+
+
+@ft.component
+def AppShell(settings, fetch_session):
+    """Parent-route layout: outlet body + bottom panel + nav.
+
+    Renders the matched child route into the central area. Reads
+    ``use_route_location()`` to keep the NavigationBar highlight in
+    sync with the URL, so a deep-link or back-button navigation
+    correctly updates the tab indicator.
+    """
+    outlet = ft.use_route_outlet()
+    location = ft.use_route_location()
+
+    fetch_running = fetch_session["running"]
+    fetch_progress = fetch_session["progress"]
+    fetch_status_text = fetch_session["status_text"]
+    fetch_items = fetch_session["items"]
+    stop_fetch = fetch_session["stop"]
 
     # ──────────────────────────────────────────────────────────
     # VS Code-style tabbed bottom panel.
@@ -217,7 +270,6 @@ def App():
         "cancelled": ("−", ft.Colors.OUTLINE),
     }
 
-    # Aggregate stats for the header.
     items = fetch_items
     n_done = sum(1 for it in items if it["status"] in ("done", "cached"))
     n_failed = sum(1 for it in items if it["status"] == "failed")
@@ -226,8 +278,6 @@ def App():
         (it["size_bytes"] or 0) for it in items
         if it["status"] in ("done", "cached")
     )
-    # ETA estimate: mean of completed real-download durations
-    # (excludes cache hits since those are ~instant).
     real_durations = [
         it["duration_s"] for it in items
         if it["status"] == "done" and it.get("duration_s")
@@ -242,8 +292,6 @@ def App():
     else:
         eta_str = "—"
 
-    # One row per frame. Compact, fixed-width columns aligned by setting
-    # explicit widths so the eye can scan down a single property.
     def _item_row(it):
         glyph, color = _STATUS_GLYPH.get(it["status"], ("?", ft.Colors.GREY))
         return ft.Row(
@@ -327,8 +375,6 @@ def App():
                     visible=bool(fetch_status_text),
                 ),
                 ft.Divider(height=4),
-                # Scrollable list of per-frame rows. Empty state hint
-                # when there's no items (e.g. cold start before first fetch).
                 ft.ListView(
                     expand=True,
                     spacing=1,
@@ -350,12 +396,6 @@ def App():
     )
 
     # ── Tab body: ターミナル (placeholder) ──
-    # ERA5 や CDS API のような「base time + step」モデルに合わない
-    # データソースでは、ユーザがまず「データセット定義」を書く必要
-    # がある (変数、期間、緯経度範囲、気圧面、aggregation など)。
-    # この定義を経て初めて GPV / チャート描画に進める。さらに ERA5
-    # は ~10 TB 規模なので、「データセット定義」と「計算実行」を
-    # 分離して、後者の前に容量見積もりと確認を挟む必要がある。
     terminal_tab_body = ft.Container(
         padding=ft.Padding.all(12),
         content=ft.Column(
@@ -451,10 +491,17 @@ def App():
         ],
     )
 
+    # NavigationBar mirrors the current route. Clicking a destination
+    # calls page.navigate(...) instead of mutating component state, so
+    # browser back/forward and deep links Just Work.
+    selected_idx = next(
+        (i for i, p in enumerate(_NAV_PATHS) if location == p),
+        0,
+    )
     nav = ft.NavigationBar(
-        selected_index={"map": 0, "radar": 1, "amedas": 2}[active_view],
-        on_change=lambda e: set_active_view(
-            ["map", "radar", "amedas"][e.control.selected_index],
+        selected_index=selected_idx,
+        on_change=lambda e: ft.context.page.navigate(
+            _NAV_PATHS[e.control.selected_index],
         ),
         destinations=[
             ft.NavigationBarDestination(
@@ -475,7 +522,7 @@ def App():
             expand=True,
             spacing=0,
             controls=[
-                ft.Container(content=body, expand=True),
+                ft.Container(content=outlet, expand=True),
                 bottom_panel,
                 nav,
             ],

@@ -1935,17 +1935,17 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         ],
     )
 
-    # Show whichever dialog is open. Passing None dismisses; the hook
-    # diffs the dialog dataclass field-by-field, so re-rendering with
-    # updated draft state preserves cursor / focus.
-    ft.use_dialog(
-        fetch_confirm_dialog if show_fetch_confirm
-        else catalog_dialog if show_catalog_dialog
-        else layer_dialog if show_data_dialog
-        else region_dialog if show_region_dialog
-        else time_dialog if show_time_dialog
-        else None
-    )
+    # One use_dialog hook per dialog. The 0.85 hook tracks each call
+    # site independently, frozen-diffs the dataclass field-by-field on
+    # re-renders, and only emits the actual deltas — which is what
+    # keeps text-field cursor / focus / selection alive across draft
+    # state edits. A single cascading hook would defeat that because
+    # the diff target changes wholesale when the active dialog flips.
+    ft.use_dialog(catalog_dialog if show_catalog_dialog else None)
+    ft.use_dialog(layer_dialog if show_data_dialog else None)
+    ft.use_dialog(region_dialog if show_region_dialog else None)
+    ft.use_dialog(time_dialog if show_time_dialog else None)
+    ft.use_dialog(fetch_confirm_dialog if show_fetch_confirm else None)
 
     # ----- Layout -----
     # Desktop 3-pane shell:
