@@ -988,11 +988,17 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                 set_download_progress(
                     lambda prev, k=i + 1: {**prev, "done": k},
                 )
-                # Render this step immediately if it's the visible one,
-                # so the user sees their selected frame come alive as
-                # soon as the bytes land.
+                # Render every frame as soon as its GRIB lands. The
+                # visible step is awaited so the user sees their selected
+                # frame come alive immediately; non-visible steps are
+                # fire-and-forget so the download loop keeps moving while
+                # the render pool serialises the actual work in parallel
+                # across CPU cores. Without this, only the visible step
+                # ever rendered and "描画 1 · GRIB 64" stayed stuck.
                 if display_step == step_hours:
                     await _ensure_rendered(display_step)
+                else:
+                    ft.context.page.run_task(_ensure_rendered, display_step)
         finally:
             set_download_running(False)
             set_progress("")
@@ -2302,11 +2308,12 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                 ),
                 cache_bar,
                 # Primary fetch action: kicks the user into the fetch
-                # confirmation dialog. Shown whenever there's a base
-                # time to fetch and a download isn't already in flight.
-                # Disabled (rather than hidden) when there's no
-                # primary_cycle yet, so the user can see the path
-                # forward even before the mount-time probe lands.
+                # confirmation dialog. Shown whenever there are frames
+                # still to download for the current cycle and a download
+                # isn't already in flight. Once everything is on disk
+                # (cache_none == 0) we hide it — re-fetching the same
+                # immutable cycle is pointless; the user switches cycle
+                # via 更新 (newer cycle) or GPV データ変更.
                 ft.FilledButton(
                     content=ft.Text("取得 / Fetch", size=12),
                     icon=ft.Icons.CLOUD_DOWNLOAD,
@@ -2314,7 +2321,32 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                     disabled=(
                         primary_cycle is None or download_running
                     ),
-                    visible=(not download_running),
+                    visible=(
+                        not download_running
+                        and (primary_cycle is None or cache_none > 0)
+                    ),
+                ),
+                # All frames already on disk for this cycle. Surface a
+                # quiet "✓ キャッシュ済" indicator instead of the Fetch
+                # button so the user can see the current cycle is fully
+                # downloaded without the button shouting at them.
+                ft.Row(
+                    spacing=4,
+                    visible=(
+                        not download_running
+                        and primary_cycle is not None
+                        and cache_none == 0
+                    ),
+                    controls=[
+                        ft.Icon(
+                            ft.Icons.CHECK_CIRCLE,
+                            size=14, color=ft.Colors.GREEN,
+                        ),
+                        ft.Text(
+                            f"キャッシュ済 / Cached · {len(step_options)} frames",
+                            size=11, color=ft.Colors.GREEN,
+                        ),
+                    ],
                 ),
                 # When the mount-time probe found a newer fully-
                 # published cycle than what we're showing, surface a
