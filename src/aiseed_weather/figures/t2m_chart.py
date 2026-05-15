@@ -13,10 +13,8 @@ from __future__ import annotations
 import io
 from typing import TYPE_CHECKING
 
-import contourpy
 import numpy as np
-from PIL import Image, ImageDraw
-from scipy.ndimage import gaussian_filter
+from PIL import Image
 
 from aiseed_weather.figures._basemap import base_map_rgb
 from aiseed_weather.figures._coastlines import apply_coastlines
@@ -24,11 +22,8 @@ from aiseed_weather.figures._fast import (
     apply_polar_reindex, is_polar, source_grid_for_global,
 )
 from aiseed_weather.figures.msl_chart import (
-    _ISOLINE_SUPERSAMPLE, _ISOLINE_WIDTH_THIN, _ISOLINE_WIDTH_BOLD,
-    _MIN_SEGMENT_VERTICES, _SMOOTH_SIGMA,
-    _PILL_FONT_SS, _PILL_PAD_X, _PILL_TEXT_RGB,
-    _blend_with_transparency, _draw_pill, _pick_pill_anchor,
-    _to_pixel_grid, _png_metadata as _msl_png_metadata,
+    _blend_with_transparency, _to_pixel_grid,
+    _png_metadata as _msl_png_metadata,
 )
 from aiseed_weather.figures.regions import GLOBAL
 
@@ -81,10 +76,6 @@ def _palette_rgb_for(value_c: float) -> tuple[int, int, int]:
 
 
 _DATA_TRANSPARENCY = 0.30
-_ISOLINE_RGB = (255, 255, 255)
-_THIN_INTERVAL_C = 2
-_BOLD_INTERVAL_C = 10
-_ISOTHERM_RANGE = range(-40, 51, _THIN_INTERVAL_C)
 
 
 # ── Entry point ─────────────────────────────────────────────────────
@@ -144,20 +135,17 @@ def render_t2m(
     if base is None or base.shape != (h, w, 3):
         base = np.full((h, w, 3), 110, dtype=np.uint8)
 
-    # 2. data overlay blended at native
+    # 2. data overlay blended at native. No isotherm / pill layer:
+    # temperature is well carried by the continuous palette alone,
+    # so adding 2 °C / 10 °C isotherm fans only clutters the chart
+    # for an analyst who reads the colour directly. MSL needs lines
+    # because pressure-gradient shape is the synoptic information;
+    # temperature-gradient shape is already encoded in the colour.
     norm = np.clip((t_c - _VMIN_C) / (_VMAX_C - _VMIN_C), 0.0, 1.0)
     data_rgb = _LUT[(norm * 255.0).astype(np.uint8)]
-    composite = _blend_with_transparency(base, data_rgb, _DATA_TRANSPARENCY)
+    final_arr = _blend_with_transparency(base, data_rgb, _DATA_TRANSPARENCY).copy()
 
-    # 3. isotherms + pills on RGBA supersample
-    smoothed = gaussian_filter(t_c, sigma=_SMOOTH_SIGMA)
-    overlay_native = _render_isotherms_and_pills(smoothed, w, h)
-
-    base_img = Image.fromarray(composite, mode="RGB").convert("RGBA")
-    base_img.alpha_composite(overlay_native)
-    final_arr = np.asarray(base_img.convert("RGB"), dtype=np.uint8).copy()
-
-    # 5. coastline on top
+    # 3. coastline on top of the data-blended base
     apply_coastlines(final_arr, region.key)
 
     buf = io.BytesIO()
@@ -166,48 +154,6 @@ def render_t2m(
         pnginfo=_png_metadata(run_id),
     )
     return buf.getvalue()
-
-
-def _render_isotherms_and_pills(
-    smoothed_field: np.ndarray, w: int, h: int,
-) -> Image.Image:
-    ss = _ISOLINE_SUPERSAMPLE
-    H, W = h * ss, w * ss
-    overlay_ss = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(overlay_ss)
-
-    x_ss = np.arange(w, dtype=np.float32) * ss
-    y_ss = np.arange(h, dtype=np.float32) * ss
-    cgen = contourpy.contour_generator(x=x_ss, y=y_ss, z=smoothed_field)
-
-    pill_candidates: list[tuple[int, np.ndarray]] = []
-    for level in _ISOTHERM_RANGE:
-        is_bold = (level % _BOLD_INTERVAL_C == 0)
-        width = _ISOLINE_WIDTH_BOLD if is_bold else _ISOLINE_WIDTH_THIN
-        for line in cgen.lines(float(level)):
-            if line.shape[0] < _MIN_SEGMENT_VERTICES:
-                continue
-            draw.line(
-                line.astype(np.int32).tolist(),
-                fill=(*_ISOLINE_RGB, 255),
-                width=width,
-            )
-            if is_bold:
-                pill_candidates.append((level, line))
-
-    for level, line in pill_candidates:
-        anchor = _pick_pill_anchor(line)
-        if anchor is None:
-            continue
-        cx, cy = anchor
-        r, g, b = _palette_rgb_for(float(level))
-        _draw_pill(
-            draw, cx, cy, str(level),
-            bg_rgb=(r, g, b, 255),
-            font=_PILL_FONT_SS,
-        )
-
-    return overlay_ss.resize((w, h), Image.LANCZOS)
 
 
 def _png_metadata(run_id: str):
