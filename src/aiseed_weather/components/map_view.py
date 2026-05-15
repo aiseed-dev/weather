@@ -1880,9 +1880,83 @@ def MapView(settings: UserSettings):
             spacing=8,
             scroll=ft.ScrollMode.ADAPTIVE,
             controls=[
-                ft.Text(
-                    "モデル / Models", size=16, weight=ft.FontWeight.BOLD,
+                # ───────────────────────────────────────────────
+                # GPV データ (base time) — THE primary concept in this
+                # app. Commercial weather apps hide this in their
+                # backend; we show it because the whole reason this
+                # app exists is to give the expert user direct
+                # control over which forecast cycle they're reading.
+                # ───────────────────────────────────────────────
+                ft.Container(
+                    padding=ft.Padding.symmetric(horizontal=4, vertical=4),
+                    border_radius=8,
+                    bgcolor=ft.Colors.PRIMARY_CONTAINER,
+                    content=ft.Column(
+                        spacing=4,
+                        controls=[
+                            ft.Text(
+                                "GPV データ / GPV (base time)",
+                                size=12, weight=ft.FontWeight.BOLD,
+                                color=ft.Colors.ON_PRIMARY_CONTAINER,
+                            ),
+                            ft.Text(
+                                (
+                                    f"{manual_cycle:%Y-%m-%d %H:%M UTC}"
+                                    if manual_cycle
+                                    else (
+                                        f"{run_time_holder:%Y-%m-%d %H:%M UTC}"
+                                        if run_time_holder else "未取得 / not loaded"
+                                    )
+                                ),
+                                size=16, weight=ft.FontWeight.BOLD,
+                                color=ft.Colors.ON_PRIMARY_CONTAINER,
+                            ),
+                            ft.Text(
+                                "manual" if manual_cycle else "auto (latest available)",
+                                size=10,
+                                color=ft.Colors.ON_PRIMARY_CONTAINER,
+                            ),
+                            ft.Text(
+                                (
+                                    f"+ {_prior_long_cycle(primary_cycle):%Hz} 延長 (stitched)"
+                                    if (
+                                        primary_cycle is not None
+                                        and _is_short_cycle(primary_cycle)
+                                        and max_step_h > _cycle_horizon_h(primary_cycle)
+                                    ) else ""
+                                ),
+                                size=10, color=ft.Colors.AMBER_900,
+                                visible=(
+                                    primary_cycle is not None
+                                    and _is_short_cycle(primary_cycle)
+                                    and max_step_h > _cycle_horizon_h(primary_cycle)
+                                ),
+                            ),
+                            ft.Text(
+                                f"範囲: T+0..T+{MAX_STEP}h, 粒度 {cadence_h}h "
+                                f"({len(step_options)} frames)",
+                                size=10,
+                                color=ft.Colors.ON_PRIMARY_CONTAINER,
+                            ),
+                        ],
+                    ),
                 ),
+                ft.Text(
+                    "取得状況 / Cache status:",
+                    size=10, color=ft.Colors.GREY,
+                ),
+                cache_bar,
+                ft.TextButton(
+                    content=ft.Text("GPV データ変更 / Change GPV…", size=12),
+                    icon=ft.Icons.SCHEDULE,
+                    on_click=lambda _: _open_time_dialog(),
+                ),
+
+                # ───────────────────────────────────────────────
+                # Below: configuration (which model, what to draw,
+                # where, on top of what). Less prominent visually
+                # because once set, the user rarely changes these.
+                # ───────────────────────────────────────────────
 
                 ft.Divider(height=14),
                 ft.Text(
@@ -1914,72 +1988,6 @@ def MapView(settings: UserSettings):
                     content=ft.Text("モデル変更 / Change…", size=12),
                     icon=ft.Icons.LIST_ALT,
                     on_click=lambda _: set_show_catalog_dialog(True),
-                ),
-
-                # ── Data: base time + acquisition status + range ──
-                ft.Divider(height=14),
-                ft.Text(
-                    "GPV データ / GPV (base time)", size=11,
-                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    (
-                        f"{manual_cycle:%Y-%m-%d %H:%M UTC}"
-                        if manual_cycle
-                        else (
-                            f"{run_time_holder:%Y-%m-%d %H:%M UTC}"
-                            if run_time_holder else "未取得"
-                        )
-                    ),
-                    size=13, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    "manual" if manual_cycle else "auto (latest available)",
-                    size=10, color=ft.Colors.GREY,
-                ),
-                ft.Text(
-                    (
-                        f"+ {_prior_long_cycle(primary_cycle):%Hz} 延長 (stitched)"
-                        if (
-                            primary_cycle is not None
-                            and _is_short_cycle(primary_cycle)
-                            and max_step_h > _cycle_horizon_h(primary_cycle)
-                        ) else ""
-                    ),
-                    size=10, color=ft.Colors.AMBER,
-                    visible=(
-                        primary_cycle is not None
-                        and _is_short_cycle(primary_cycle)
-                        and max_step_h > _cycle_horizon_h(primary_cycle)
-                    ),
-                ),
-                ft.Text(
-                    f"範囲: T+0..T+{MAX_STEP}h, 粒度 {cadence_h}h "
-                    f"({len(step_options)} frames)",
-                    size=10, color=ft.Colors.GREY,
-                ),
-                ft.Text(
-                    "取得状況 / Cache status:",
-                    size=10, color=ft.Colors.GREY,
-                ),
-                cache_bar,
-                ft.TextButton(
-                    content=ft.Text("GPV データ変更 / Change GPV…", size=12),
-                    icon=ft.Icons.SCHEDULE,
-                    on_click=lambda _: _open_time_dialog(),
-                ),
-
-                # ── Region: geographic viewport / projection ──
-                ft.Divider(height=14),
-                ft.Text(
-                    "地域 / Region", size=11,
-                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
-                ),
-                region_dropdown,
-                ft.TextButton(
-                    content=ft.Text("詳細設定 / Custom bounds…", size=12),
-                    icon=ft.Icons.TUNE,
-                    on_click=lambda _: _open_region_dialog(),
                 ),
 
                 # ── Layer: field + rendering style ──
@@ -2023,10 +2031,23 @@ def MapView(settings: UserSettings):
                     size=10, color=ft.Colors.GREY, italic=True,
                 ),
 
+                # ── Region: geographic viewport / projection ──
+                ft.Divider(height=14),
+                ft.Text(
+                    "地域 / Region", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                ),
+                region_dropdown,
+                ft.TextButton(
+                    content=ft.Text("詳細設定 / Custom bounds…", size=12),
+                    icon=ft.Icons.TUNE,
+                    on_click=lambda _: _open_region_dialog(),
+                ),
+
                 # ── Time: valid time = base time + lead time (slider-driven) ──
                 ft.Divider(height=14),
                 ft.Text(
-                    "時間 / Time (valid time)", size=11,
+                    "時間 / Time (valid time = base + lead)", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Text(
@@ -2035,10 +2056,6 @@ def MapView(settings: UserSettings):
                 ),
                 ft.Text(
                     f"Lead: {_step_label(step_hours)}",
-                    size=10, color=ft.Colors.GREY,
-                ),
-                ft.Text(
-                    f"範囲: T+0..T+{MAX_STEP}h, 3h ({total_count} frames)",
                     size=10, color=ft.Colors.GREY,
                 ),
 
