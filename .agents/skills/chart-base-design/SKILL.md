@@ -119,6 +119,47 @@ land/sea and the dark coastline stay crisp through the round-
 trip — only the new line geometry benefits from the downsample
 filter.
 
+## Palette differentiation by data source (NWP vs observation)
+
+A subtle but operationally critical rule: **two layers must not share
+a palette when their epistemic precision is fundamentally different.**
+
+Specifically, NWP-derived precipitation (ECMWF Open Data ``tp`` and
+``tprate``) and observed precipitation (JMA radar) must use distinct
+colour schemes — otherwise an analyst reading "yellow = 20 mm/h"
+treats both as equally authoritative, when:
+
+- A **radar** pixel at 20 mm/h is a measurement at 1 km × 5 min
+  resolution. The intensity is real, the location is real.
+- An **NWP tprate** pixel at 20 mm/h is the output of a parameterised
+  convection scheme on a 28 km grid. The value is a regional
+  area-mean of an under-resolved process. Sub-grid heavy-rain
+  phenomena (線状降水帯 50-200 km × 20-50 km, ゲリラ豪雨 5-20 km,
+  typhoon eyewall peaks) are systematically under-represented or
+  smeared.
+
+Same colour, very different epistemic weight. The chart must not
+flatten that difference.
+
+### Current assignment
+
+| Data source             | Palette family             | Notes |
+|-------------------------|----------------------------|-------|
+| ECMWF tp, tprate (NWP)  | Windy 3-hour palette       | Windy calibrated this scale for NWP precipitation — its bins (1.5 / 2 / 3 / 7 / 10 / 20 / 30) match the precision NWP can actually deliver, and don't claim local accuracy at extreme intensities. |
+| JMA radar (future)      | **Reserved — distinct palette TBD** | When the radar layer lands, pick a different hue family (e.g., cool blues with red high-end, vs Windy's pale-cyan-to-magenta) and finer bins matching the radar's 1 km / 5 min precision. |
+
+### Principle
+
+> Visual resolution should match data resolution. If your colour
+> bins are finer than your data is accurate, the chart lies. If
+> they're coarser, the chart wastes information. Match the bin
+> cadence (and the palette identity) to the source.
+
+This is why the Windy palette is "honest" for NWP — its bins stop
+at 30 mm/h rather than running up to 200 mm/h that NWP can't
+reliably distinguish, and it doesn't compete with a future radar
+palette for the analyst's visual category of "real precipitation".
+
 ## Which variables get isolines? (physics-driven, not aesthetics)
 
 Two readability modes split the catalogue:

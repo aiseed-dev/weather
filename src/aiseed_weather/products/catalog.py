@@ -1161,7 +1161,7 @@ _SURFACE_NEW: tuple[tuple[str, str, str, str, str, Status, str], ...] = (
     # ── Pressure (surface, vs MSL) ──
     # (sp explicit entry above is PLANNED; promote here)
     # ── Precipitation extras ──
-    ("tprate","tprate","降水率",          "Precipitation rate",    "mm/s",  Status.IMPLEMENTED, ""),
+    ("tprate","tprate","降水強度",        "Total precipitation rate","mm/h",  Status.IMPLEMENTED, "瞬時値 (検証時刻). NWP は強雨域の精度が低く 線状降水帯 / ゲリラ豪雨は再現不能 — レーダー観測と同じ palette にしてはならない"),
     ("ptype", "ptype", "降水タイプ",      "Precipitation type",    "—",     Status.IMPLEMENTED, "離散カテゴリ: 0=なし,1=雨,3=凍結雨,5=雪,6=みぞれ,7=湿雪,8=雹"),
     ("ro",    "ro",    "流出量 (累積)",   "Runoff",                "m",     Status.IMPLEMENTED, ""),
     # ── Snow extras ──
