@@ -353,8 +353,9 @@ def App():
     # ERA5 や CDS API のような「base time + step」モデルに合わない
     # データソースでは、ユーザがまず「データセット定義」を書く必要
     # がある (変数、期間、緯経度範囲、気圧面、aggregation など)。
-    # この定義を経て初めて GPV / チャート描画に進める。Python REPL が
-    # その自然な場所になるのでターミナルタブで提供する想定。
+    # この定義を経て初めて GPV / チャート描画に進める。さらに ERA5
+    # は ~10 TB 規模なので、「データセット定義」と「計算実行」を
+    # 分離して、後者の前に容量見積もりと確認を挟む必要がある。
     terminal_tab_body = ft.Container(
         padding=ft.Padding.all(12),
         content=ft.Column(
@@ -372,22 +373,35 @@ def App():
                     "ad-hoc に組み立てる。",
                     size=12,
                 ),
+                ft.Text(
+                    "重要: ERA5 アーカイブ全体は ~10 TB 規模。"
+                    "「データセット定義」と「計算実行」を分離し、"
+                    "実行前に必ず ① 取得・処理されるバイト数の見積もり、"
+                    "② 確認ダイアログ、③ キャンセル可能なバックグラウンド"
+                    "実行 の 3 段構えにする。pip install 風の per-chunk"
+                    "進捗もそのまま再利用する想定。",
+                    size=11, color=ft.Colors.AMBER_900,
+                ),
                 ft.Container(
                     bgcolor=ft.Colors.BLACK,
                     padding=ft.Padding.all(12),
                     border_radius=4,
                     content=ft.Text(
-                        "$ # 1) データセット定義 (ERA5 zarr を遅延ロード)\n"
+                        "$ # 1) データセット定義 (lazy; この時点では 0 byte)\n"
                         "$ era5 = open_era5(\n"
                         "      vars=['t2m','msl'],\n"
                         "      time=slice('2024-01','2024-12'),\n"
                         "      bbox=[120, 150, 22, 50],  # Japan 周辺\n"
                         "      level=None,\n"
                         "  )\n"
-                        "$ # 2) 解析 (1991-2020 平年偏差)\n"
+                        "  → 推定 1.2 GB · 8760 time steps · 4 chunks\n"
+                        "\n"
+                        "$ # 2) 解析定義 (まだ実行されない)\n"
                         "$ anom = era5.t2m - climo_t2m_dec\n"
-                        "$ # 3) チャート main area に表示\n"
-                        "$ render(anom.mean('time'), region=JAPAN, cmap='RdBu_r')",
+                        "\n"
+                        "$ # 3) 実行 (確認ダイアログ → bg 取得 → 描画)\n"
+                        "$ render(anom.mean('time'), region=JAPAN, cmap='RdBu_r')\n"
+                        "  → 取得が必要: 1.2 GB / 推定 4 分  [実行] [キャンセル]",
                         color=ft.Colors.GREEN_300,
                         size=11,
                         font_family="monospace",
@@ -395,7 +409,8 @@ def App():
                 ),
                 ft.Text(
                     "実装はまだ。ERA5 接続 + 評価環境 (xarray, regions, "
-                    "render helpers をプリロード) と一緒に着手予定。",
+                    "render helpers をプリロード) + サイズ見積もり層 と"
+                    "一緒に着手予定。",
                     size=10, color=ft.Colors.GREY, italic=True,
                 ),
             ],
