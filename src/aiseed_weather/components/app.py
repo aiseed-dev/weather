@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
+from dataclasses import dataclass, field
+from typing import Callable
+
 import flet as ft
 
 from aiseed_weather.components.amedas_view import AmedasView
@@ -14,6 +17,53 @@ from aiseed_weather.models.user_settings import LoadResult
 # highlight) and the Route table. "/" is map by convention because it's
 # the highest-traffic view and the natural landing page.
 _NAV_PATHS: tuple[str, ...] = ("/", "/radar", "/amedas")
+
+
+@ft.observable
+@dataclass
+class FetchSession:
+    """Reactive GPV fetch lifecycle state.
+
+    Owned by App (so a running download survives tab navigation) and
+    shared with MapView + AppShell as the single source of truth.
+    Mutating a field — ``session.running = True`` — notifies every
+    component that read it; the @ft.observable decorator hooks into
+    ft.use_state's auto-subscription machinery.
+
+    Side-effect plumbing (the asyncio Task and its cancel_event) is
+    deliberately NOT here: it isn't UI state and shouldn't trigger
+    re-renders. It lives in a separate ft.use_ref next to the session.
+    """
+
+    running: bool = False
+    # Per-frame fetch items: pip install-style detailed view (status
+    # icon + label + size + duration). Each item is a dict:
+    #   {"step": int, "param": str, "stitched": bool,
+    #    "status": "pending"|"checking"|"downloading"|"done"|"cached"
+    #              |"failed"|"cancelled",
+    #    "size_bytes": int|None, "duration_s": float|None}
+    items: list = field(default_factory=list)
+    progress: dict = field(
+        default_factory=lambda: {"done": 0, "total": 0},
+    )
+    status_text: str = ""
+
+
+@dataclass(frozen=True)
+class FetchController:
+    """Bundle the reactive session + non-reactive task ref + stop fn.
+
+    Threaded through props instead of three separate args. Inert wrapper
+    — only the ``session`` field is observable; ``task_ref`` is a plain
+    MutableRef and ``stop`` is a closure.
+    """
+
+    session: FetchSession
+    # ft.MutableRef is the return type of ft.use_ref but isn't re-
+    # exported at the top level in Flet 0.85. ``Any`` keeps the
+    # annotation honest without leaking the internal import path.
+    task_ref: object
+    stop: Callable[[], None]
 
 
 @ft.component
@@ -30,50 +80,31 @@ def App():
     # lives at App scope; the bottom panel + Stop button stay
     # reachable from any tab.
     # ──────────────────────────────────────────────────────────
-    fetch_running, set_fetch_running = ft.use_state(False)
-    fetch_progress, set_fetch_progress = ft.use_state(
-        lambda: {"done": 0, "total": 0}
-    )
-    fetch_status_text, set_fetch_status_text = ft.use_state("")
-    # Per-frame fetch items so the Fetch tab can render pip install-
-    # style detailed progress: status icon + label + size + duration.
-    # Each item is a dict:
-    #   {"step": int, "param": str, "stitched": bool,
-    #    "status": "pending"|"checking"|"downloading"|"done"|"cached"
-    #              |"failed"|"cancelled",
-    #    "size_bytes": int|None, "duration_s": float|None}
-    fetch_items, set_fetch_items = ft.use_state(lambda: [])
-    # Mutable holder for the asyncio task + cancel_event. use_state
-    # with a lazy initializer returns the same dict object across
-    # renders, so writes survive.
-    fetch_task_ref, _ = ft.use_state(
-        lambda: {"task": None, "cancel_event": None}
-    )
+    # use_state on an Observable auto-attaches the component to the
+    # observable's subscription list, so field mutations trigger a
+    # re-render here. The setter is unused — we never wholesale-replace
+    # the session, only mutate its fields.
+    session, _ = ft.use_state(lambda: FetchSession())
+    # Task + cancel_event are not reactive: re-rendering on a task
+    # handle swap would be noise. ft.use_ref is the proper
+    # non-reactive holder.
+    task_ref = ft.use_ref(lambda: {"task": None, "cancel_event": None})
 
     def stop_fetch():
-        ev = fetch_task_ref.get("cancel_event")
+        ev = task_ref.current.get("cancel_event")
         if ev is not None:
             ev.set()
-        task = fetch_task_ref.get("task")
+        task = task_ref.current.get("task")
         if task is not None and not task.done():
             task.cancel()
-        fetch_task_ref["task"] = None
-        fetch_task_ref["cancel_event"] = None
-        set_fetch_running(False)
-        set_fetch_status_text("")
+        task_ref.current["task"] = None
+        task_ref.current["cancel_event"] = None
+        session.running = False
+        session.status_text = ""
 
-    fetch_session = {
-        "running": fetch_running,
-        "set_running": set_fetch_running,
-        "progress": fetch_progress,
-        "set_progress": set_fetch_progress,
-        "status_text": fetch_status_text,
-        "set_status_text": set_fetch_status_text,
-        "items": fetch_items,
-        "set_items": set_fetch_items,
-        "task_ref": fetch_task_ref,
-        "stop": stop_fetch,
-    }
+    controller = FetchController(
+        session=session, task_ref=task_ref, stop=stop_fetch,
+    )
 
     if result.status != "ok":
         return ft.SafeArea(
@@ -84,15 +115,12 @@ def App():
 
     # Route component wrappers. ft.Route invokes `component` with no
     # arguments, so a closure is the canonical way to inject settings
-    # and the shared fetch_session.
+    # and the shared fetch controller.
     def render_shell():
-        return AppShell(
-            settings=settings,
-            fetch_session=fetch_session,
-        )
+        return AppShell(settings=settings, fetch=controller)
 
     def render_map():
-        return MapView(settings=settings, fetch_session=fetch_session)
+        return MapView(settings=settings, fetch=controller)
 
     def render_radar():
         return RadarView(settings=settings)
@@ -116,7 +144,7 @@ def App():
 
 
 @ft.component
-def AppShell(settings, fetch_session):
+def AppShell(settings, fetch: FetchController):
     """Parent-route layout: outlet body + bottom panel + nav.
 
     Renders the matched child route into the central area. Reads
@@ -127,11 +155,12 @@ def AppShell(settings, fetch_session):
     outlet = ft.use_route_outlet()
     location = ft.use_route_location()
 
-    fetch_running = fetch_session["running"]
-    fetch_progress = fetch_session["progress"]
-    fetch_status_text = fetch_session["status_text"]
-    fetch_items = fetch_session["items"]
-    stop_fetch = fetch_session["stop"]
+    session = fetch.session
+    fetch_running = session.running
+    fetch_progress = session.progress
+    fetch_status_text = session.status_text
+    fetch_items = session.items
+    stop_fetch = fetch.stop
 
     # ──────────────────────────────────────────────────────────
     # VS Code-style tabbed bottom panel.

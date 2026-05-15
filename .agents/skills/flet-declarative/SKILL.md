@@ -172,28 +172,74 @@ Scheduling async work from sync handlers uses
 top-level `ft.run_task` and never was. `run_task` requires a coroutine
 *function*, not a lambda — pass `load` directly, not `lambda: load(...)`.
 
-## Mutable holders for non-reactive state
+## Shared reactive state: @ft.observable
 
-Some state isn't reactive — asyncio.Task references, cancel_events,
-read-back values that async closures need at invocation time (not at
-schedule time). Flet doesn't expose a `use_ref` primitive, so the
-project pattern is `ft.use_state` with a lazy dict initializer:
+For state that lives across components — App-level fetch lifecycle,
+shared selectors, anything more than one component reads — use
+`@ft.observable`. The decorator works on a `@dataclass` (in either
+order); place the instance in `ft.use_state` so the auto-subscription
+machinery hooks the host component up:
 
 ```python
-task_ref, _ = ft.use_state(lambda: {"task": None, "cancel_event": None})
+from dataclasses import dataclass, field
+import flet as ft
+
+@ft.observable
+@dataclass
+class FetchSession:
+    running: bool = False
+    progress: dict = field(default_factory=lambda: {"done": 0, "total": 0})
+    items: list = field(default_factory=list)
+
+@ft.component
+def App():
+    session, _ = ft.use_state(lambda: FetchSession())   # auto-subscribes
+    # Pass `session` down as a prop. Children that read its fields
+    # auto-subscribe too via their own use_state on the same instance,
+    # or via direct attribute access inside their render body.
 ```
 
-The lazy initializer returns the *same* dict object across renders, so
-mutations to it survive. Treat this as the project's idiom for "ref" —
-not as imperative state. Tasks and cancel events are side-effect
-plumbing, not UI state.
+Mutating fields — `session.running = True`, `session.items[:] = [...]`
+— notifies every subscribed component, which re-renders. Lists and
+dicts are auto-wrapped, so in-place ops (`session.items.append(x)`,
+`session.progress["done"] = 5`) also notify.
 
-What MUST NOT go in these holders:
+When to use `@ft.observable` vs `ft.use_state`:
+
+- One component owns the state → `ft.use_state` (local hook).
+- State must survive route navigation or be shared between siblings →
+  `@ft.observable` model held by a common ancestor.
+
+The setter returned by `ft.use_state(lambda: X())` for an observable
+value is essentially unused — you mutate fields, not the instance.
+
+## Non-reactive refs: ft.use_ref
+
+Some state isn't reactive — asyncio.Task references, cancel_events,
+holder values that async closures need at invocation time but should
+NOT trigger re-renders. Use `ft.use_ref`:
+
+```python
+task_ref = ft.use_ref(lambda: {"task": None, "cancel_event": None})
+
+def stop():
+    ev = task_ref.current.get("cancel_event")
+    if ev is not None:
+        ev.set()
+    task_ref.current["task"] = None
+```
+
+`ft.use_ref` returns a `MutableRef` with `.current` for read/write. The
+ref's identity is stable across renders, and writes never re-render the
+component.
+
+What MUST NOT go in a ref:
 
 - `ft.Control` instances (controls are derived from state; storing them
   defeats reactivity and breaks the use_dialog frozen-diff machinery)
-- Anything you'd otherwise re-derive on each render (regions, layers,
-  selected cycle — those belong in `use_state` or `@ft.observable`)
+- Reactive UI state — region, layer, selected cycle, progress, status
+  text. Those belong in `ft.use_state` or `@ft.observable`. Storing
+  them in a ref hides them from the framework and produces stale UI.
 
 ## Forbidden
 

@@ -326,10 +326,13 @@ def _valid_time_display(base_time, step_hours: int) -> str:
 
 
 @ft.component
-def MapView(settings: UserSettings, fetch_session: dict | None = None):
-    # fetch_session is owned by App so the download lifecycle survives
-    # tab navigation. We read/write its keys instead of holding
-    # component-local state. None is allowed for standalone testing.
+def MapView(settings: UserSettings, fetch=None):
+    # `fetch` is the FetchController from App so the download lifecycle
+    # survives tab navigation. We read/mutate its observable session
+    # directly — no setter plumbing. None is allowed for standalone
+    # testing; in that case we synthesize a local controller. The
+    # FetchController type is imported lazily to avoid a circular import
+    # (app.py → map_view.py → app.py).
     state, set_state = ft.use_state("idle")  # idle | loading | ready | error | disabled
     image_bytes, set_image_bytes = ft.use_state(None)
     error, set_error = ft.use_state(None)
@@ -371,27 +374,18 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
     # closure-capturing them at task launch.
     render_params_ref, _ = ft.use_state(lambda: {})
 
-    # Download lifecycle is owned by App via fetch_session so it
-    # survives tab navigation. Fall back to local state if no
-    # session was injected (tests / standalone embedding).
-    if fetch_session is not None:
-        download_task_ref = fetch_session["task_ref"]
-        download_running = fetch_session["running"]
-        set_download_running = fetch_session["set_running"]
-        download_progress = fetch_session["progress"]
-        set_download_progress = fetch_session["set_progress"]
-        _set_fetch_status_text = fetch_session["set_status_text"]
-        _set_fetch_items = fetch_session["set_items"]
-    else:
-        download_task_ref, _ = ft.use_state(
-            lambda: {"task": None, "cancel_event": None},
-        )
-        download_running, set_download_running = ft.use_state(False)
-        download_progress, set_download_progress = ft.use_state(
-            lambda: {"done": 0, "total": 0}
-        )
-        _set_fetch_status_text = lambda _x: None
-        _set_fetch_items = lambda _x: None
+    # Standalone-mode fallback: every hook must run on every render
+    # (rules of hooks), so we always declare local state/refs and only
+    # bind through to App's controller if one was injected.
+    from aiseed_weather.components.app import FetchSession  # local import
+    local_session, _ = ft.use_state(lambda: FetchSession())
+    local_task_ref = ft.use_ref(
+        lambda: {"task": None, "cancel_event": None},
+    )
+    session = fetch.session if fetch is not None else local_session
+    download_task_ref = (
+        fetch.task_ref if fetch is not None else local_task_ref
+    )
 
     # User-facing selectors. region drives the chart projection +
     # extent; data_field_key picks which meteorological field to fetch
@@ -852,11 +846,13 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         session so the Fetch tab can render pip install-style detail
         (status / size / duration per row).
         """
-        set_download_running(True)
+        session.running = True
         set_error(None)
         # Seed the items list — one row per plan entry, all "pending"
-        # until the loop visits them.
-        items = [
+        # until the loop visits them. Whole-list assign notifies the
+        # observable; the framework auto-wraps the new list so later
+        # in-place mutations also notify.
+        session.items = [
             {
                 "step": disp,
                 "param": selected_field.ecmwf_param,
@@ -867,21 +863,25 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
             }
             for (disp, src_c, _src_s) in plan
         ]
-        _set_fetch_items(list(items))
+        items = session.items
 
         def _push():
-            # Functional snapshot push so Flet detects the change.
-            _set_fetch_items(list(items))
+            # In-place item dict mutations don't bubble through the
+            # parent ``items`` list's notification, so re-assign the
+            # list to fire a single coarse-grained re-render. Cheap
+            # because the elements are dicts — only the list wrapper
+            # is rebuilt.
+            session.items = list(items)
 
         try:
             service = ForecastService(settings, override_source=data_source_key)
         except ForecastDisabledError as e:
             set_error(str(e))
             set_state("disabled")
-            set_download_running(False)
+            session.running = False
             return
         total = len(plan)
-        set_download_progress({"done": 0, "total": total})
+        session.progress = {"done": 0, "total": total}
         try:
             for i, (display_step, src_cycle, src_step) in enumerate(plan):
                 if cancel_event.is_set():
@@ -908,7 +908,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                         f"{_step_label(display_step)}{ext_tag}"
                     )
                     set_progress(msg)
-                    _set_fetch_status_text(msg)
+                    session.status_text = msg
                     try:
                         items[i]["size_bytes"] = (
                             service._cache_path(req).stat().st_size
@@ -924,7 +924,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                         f"{_step_label(display_step)}{ext_tag}…"
                     )
                     set_progress(msg)
-                    _set_fetch_status_text(msg)
+                    session.status_text = msg
                     items[i]["status"] = "downloading"
                     _push()
                     t0 = time.perf_counter()
@@ -985,9 +985,10 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                                 src_step,
                             )
 
-                set_download_progress(
-                    lambda prev, k=i + 1: {**prev, "done": k},
-                )
+                # Whole-dict assign rather than mutating session.progress
+                # in place: in-place dict mutation does notify, but
+                # whole-replace is more readable and the dict is tiny.
+                session.progress = {**session.progress, "done": i + 1}
                 # Render every frame as soon as its GRIB lands. The
                 # visible step is awaited so the user sees their selected
                 # frame come alive immediately; non-visible steps are
@@ -1000,9 +1001,9 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                 else:
                     ft.context.page.run_task(_ensure_rendered, display_step)
         finally:
-            set_download_running(False)
+            session.running = False
             set_progress("")
-            _set_fetch_status_text("")
+            session.status_text = ""
 
     def start_download():
         # Cancel any previous download first.
@@ -1016,25 +1017,25 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         task = ft.context.page.run_task(
             _download_loop, primary_cycle, plan, cancel_event,
         )
-        download_task_ref["task"] = task
-        download_task_ref["cancel_event"] = cancel_event
+        download_task_ref.current["task"] = task
+        download_task_ref.current["cancel_event"] = cancel_event
 
     def stop_download():
-        # Defer to the App-level stop if we have a session, so the
+        # Defer to the App-level stop if we have a controller, so the
         # global banner clears in lockstep. Falls through to local
-        # stop logic when no session (tests / standalone).
-        if fetch_session is not None and "stop" in fetch_session:
-            fetch_session["stop"]()
+        # stop logic when no controller (tests / standalone).
+        if fetch is not None:
+            fetch.stop()
             return
-        ev = download_task_ref.get("cancel_event")
+        ev = download_task_ref.current.get("cancel_event")
         if ev is not None:
             ev.set()
-        task = download_task_ref.get("task")
+        task = download_task_ref.current.get("task")
         if task is not None and not task.done():
             task.cancel()
-        download_task_ref["task"] = None
-        download_task_ref["cancel_event"] = None
-        set_download_running(False)
+        download_task_ref.current["task"] = None
+        download_task_ref.current["cancel_event"] = None
+        session.running = False
 
     async def _probe_then_download():
         try:
@@ -1049,8 +1050,8 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         # was empty until run_time_holder was set).
         plan = _stitch_plan(run_time, max_step_h, cadence_h)
         cancel_event = asyncio.Event()
-        download_task_ref["cancel_event"] = cancel_event
-        download_task_ref["task"] = None
+        download_task_ref.current["cancel_event"] = cancel_event
+        download_task_ref.current["task"] = None
         await _download_loop(run_time, plan, cancel_event)
 
     async def load_all_steps_and_play():
@@ -1065,7 +1066,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         # If the user's selected step isn't downloaded yet, we'll still
         # start the loop; the tick will just stall on missing frames.
         for _ in range(40):  # up to ~10s
-            if _get_frame(step_hours) is not None or download_progress.get("done", 0) > 0:
+            if _get_frame(step_hours) is not None or session.progress.get("done", 0) > 0:
                 break
             await asyncio.sleep(0.25)
         set_is_playing(True)
@@ -2319,10 +2320,10 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                     icon=ft.Icons.CLOUD_DOWNLOAD,
                     on_click=lambda _: _request_fetch(),
                     disabled=(
-                        primary_cycle is None or download_running
+                        primary_cycle is None or session.running
                     ),
                     visible=(
-                        not download_running
+                        not session.running
                         and (primary_cycle is None or cache_none > 0)
                     ),
                 ),
@@ -2333,7 +2334,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                 ft.Row(
                     spacing=4,
                     visible=(
-                        not download_running
+                        not session.running
                         and primary_cycle is not None
                         and cache_none == 0
                     ),
