@@ -67,11 +67,21 @@ logger = logging.getLogger(__name__)
 # both a max horizon and a cadence; the full 3h × T+240h corresponds to
 # 65 frames and roughly 10 min cold preload on a typical laptop.
 FRAME_INTERVAL_SEC = 0.9  # animation playback frame duration
-# Spacing between consecutive S3 fetches during preload. S3's per-prefix
-# rate limit triggers "503 Slow Down" if we hammer one bucket prefix; a
-# small pause between requests keeps the rate below that threshold and
-# spares us from multi-second retry backoffs.
-PRELOAD_SPACING_SEC = 0.5
+# Spacing between consecutive S3 fetches during preload. With the
+# parallel download loop below this is largely vestigial — the
+# Semaphore is what bounds concurrency now — but a tiny stagger
+# avoids issuing every task on the same tick and tripping the S3
+# per-prefix rate limit.
+PRELOAD_SPACING_SEC = 0.02
+
+# How many ECMWF Open Data downloads run concurrently. The dominant
+# cost is RTT × #range-requests against the Frankfurt mirror, not
+# bandwidth — a single Client.retrieve() call serialises a few dozen
+# small range requests behind the same TCP socket, so the way to get
+# faster is more sockets. 4 is a conservative concurrency that
+# saturates a ~200 Mbps link without tripping S3's per-prefix rate
+# limit.
+DOWNLOAD_CONCURRENCY = 4
 
 # Max distinct (cycle, region, layer, step) PNGs held in memory. At
 # ~500KB per PNG this caps memory at ~250MB. Eviction is FIFO (oldest
@@ -1446,92 +1456,139 @@ def MapView(settings: UserSettings, fetch=None):
             return
         total = len(plan)
         session.progress = {"done": 0, "total": total}
-        try:
-            for i, (display_step, src_cycle, src_step) in enumerate(plan):
-                if cancel_event.is_set():
-                    logger.info(
-                        "Download loop cancelled at frame %d/%d", i, total,
+
+        # Per-step counters. We download `len(_ACTIVE_KINDS)` GRIB
+        # files per step in parallel; a step's row goes to "done" once
+        # all of its kinds finish.
+        per_step_state = [
+            {
+                "remaining": set(_ACTIVE_KINDS),
+                "size_bytes": 0,
+                "duration_s": 0.0,
+                "failed": False,
+            }
+            for _ in plan
+        ]
+        # Mark already-cached kinds up front so concurrency stays
+        # focused on actual network work.
+        for i, (_disp, src_c, src_s) in enumerate(plan):
+            for kind in list(per_step_state[i]["remaining"]):
+                if service.is_cached(ForecastRequest(
+                    run_time=src_c, step_hours=src_s, kind=kind,
+                )):
+                    per_step_state[i]["remaining"].discard(kind)
+                    try:
+                        per_step_state[i]["size_bytes"] += (
+                            service._cache_path(ForecastRequest(
+                                run_time=src_c, step_hours=src_s, kind=kind,
+                            )).stat().st_size
+                        )
+                    except OSError:
+                        pass
+            if not per_step_state[i]["remaining"]:
+                items[i]["status"] = "cached"
+                items[i]["size_bytes"] = per_step_state[i]["size_bytes"]
+                items[i]["duration_s"] = 0.0
+        _push()
+        already_done = sum(
+            1 for s in per_step_state if not s["remaining"]
+        )
+        session.progress = {"done": already_done, "total": total}
+
+        # Build the flat list of (step_index, kind) downloads. Each
+        # task is one ecmwf-opendata Client.retrieve call. Bandwidth
+        # isn't the bottleneck — RTT × number-of-range-requests
+        # against the Frankfurt mirror is — so doing several in
+        # parallel cuts wall-clock time roughly N-fold (up to S3's
+        # per-prefix rate limit, comfortably handled at N=4).
+        pending_tasks: list[tuple[int, int, "datetime", int, str]] = []
+        for i, (display_step, src_cycle, src_step) in enumerate(plan):
+            for kind in _ACTIVE_KINDS:
+                if kind in per_step_state[i]["remaining"]:
+                    pending_tasks.append(
+                        (i, display_step, src_cycle, src_step, kind),
                     )
-                    for it in items[i:]:
-                        it["status"] = "cancelled"
-                    _push()
-                    break
+
+        sem = asyncio.Semaphore(DOWNLOAD_CONCURRENCY)
+
+        async def _fetch_one(i, display_step, src_cycle, src_step, kind):
+            if cancel_event.is_set():
+                return
+            async with sem:
+                if cancel_event.is_set():
+                    return
+                req = ForecastRequest(
+                    run_time=src_cycle, step_hours=src_step, kind=kind,
+                )
                 ext_tag = (
                     f" [ext {src_cycle:%Hz}]" if src_cycle != cycle else ""
                 )
-                items[i]["status"] = "checking"
-                _push()
-
-                # Per step we fetch one GRIB per kind. Each multi-band
-                # GRIB carries every IMPLEMENTED field of its kind, so
-                # the user never has to come back to re-fetch after a
-                # layer switch. The overlay (MSL contours) reads from
-                # the same sfc GRIB it would have anyway, so no
-                # separate overlay-fetch path is needed.
-                total_bytes = 0
-                total_duration = 0.0
-                fetched_any = False
-                failed_any = False
-
-                for kind in _ACTIVE_KINDS:
-                    req = ForecastRequest(
-                        run_time=src_cycle, step_hours=src_step, kind=kind,
-                    )
-                    if service.is_cached(req):
-                        try:
-                            total_bytes += service._cache_path(req).stat().st_size
-                        except OSError:
-                            pass
-                        continue
-                    msg = (
-                        f"DL {i + 1}/{total} · {_step_label(display_step)}"
-                        f"{ext_tag} · {kind}…"
-                    )
-                    set_progress(msg)
-                    session.status_text = msg
-                    items[i]["status"] = f"downloading ({kind})"
-                    _push()
-                    t0 = time.perf_counter()
-                    try:
-                        await service.download(req)
-                        fetched_any = True
-                    except Exception:
-                        logger.exception(
-                            "Download failed: step=%dh src=%s/%dh kind=%s",
-                            display_step, src_cycle, src_step, kind,
-                        )
-                        failed_any = True
-                        continue
-                    total_duration += time.perf_counter() - t0
-                    try:
-                        total_bytes += service._cache_path(req).stat().st_size
-                    except OSError:
-                        pass
-                    if not cancel_event.is_set():
-                        await asyncio.sleep(PRELOAD_SPACING_SEC)
-
-                items[i]["size_bytes"] = total_bytes
-                items[i]["duration_s"] = total_duration
+                done_so_far = sum(
+                    1 for s in per_step_state if not s["remaining"]
+                )
+                msg = (
+                    f"DL step={display_step:>3d}h{ext_tag} · {kind} "
+                    f"({done_so_far}/{total} done)"
+                )
+                set_progress(msg)
+                session.status_text = msg
                 items[i]["status"] = (
-                    "failed" if failed_any
-                    else ("done" if fetched_any else "cached")
+                    f"downloading ({'/'.join(sorted(per_step_state[i]['remaining']))})"
                 )
                 _push()
+                t0 = time.perf_counter()
+                try:
+                    await service.download(req)
+                except Exception:
+                    logger.exception(
+                        "Download failed: step=%dh src=%s/%dh kind=%s",
+                        display_step, src_cycle, src_step, kind,
+                    )
+                    per_step_state[i]["failed"] = True
+                    per_step_state[i]["remaining"].discard(kind)
+                    items[i]["status"] = "failed"
+                    _push()
+                    return
+                per_step_state[i]["duration_s"] += time.perf_counter() - t0
+                try:
+                    per_step_state[i]["size_bytes"] += (
+                        service._cache_path(req).stat().st_size
+                    )
+                except OSError:
+                    pass
+                per_step_state[i]["remaining"].discard(kind)
+                items[i]["size_bytes"] = per_step_state[i]["size_bytes"]
+                items[i]["duration_s"] = per_step_state[i]["duration_s"]
 
-                # Whole-dict assign rather than mutating session.progress
-                # in place: in-place dict mutation does notify, but
-                # whole-replace is more readable and the dict is tiny.
-                session.progress = {**session.progress, "done": i + 1}
-                # Render the visible step inline so the user sees their
-                # selected frame come alive as soon as its bytes land.
-                # Non-visible frames are NOT scheduled per-iteration —
-                # piling 64 fire-and-forget asyncio tasks at once
-                # spawned every render-pool worker simultaneously and
-                # blew up memory + CPU. The finally block below kicks a
-                # single background task that renders the rest with
-                # bounded concurrency (one task per pool worker).
-                if display_step == step_hours:
-                    await _ensure_rendered(display_step)
+                if not per_step_state[i]["remaining"]:
+                    # Step fully done across kinds.
+                    items[i]["status"] = (
+                        "failed" if per_step_state[i]["failed"] else "done"
+                    )
+                    done_now = sum(
+                        1 for s in per_step_state if not s["remaining"]
+                    )
+                    session.progress = {"done": done_now, "total": total}
+                    # Render the visible step inline so the user sees
+                    # their selected frame as soon as its bytes land.
+                    if display_step == step_hours:
+                        await _ensure_rendered(display_step)
+                _push()
+                # Tiny inter-task stagger so we don't ping S3 at
+                # the exact same tick.
+                if not cancel_event.is_set():
+                    await asyncio.sleep(PRELOAD_SPACING_SEC)
+
+        try:
+            await asyncio.gather(
+                *(_fetch_one(*t) for t in pending_tasks),
+                return_exceptions=True,
+            )
+            if cancel_event.is_set():
+                for i, st in enumerate(per_step_state):
+                    if st["remaining"]:
+                        items[i]["status"] = "cancelled"
+                _push()
         finally:
             session.running = False
             set_progress("")
