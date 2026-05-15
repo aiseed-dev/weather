@@ -28,7 +28,6 @@ import time
 
 import flet as ft
 
-from aiseed_weather.figures.msl_chart import render_msl
 from aiseed_weather.figures.regions import (
     GLOBAL,
     PRESETS as REGION_PRESETS,
@@ -36,6 +35,7 @@ from aiseed_weather.figures.regions import (
     by_key as region_by_key,
     custom_region,
 )
+from aiseed_weather.figures.render_pool import render_msl_in_pool
 from aiseed_weather.models.user_settings import UserSettings
 from aiseed_weather.products.catalog import (
     CATEGORY_LABELS,
@@ -52,6 +52,7 @@ from aiseed_weather.services.forecast_service import (
     ForecastDisabledError,
     ForecastRequest,
     ForecastService,
+    grib_cache_path,
     is_grib_cached,
     probe_cycle_complete,
 )
@@ -428,7 +429,9 @@ def MapView(settings: UserSettings):
         request = ForecastRequest(
             run_time=src_cycle, step_hours=src_step, param="msl",
         )
-        ds = await service.fetch(request)
+        # Worker process handles decode + render. Main process never
+        # holds the xr.Dataset — keeps memory + GIL out of the loop.
+        grib_path = await service.download(request)
         if src_cycle == primary:
             label = f"{primary:%Y%m%d %Hz} IFS · {_step_label(display_step)}"
         else:
@@ -436,9 +439,7 @@ def MapView(settings: UserSettings):
                 f"{primary:%Y%m%d %Hz} IFS "
                 f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
             )
-        return await asyncio.to_thread(
-            render_msl, ds, region=region_, run_id=label,
-        )
+        return await render_msl_in_pool(grib_path, region_, label)
 
     async def _resolve_run_time(service, *, force: bool):
         """Pick the IFS cycle every frame must come from.
@@ -521,16 +522,13 @@ def MapView(settings: UserSettings):
                 f"{_step_label(step)}"
                 f"{' (cached)' if hit_cache and not force else ''}…"
             )
-            ds = await service.fetch(request, force=force)
+            # Download the GRIB; worker process will decode + render.
+            grib_path = await service.download(request, force=force)
             t_fetch = time.perf_counter()
             set_progress(f"Rendering chart ({region_used.label})…")
-            # render_msl now returns PNG bytes directly (basemap cached
-            # internally per region). The savefig/encode is folded in.
-            png_bytes = await asyncio.to_thread(
-                render_msl, ds, region=region_used, run_id=label,
-            )
+            png_bytes = await render_msl_in_pool(grib_path, region_used, label)
             t_render = time.perf_counter()
-            t_encode = t_render  # encoding is rolled into render_msl now
+            t_encode = t_render  # decode + encode are folded into the worker
 
             set_image_bytes(png_bytes)
             set_run_label(label)
@@ -630,10 +628,6 @@ def MapView(settings: UserSettings):
         req = ForecastRequest(
             run_time=src_cycle, step_hours=src_step, param="msl",
         )
-        try:
-            ds = await service.decode(req)
-        except FileNotFoundError:
-            return
         if cur_primary is not None and src_cycle == cur_primary:
             label = (
                 f"{cur_primary:%Y%m%d %Hz} IFS · {_step_label(display_step)}"
@@ -643,10 +637,10 @@ def MapView(settings: UserSettings):
                 f"{cur_primary:%Y%m%d %Hz} IFS "
                 f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
             )
+        # Worker process decodes + renders. We just hand it the path.
+        gpath = grib_cache_path(settings, src_cycle, src_step)
         try:
-            png = await asyncio.to_thread(
-                render_msl, ds, region=cur_region, run_id=label,
-            )
+            png = await render_msl_in_pool(gpath, cur_region, label)
         except Exception:
             logger.exception("Render of step=%dh failed", display_step)
             return
