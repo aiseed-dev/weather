@@ -47,14 +47,18 @@ LAND_RGB = np.array([118, 122, 128], dtype=np.uint8)     # #767a80
 COASTLINE_RGB = np.array([24, 24, 28], dtype=np.uint8)   # #18181c
 
 
-def base_map_rgb(region_key: str) -> np.ndarray | None:
-    """Build the gray sea / land / coastline RGB for ``region_key``.
+def base_map_rgb(region_key: str, *, with_coastline: bool = False) -> np.ndarray | None:
+    """Build the gray sea / land RGB for ``region_key``.
 
-    Returns ``None`` when no mask is cached for the region (e.g. a
-    user-defined custom extent that the precompute step hasn't seen).
-    Callers that get ``None`` should fall back to drawing data on an
-    untextured background — the figure won't carry geographic
-    reference, which is a degraded but still usable state.
+    By default the coastline is NOT baked into the returned array.
+    Renderers alpha-blend a data overlay over this base and then
+    stamp the coastline on top via :func:`apply_coastlines` so the
+    dark line stays at full strength instead of being diluted by the
+    blend. Pass ``with_coastline=True`` only when the caller wants a
+    standalone preview image with no data on top (e.g. a base-map
+    debug PNG).
+
+    Returns ``None`` when no mask is cached for the region.
     """
     coast = _MASKS.get(region_key)
     land = _MASKS.get(f"{region_key}__land")
@@ -64,7 +68,8 @@ def base_map_rgb(region_key: str) -> np.ndarray | None:
     rgb = np.empty((h, w, 3), dtype=np.uint8)
     rgb[:] = SEA_RGB
     rgb[land] = LAND_RGB
-    rgb[coast] = COASTLINE_RGB
+    if with_coastline:
+        rgb[coast] = COASTLINE_RGB
     return rgb
 
 

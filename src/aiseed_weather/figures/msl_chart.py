@@ -30,6 +30,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from aiseed_weather.figures._basemap import base_map_rgb
+from aiseed_weather.figures._coastlines import apply_coastlines
 from aiseed_weather.figures._fast import (
     apply_polar_reindex, is_polar, source_grid_for_global,
 )
@@ -256,6 +257,10 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
             final = _alpha_blend(base, data_polar, _DATA_ALPHA)
         else:
             final = data_polar
+        # Coastline ON TOP of the alpha-blended composite so the line
+        # keeps its full luminance instead of being diluted to a
+        # mid-tone by the blend.
+        apply_coastlines(final, region.key)
         img = Image.fromarray(final, mode="RGB")
         buf = io.BytesIO()
         img.save(
@@ -282,6 +287,12 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
     )
     data_rgb = _LUT[(norm * 255.0).astype(np.uint8)]
     final = _alpha_blend(base, data_rgb, _DATA_ALPHA)
+
+    # Coastline stamped ON TOP of the alpha-blended composite so the
+    # line keeps its full luminance. Earlier the line lived inside
+    # base_map_rgb's RGB output and got diluted by the blend — looking
+    # near-white on screen even though _COASTLINE_RGB is near-black.
+    apply_coastlines(final, region.key)
 
     # 3. isolines (layer 3) — white, single colour
     x_pix = np.arange(w, dtype=np.float32)

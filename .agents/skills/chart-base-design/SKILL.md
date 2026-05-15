@@ -39,17 +39,24 @@ colour choices below are first cuts.
 
 The renderer composites in this order:
 
-1. **Base map** — flat gray, two shades for land/sea with a thin dark
-   coastline baked in. From `_basemap.base_map_rgb(region_key)`. The
-   base map is the SAME across every variable in a given region.
+1. **Base map** — flat gray, two shades for land/sea (sea slightly
+   cooler, land slightly warmer, same luminance band). From
+   `_basemap.base_map_rgb(region_key)`. The base map is the SAME
+   across every variable in a given region. **Coastlines are NOT
+   baked into this layer** — they go on top (see step 3) so the
+   alpha-blend doesn't dilute them.
 2. **Data overlay** — partially transparent colour from the variable's
    continuous LUT, alpha-blended over the base. Where the variable
    is "below threshold" or has no meaningful value (e.g. precipitation
    below 0.1 mm), alpha = 0 so the base shows through unchanged.
-3. **Isolines** — single colour (white) thin lines at the variable's
+3. **Coastlines** — thin near-black 1 px line, stamped on top of the
+   alpha-blended composite. Must be drawn after the blend, otherwise
+   a 0.45 alpha turns a #18181c coastline into a #807a78 mid-tone
+   that reads almost-white on a light-beige data area.
+4. **Isolines** — single colour (white) thin lines at the variable's
    convention interval. **The colour is the same across all levels;
    the line position carries information, not its hue.**
-4. **Pill labels** — rounded-rectangle value markers placed ON the
+5. **Pill labels** — rounded-rectangle value markers placed ON the
    isolines (not next to them), with the pill background coloured by
    the same data palette at that isoline's value. White text on top.
 
