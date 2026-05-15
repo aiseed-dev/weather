@@ -2223,6 +2223,21 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                     size=10, color=ft.Colors.GREY,
                 ),
                 cache_bar,
+                # Primary fetch action: kicks the user into the fetch
+                # confirmation dialog. Shown whenever there's a base
+                # time to fetch and a download isn't already in flight.
+                # Disabled (rather than hidden) when there's no
+                # primary_cycle yet, so the user can see the path
+                # forward even before the mount-time probe lands.
+                ft.FilledButton(
+                    content=ft.Text("取得 / Fetch", size=12),
+                    icon=ft.Icons.CLOUD_DOWNLOAD,
+                    on_click=lambda _: _request_fetch(),
+                    disabled=(
+                        primary_cycle is None or download_running
+                    ),
+                    visible=(not download_running),
+                ),
                 # When the mount-time probe found a newer fully-
                 # published cycle than what we're showing, surface a
                 # one-click switch. Hidden otherwise.
@@ -2347,7 +2362,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                         ft.Icons.PUBLIC, size=64, color=ft.Colors.OUTLINE_VARIANT,
                     ),
                     ft.Text(
-                        "Press 取得 / Fetch to load the latest analysis.",
+                        "左側 GPV カードの「取得 / Fetch」を押してください。",
                         size=14, color=ft.Colors.GREY,
                     ),
                 ],
