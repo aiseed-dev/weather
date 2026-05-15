@@ -127,6 +127,53 @@ def _recent_base_times(n: int = 20):
     return [latest - timedelta(hours=6 * i) for i in range(n)]
 
 
+def _scan_latest_cached_cycle(settings):
+    """Walk the GRIB cache and return the most recent base time that
+    has at least one cached GRIB file. Used at MapView mount so the
+    app comes up showing whatever the user last fetched, without
+    hitting the network.
+    """
+    from datetime import datetime, timezone
+    from aiseed_weather.models.user_settings import resolved_data_dir
+
+    root = resolved_data_dir(settings) / "ecmwf"
+    if not root.is_dir():
+        return None
+    latest = None
+    try:
+        for date_dir in root.iterdir():
+            if not date_dir.is_dir():
+                continue
+            name = date_dir.name
+            if len(name) != 8 or not name.isdigit():
+                continue
+            for hh_dir in date_dir.iterdir():
+                if not hh_dir.is_dir():
+                    continue
+                if not hh_dir.name.endswith("z"):
+                    continue
+                hh_part = hh_dir.name[:-1]
+                if not hh_part.isdigit():
+                    continue
+                try:
+                    has_grib = any(
+                        f.suffix == ".grib2" and f.stat().st_size > 0
+                        for f in hh_dir.iterdir()
+                    )
+                except OSError:
+                    continue
+                if not has_grib:
+                    continue
+                dt = datetime.strptime(name, "%Y%m%d").replace(
+                    hour=int(hh_part), tzinfo=timezone.utc,
+                )
+                if latest is None or dt > latest:
+                    latest = dt
+    except OSError:
+        return None
+    return latest
+
+
 # HRES IFS 0p25 oper publishes 4 cycles per day with two different
 # forecast horizons. 00z and 12z run to T+360h (15 days); 06z and 18z
 # stop at T+144h (6 days), giving forecasters short-range refreshes
@@ -274,7 +321,12 @@ def MapView(settings: UserSettings):
     # layers × cycles. At ~500KB per PNG, 500 entries = ~250MB.
     frames, set_frames = ft.use_state({})
     is_playing, set_is_playing = ft.use_state(False)
-    run_time_holder, set_run_time_holder = ft.use_state(None)
+    # Initial base time from on-disk GRIB cache. Lets the app come
+    # up on whatever the user last fetched without a network round-
+    # trip, and triggers the visible-step render effect on mount.
+    run_time_holder, set_run_time_holder = ft.use_state(
+        lambda: _scan_latest_cached_cycle(settings)
+    )
     # Stable mutable holder for the currently-scheduled animation task.
     # ft.use_state with a lazy initializer returns the same dict object
     # across renders, so setup can write the task reference and cleanup
@@ -944,6 +996,12 @@ def MapView(settings: UserSettings):
         _maybe_render_visible,
         [step_hours, region, data_field_key, primary_cycle],
     )
+
+    # On mount: probe recent cycles so the "更新 / Update" hint can
+    # appear without the user opening the GPV dialog first.
+    def _probe_on_mount():
+        ft.context.page.run_task(_probe_visible_cycles)
+    ft.use_effect(_probe_on_mount, [])
 
     def handle_slider_change(e):
         idx = int(e.control.value)
@@ -1808,6 +1866,37 @@ def MapView(settings: UserSettings):
     # only implemented models are ever displayed there, so the badge
     # would always read "wired" — redundant.)
 
+    # Newer-cycle detection: any cycle the mount-time probe verified
+    # as published, strictly newer than what we're currently showing.
+    # Triggers the "更新 / Update" button in the GPV card.
+    from datetime import datetime as _dt
+    newer_cycle = None
+    if run_time_holder is not None and cycle_check_results:
+        verified_newer = []
+        for iso, ok in cycle_check_results.items():
+            if not ok:
+                continue
+            try:
+                c = _dt.fromisoformat(iso)
+            except ValueError:
+                continue
+            if c > run_time_holder:
+                verified_newer.append(c)
+        if verified_newer:
+            newer_cycle = max(verified_newer)
+
+    def _apply_newer_cycle(target):
+        # Switch the auto-locked cycle to the newer one. We don't set
+        # manual_cycle — the user wanted "latest available", so we
+        # just refresh run_time_holder. Frames cache stays (keyed by
+        # cycle), background DL loop should be re-kicked for the new
+        # frames if the user wants animation; single-step render of
+        # the current step lands via _maybe_render_visible.
+        set_run_time_holder(target)
+        # Clear any manual override since the user is explicitly
+        # asking for "the newer cycle".
+        set_manual_cycle(None)
+
     # Per-step cache status for the bar in the Data section.
     # green        = rendered PNG in memory (primary cycle)
     # light green  = rendered PNG in memory (extension cycle)
@@ -1986,6 +2075,24 @@ def MapView(settings: UserSettings):
                     size=10, color=ft.Colors.GREY,
                 ),
                 cache_bar,
+                # When the mount-time probe found a newer fully-
+                # published cycle than what we're showing, surface a
+                # one-click switch. Hidden otherwise.
+                ft.FilledTonalButton(
+                    content=ft.Text(
+                        (
+                            f"更新 / Update → {newer_cycle:%m-%d %Hz}"
+                            if newer_cycle else ""
+                        ),
+                        size=12,
+                    ),
+                    icon=ft.Icons.NEW_RELEASES,
+                    visible=(newer_cycle is not None),
+                    on_click=(
+                        (lambda _: _apply_newer_cycle(newer_cycle))
+                        if newer_cycle else None
+                    ),
+                ),
                 ft.TextButton(
                     content=ft.Text("GPV データ変更 / Change GPV…", size=12),
                     icon=ft.Icons.SCHEDULE,
