@@ -2120,7 +2120,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                     spacing=4,
                     controls=[
                         ft.Text(
-                            selected_product.bilingual_label(),
+                            selected_product.display_name(),
                             size=12, weight=ft.FontWeight.BOLD,
                             expand=True,
                         ),
@@ -2132,6 +2132,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                                 size=14, color=ft.Colors.GREY,
                             ),
                             tooltip=(
+                                f"{selected_product.bilingual_label()}\n"
                                 f"{selected_product.spec}\n"
                                 f"{selected_product.agency} · "
                                 f"{selected_product.backend}\n"

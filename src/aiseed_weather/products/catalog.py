@@ -295,12 +295,21 @@ class Product:
     # publication time; for progressive ones it's the time the LAST
     # step appears.
     publication_lag_h: float | None = None
+    # Compact label for the left-panel display. The full bilingual
+    # label_ja / label_en stays available for the catalog dialog and
+    # the info-icon tooltip. Empty → display_name() falls back to
+    # label_ja.
+    short_label: str = ""
 
     def bilingual_label(self) -> str:
         # Display "日本語 / English" while we don't have language settings.
         if self.label_ja == self.label_en:
             return self.label_ja
         return f"{self.label_ja} / {self.label_en}"
+
+    def display_name(self) -> str:
+        """Short, single-line name for the prominent UI slot."""
+        return self.short_label or self.label_ja
 
     def source_by_key(self, key: str) -> DataSource:
         for s in self.sources:
@@ -316,6 +325,7 @@ CATALOG: tuple[Product, ...] = (
         key="ecmwf_hres",
         label_ja="ECMWF HRES (IFS 0.25° 決定論)",
         label_en="ECMWF HRES (IFS 0.25° deterministic)",
+        short_label="ECMWF HRES (IFS 0.25°)",
         tab=Tab.MODELS,
         category=Category.MEDIUM_RANGE,
         agency="ECMWF",
