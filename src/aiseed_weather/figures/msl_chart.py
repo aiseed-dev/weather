@@ -211,10 +211,15 @@ def _draw_pill(
     draw: ImageDraw.ImageDraw,
     cx: int, cy: int,
     text: str,
-    bg_rgb: tuple[int, int, int],
+    bg_rgb: tuple[int, ...],
     font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
 ) -> None:
-    """Rounded-rectangle pill centred at (cx, cy)."""
+    """Rounded-rectangle pill centred at (cx, cy).
+
+    ``bg_rgb`` may be a 3- or 4-tuple. The text fill is RGBA-padded so
+    callers drawing onto an RGBA canvas see opaque white text rather
+    than the canvas's transparent base bleeding through.
+    """
     bbox = draw.textbbox((0, 0), text, font=font)
     tw = bbox[2] - bbox[0]
     th = bbox[3] - bbox[1]
@@ -228,9 +233,10 @@ def _draw_pill(
     draw.rounded_rectangle(
         (x0, y0, x0 + w, y0 + h), radius=radius, fill=bg_rgb,
     )
+    text_fill = (*_PILL_TEXT_RGB, 255) if len(bg_rgb) == 4 else _PILL_TEXT_RGB
     draw.text(
         (cx - tw // 2 - bbox[0], cy - th // 2 - bbox[1]),
-        text, fill=_PILL_TEXT_RGB, font=font,
+        text, fill=text_fill, font=font,
     )
 
 
@@ -296,44 +302,69 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
     )
     h, w = msl_hpa.shape
 
-    # 1. base map (layer 1) — sea / land only
+    # 1. base map (layer 1) — sea / land at native resolution.
+    # CRITICAL: the base map stays at native and is never put
+    # through the supersample/LANCZOS round-trip. Earlier the whole
+    # composite went through that cycle, and LANCZOS averaged the
+    # land/sea pixels with their neighbours — collapsing the 30 unit
+    # luminance gap and making the land cue disappear at high
+    # transparency.
     base = base_map_rgb(region.key)
     if base is None or base.shape != (h, w, 3):
         base = np.full((h, w, 3), 110, dtype=np.uint8)
 
-    # 2. data overlay (layer 2) — continuous LUT, alpha-blended
+    # 2. data overlay (layer 2) — continuous LUT, blended at native.
+    # At _DATA_TRANSPARENCY = 1.0 the blend collapses to the base
+    # map untouched, which is what the variable's name promises.
     norm = np.clip(
         (msl_hpa - _VMIN_HPA) / (_VMAX_HPA - _VMIN_HPA), 0.0, 1.0,
     )
     data_rgb = _LUT[(norm * 255.0).astype(np.uint8)]
-    final = _blend_with_transparency(base, data_rgb, _DATA_TRANSPARENCY)
+    composite = _blend_with_transparency(base, data_rgb, _DATA_TRANSPARENCY)
 
-    # 3. isolines + pills (layers 3–4) — drawn on a SUPER-SAMPLED
-    # copy. Upsample the composite with NEAREST so the gray base
-    # stays crisp, then draw white lines at width=1 in the
-    # supersample frame. A final LANCZOS downsample yields an
-    # antialiased ~0.5 px line on the native frame.
-    #
-    # The coastline is deliberately NOT stamped on the composite
-    # yet — it would be blurred by the LANCZOS round-trip, washing
-    # out from the chosen near-black to a muddy mid-tone. We stamp
-    # it after step 5 instead.
+    # 3. isolines + pills (layers 3–4) — rendered on a TRANSPARENT
+    # supersample layer (RGBA), then LANCZOS-downsampled to native
+    # and alpha-composited onto the data-blended base. This is the
+    # single layer that benefits from the round-trip (thin antialiased
+    # white lines and pill borders); the base map below is untouched.
+    smoothed = gaussian_filter(msl_hpa, sigma=_SMOOTH_SIGMA)
+    overlay_native = _render_isolines_and_pills(smoothed, w, h)
+
+    base_img = Image.fromarray(composite, mode="RGB").convert("RGBA")
+    base_img.alpha_composite(overlay_native)
+    final_arr = np.asarray(base_img.convert("RGB"), dtype=np.uint8).copy()
+
+    # 5. coastline (layer 5) — stamped on the native composite so
+    # the line keeps its full luminance.
+    apply_coastlines(final_arr, region.key)
+
+    buf = io.BytesIO()
+    Image.fromarray(final_arr, mode="RGB").save(
+        buf, format="PNG", compress_level=1,
+        pnginfo=_png_metadata(run_id),
+    )
+    return buf.getvalue()
+
+
+def _render_isolines_and_pills(
+    smoothed_field: np.ndarray, w: int, h: int,
+) -> Image.Image:
+    """Build the isoline + pill layer as an RGBA Image at native size.
+
+    Internally renders at ``_ISOLINE_SUPERSAMPLE`` × native resolution
+    onto a fully-transparent RGBA canvas, then LANCZOS-downsamples to
+    (w, h). The caller alpha-composites the result over the
+    data-blended base, so only this single layer pays the smoothing
+    cost — the base map and the coastline stay aliased / crisp.
+    """
     ss = _ISOLINE_SUPERSAMPLE
     H, W = h * ss, w * ss
-    img_ss = Image.fromarray(final, mode="RGB").resize(
-        (W, H), Image.NEAREST,
-    )
-    draw_ss = ImageDraw.Draw(img_ss)
-
-    # Pre-smooth the MSL field to suppress small-scale noise. Without
-    # this every weak gradient near orography spawns a litter of
-    # short isobar fragments that clutter the chart but don't carry
-    # synoptic meaning.
-    smoothed = gaussian_filter(msl_hpa, sigma=_SMOOTH_SIGMA)
+    overlay_ss = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay_ss)
 
     x_ss = np.arange(w, dtype=np.float32) * ss
     y_ss = np.arange(h, dtype=np.float32) * ss
-    cgen = contourpy.contour_generator(x=x_ss, y=y_ss, z=smoothed)
+    cgen = contourpy.contour_generator(x=x_ss, y=y_ss, z=smoothed_field)
 
     pill_candidates: list[tuple[int, np.ndarray]] = []
     for level in range(940, 1064, _THIN_INTERVAL_HPA):
@@ -342,43 +373,27 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
         for line in cgen.lines(float(level)):
             if line.shape[0] < _MIN_SEGMENT_VERTICES:
                 continue
-            draw_ss.line(
+            draw.line(
                 line.astype(np.int32).tolist(),
-                fill=_ISOLINE_RGB,
+                fill=(*_ISOLINE_RGB, 255),
                 width=width,
             )
             if is_bold:
                 pill_candidates.append((level, line))
 
-    # Pills also drawn in the supersample frame so their rounded
-    # corners benefit from the Lanczos downsample.
     for level, line in pill_candidates:
         anchor = _pick_pill_anchor(line)
         if anchor is None:
             continue
         cx, cy = anchor
+        r, g, b = _palette_rgb_for(float(level))
         _draw_pill(
-            draw_ss, cx, cy, str(level),
-            bg_rgb=_palette_rgb_for(float(level)),
+            draw, cx, cy, str(level),
+            bg_rgb=(r, g, b, 255),
             font=_PILL_FONT_SS,
         )
 
-    img = img_ss.resize((w, h), Image.LANCZOS)
-
-    # 5. coastline (layer 5) — stamped on the native-resolution
-    # output so it stays as a crisp 1 px near-black line. Earlier
-    # this was applied before the supersample round-trip and the
-    # LANCZOS downsample blurred it to a muddy mid-tone.
-    final_arr = np.asarray(img, dtype=np.uint8).copy()
-    apply_coastlines(final_arr, region.key)
-    img = Image.fromarray(final_arr, mode="RGB")
-
-    buf = io.BytesIO()
-    img.save(
-        buf, format="PNG", compress_level=1,
-        pnginfo=_png_metadata(run_id),
-    )
-    return buf.getvalue()
+    return overlay_ss.resize((w, h), Image.LANCZOS)
 
 
 def _png_metadata(run_id: str):

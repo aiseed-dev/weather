@@ -71,12 +71,28 @@ def _extract_lonlat_polylines(resolution: str = "110m"):
 
 
 def _region_dims(extent: tuple[float, float, float, float] | None) -> tuple[int, int]:
-    """(H, W) pixels for a region at the ECMWF 0.25° grid."""
+    """(H, W) pixels matching what ``_to_pixel_grid`` produces.
+
+    Latitude is inclusive of both endpoints — the ECMWF grid contains
+    -90 and 90 cells, so a (lat_min, lat_max) crop selects every cell
+    between them and the count is ``(lat_max - lat_min) / 0.25 + 1``.
+
+    Longitude is *almost* the same, except the +180° cell wraps to
+    -180° in our [-180, 180) frame after the longitude rotation in
+    ``_to_pixel_grid``. For an extent that reaches lon_max = 180, the
+    cell at +180 is selected as -180 elsewhere and so doesn't appear
+    in the cropped slab — the width is one cell shorter than the
+    inclusive count. This off-by-one breaks the apply-coastlines
+    shape check and silently falls back to a flat-gray base map, so
+    handle it here.
+    """
     if extent is None:
         return _GLOBAL_DIMS
     lon_min, lon_max, lat_min, lat_max = extent
-    w = int(round((lon_max - lon_min) / _GRID_DEG)) + 1
     h = int(round((lat_max - lat_min) / _GRID_DEG)) + 1
+    w = int(round((lon_max - lon_min) / _GRID_DEG)) + 1
+    if lon_max >= 180.0:
+        w -= 1
     return h, w
 
 
