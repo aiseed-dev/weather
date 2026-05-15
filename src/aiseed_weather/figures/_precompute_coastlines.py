@@ -125,12 +125,15 @@ def _rasterise_mask(
             continue
         xs = (lons - lon_min) * sx
         ys = (lat_max - lats) * sy
-        # width=2 — a 1 px coastline disappears on a regional chart at
-        # display sizes typical for the UI (240-pixel-wide previews
-        # downscaled further). Two pixels is the minimum that reads as
-        # a definite geographic boundary on top of the data overlay
-        # without becoming a heavy frame.
-        draw.line(list(zip(xs.tolist(), ys.tolist())), fill=255, width=2)
+        # width=1 — the chosen aesthetic for the analysis chart: the
+        # thinnest possible line that still traces geography, drawn
+        # in #050508 on top of the native composite (no LANCZOS
+        # round-trip) so even a single pixel reads as a definite
+        # boundary. An earlier widening to 2 px was a symptomatic
+        # workaround for the base-map shape mismatch that hid the
+        # land/sea cue entirely — once that bug was fixed the
+        # original 1 px width became readable again.
+        draw.line(list(zip(xs.tolist(), ys.tolist())), fill=255, width=1)
     return np.asarray(img, dtype=bool)
 
 
