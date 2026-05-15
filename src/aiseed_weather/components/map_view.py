@@ -35,7 +35,7 @@ from aiseed_weather.figures.regions import (
     by_key as region_by_key,
     custom_region,
 )
-from aiseed_weather.figures.render_pool import render_msl_in_pool
+from aiseed_weather.figures.render_pool import render_layer_in_pool
 from aiseed_weather.models.user_settings import UserSettings
 from aiseed_weather.products.catalog import (
     CATEGORY_LABELS,
@@ -427,7 +427,7 @@ def MapView(settings: UserSettings):
         primary cycle and the extension cycle when they differ.
         """
         request = ForecastRequest(
-            run_time=src_cycle, step_hours=src_step, param="msl",
+            run_time=src_cycle, step_hours=src_step, param=selected_field.ecmwf_param,
         )
         # Worker process handles decode + render. Main process never
         # holds the xr.Dataset — keeps memory + GIL out of the loop.
@@ -439,7 +439,7 @@ def MapView(settings: UserSettings):
                 f"{primary:%Y%m%d %Hz} IFS "
                 f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
             )
-        return await render_msl_in_pool(grib_path, region_, label)
+        return await render_layer_in_pool(grib_path, region_, label, data_field_key)
 
     async def _resolve_run_time(service, *, force: bool):
         """Pick the IFS cycle every frame must come from.
@@ -461,7 +461,7 @@ def MapView(settings: UserSettings):
         set_progress(
             f"Probing latest fully-published ECMWF run (need T+{MAX_STEP}h)…"
         )
-        new_run = await service.latest_run(step_hours=MAX_STEP, param="msl")
+        new_run = await service.latest_run(step_hours=MAX_STEP, param=selected_field.ecmwf_param)
         return new_run, True
 
     async def load(*, step: int, region_: Region | None = None, force: bool = False):
@@ -514,7 +514,7 @@ def MapView(settings: UserSettings):
                     f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(step)}"
                 )
             request = ForecastRequest(
-                run_time=src_cycle, step_hours=src_step, param="msl",
+                run_time=src_cycle, step_hours=src_step, param=selected_field.ecmwf_param,
             )
             hit_cache = service.is_cached(request)
             set_progress(
@@ -526,7 +526,7 @@ def MapView(settings: UserSettings):
             grib_path = await service.download(request, force=force)
             t_fetch = time.perf_counter()
             set_progress(f"Rendering chart ({region_used.label})…")
-            png_bytes = await render_msl_in_pool(grib_path, region_used, label)
+            png_bytes = await render_layer_in_pool(grib_path, region_used, label, data_field_key)
             t_render = time.perf_counter()
             t_encode = t_render  # decode + encode are folded into the worker
 
@@ -619,14 +619,14 @@ def MapView(settings: UserSettings):
         src_cycle, src_step = cur_lookup.get(
             display_step, (cur_primary, display_step),
         )
-        if src_cycle is None or not is_grib_cached(settings, src_cycle, src_step):
+        if src_cycle is None or not is_grib_cached(settings, src_cycle, src_step, param=selected_field.ecmwf_param):
             return  # GRIB not yet downloaded
         try:
             service = ForecastService(settings, override_source=cur_source)
         except ForecastDisabledError:
             return
         req = ForecastRequest(
-            run_time=src_cycle, step_hours=src_step, param="msl",
+            run_time=src_cycle, step_hours=src_step, param=selected_field.ecmwf_param,
         )
         if cur_primary is not None and src_cycle == cur_primary:
             label = (
@@ -638,9 +638,9 @@ def MapView(settings: UserSettings):
                 f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
             )
         # Worker process decodes + renders. We just hand it the path.
-        gpath = grib_cache_path(settings, src_cycle, src_step)
+        gpath = grib_cache_path(settings, src_cycle, src_step, param=selected_field.ecmwf_param)
         try:
-            png = await render_msl_in_pool(gpath, cur_region, label)
+            png = await render_layer_in_pool(gpath, cur_region, label, cur_layer)
         except Exception:
             logger.exception("Render of step=%dh failed", display_step)
             return
@@ -676,7 +676,7 @@ def MapView(settings: UserSettings):
                     )
                     break
                 req = ForecastRequest(
-                    run_time=src_cycle, step_hours=src_step, param="msl",
+                    run_time=src_cycle, step_hours=src_step, param=selected_field.ecmwf_param,
                 )
                 hit_cache = service.is_cached(req)
                 ext_tag = (
@@ -1724,7 +1724,7 @@ def MapView(settings: UserSettings):
                 color = (
                     ft.Colors.LIGHT_GREEN if stitched else ft.Colors.GREEN
                 )
-            elif is_grib_cached(settings, src_cycle, src_step):
+            elif is_grib_cached(settings, src_cycle, src_step, param=selected_field.ecmwf_param):
                 color = ft.Colors.AMBER
                 cache_grib += 1
             else:

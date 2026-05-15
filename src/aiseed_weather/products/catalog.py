@@ -863,13 +863,17 @@ class DataField:
     yet — for now status flags whether we render it.
     """
 
-    key: str             # cfgrib / ecmwf short name (msl, t2m, gh, ...)
+    key: str             # our internal short name (msl, t2m, gh500, ...)
     label_ja: str
     label_en: str
     unit: str            # display unit
     level: int | None    # pressure level in hPa; None = surface / single-level
     typical_layer: str   # default rendering style we apply
     status: Status
+    # ECMWF Open Data param string (passed to ecmwf-opendata Client). Not
+    # always the same as our key — ECMWF uses "2t" while we use "t2m" for
+    # readability. Empty string for derived fields with no single param.
+    ecmwf_param: str = ""
     notes: str = ""
 
     def bilingual_label(self) -> str:
@@ -891,6 +895,7 @@ FIELDS: tuple[DataField, ...] = (
         level=None,
         typical_layer="等圧線 4 hPa, 太線 20 hPa (synoptic convention)",
         status=Status.IMPLEMENTED,
+        ecmwf_param="msl",
     ),
     DataField(
         key="t2m",
@@ -899,7 +904,8 @@ FIELDS: tuple[DataField, ...] = (
         unit="°C",
         level=None,
         typical_layer="カラーシェーディング 2°C, 0°C 太線",
-        status=Status.PLANNED,
+        status=Status.IMPLEMENTED,
+        ecmwf_param="2t",
     ),
     DataField(
         key="d2m",
@@ -909,6 +915,7 @@ FIELDS: tuple[DataField, ...] = (
         level=None,
         typical_layer="カラーシェーディング",
         status=Status.PLANNED,
+        ecmwf_param="2d",
     ),
     DataField(
         key="10wind",
@@ -918,6 +925,7 @@ FIELDS: tuple[DataField, ...] = (
         level=None,
         typical_layer="風向風速バーブ + 等風速線",
         status=Status.PLANNED,
+        ecmwf_param="",  # composite of 10u + 10v, fetched separately
         notes="ECMWF Open Data の u10/v10 を組合せて描画。",
     ),
     DataField(
@@ -928,6 +936,7 @@ FIELDS: tuple[DataField, ...] = (
         level=None,
         typical_layer="カラーシェーディング",
         status=Status.PLANNED,
+        ecmwf_param="10fg",
     ),
     DataField(
         key="tp",
@@ -936,7 +945,8 @@ FIELDS: tuple[DataField, ...] = (
         unit="mm",
         level=None,
         typical_layer="非線形カラーシェーディング (0.1/1/5/10/30/50/100 mm)",
-        status=Status.PLANNED,
+        status=Status.IMPLEMENTED,
+        ecmwf_param="tp",
         notes="ECMWF Open Data は accumulated since run start; 区間値は差分計算。",
     ),
     DataField(
@@ -947,6 +957,7 @@ FIELDS: tuple[DataField, ...] = (
         level=None,
         typical_layer="等圧線",
         status=Status.PLANNED,
+        ecmwf_param="sp",
     ),
     # ---- Pressure levels ----
     DataField(

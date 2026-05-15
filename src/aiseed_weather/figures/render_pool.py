@@ -73,39 +73,63 @@ def shutdown_pool() -> None:
         _pool = None
 
 
-def _worker_render_msl(grib_path: str, region: Region, run_id: str) -> bytes:
+def _worker_render(
+    grib_path: str,
+    region: Region,
+    run_id: str,
+    layer_key: str,
+) -> bytes:
     """Worker entry point: decode GRIB + render → PNG bytes.
 
-    Runs in a spawned subprocess. Imports are deferred so the import
-    cost is paid lazily per-worker.
+    Imports are deferred so each worker only pays the cartopy /
+    matplotlib import cost once, lazily. Dispatch on layer_key picks
+    the right renderer module. Adding a new layer = one elif here +
+    a new figures/{layer}_chart.py file.
     """
     import xarray as xr
-    from aiseed_weather.figures.msl_chart import render_msl
 
     ds = xr.open_dataset(grib_path, engine="cfgrib")
     try:
-        return render_msl(ds, region=region, run_id=run_id)
+        if layer_key == "msl":
+            from aiseed_weather.figures.msl_chart import render_msl
+            return render_msl(ds, region=region, run_id=run_id)
+        if layer_key == "t2m":
+            from aiseed_weather.figures.t2m_chart import render_t2m
+            return render_t2m(ds, region=region, run_id=run_id)
+        if layer_key == "tp":
+            from aiseed_weather.figures.tp_chart import render_tp
+            return render_tp(ds, region=region, run_id=run_id)
+        raise ValueError(f"No renderer wired for layer {layer_key!r}")
     finally:
         ds.close()
 
 
-async def render_msl_in_pool(
+async def render_layer_in_pool(
     grib_path: Path,
     region: Region,
     run_id: str,
+    layer_key: str = "msl",
 ) -> bytes:
     """Submit a render job to the pool and await the resulting PNG.
 
-    The main asyncio loop is fully non-blocking — both the GRIB
-    decode and the matplotlib render happen in the worker process.
-    Returns the rendered PNG bytes.
+    The main asyncio loop is fully non-blocking — GRIB decode and the
+    matplotlib render both happen in the worker process. layer_key
+    decides which figures/*_chart.py module is invoked.
     """
     pool = get_pool()
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(
         pool,
-        _worker_render_msl,
+        _worker_render,
         str(grib_path),
         region,
         run_id,
+        layer_key,
     )
+
+
+# Back-compat alias for any old callers that haven't been switched yet.
+async def render_msl_in_pool(
+    grib_path: Path, region: Region, run_id: str,
+) -> bytes:
+    return await render_layer_in_pool(grib_path, region, run_id, "msl")
