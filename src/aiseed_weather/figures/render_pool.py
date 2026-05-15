@@ -79,6 +79,15 @@ def render_layer(
                 ds, region=region, run_id=run_id,
                 msl_overlay_ds=msl_overlay_ds,
             )
+        # Generic scalar layers (dewpoint, snow depth, total cloud
+        # cover, skin temperature, ...). Each one is a config entry
+        # in _scalar_chart.CONFIGS — no per-layer module needed.
+        from aiseed_weather.figures._scalar_chart import CONFIGS, render_scalar
+        if layer_key in CONFIGS:
+            return render_scalar(
+                ds, region=region, run_id=run_id,
+                config=CONFIGS[layer_key],
+            )
         raise ValueError(f"No renderer wired for layer {layer_key!r}")
     finally:
         ds.close()

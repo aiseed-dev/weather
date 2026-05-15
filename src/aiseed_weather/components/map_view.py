@@ -88,9 +88,23 @@ _LAYER_GRADIENT_STOPS: dict[str, list[str]] = {
         "#2c0a4d", "#1b81c4", "#a8d3c4",
         "#f5f0a8", "#f9b04e", "#c93920", "#3c0404",
     ],
+    "d2m": [
+        "#2c0a4d", "#1b81c4", "#a8d3c4",
+        "#f5f0a8", "#f9b04e", "#c93920", "#3c0404",
+    ],
+    "skt": [
+        "#2c0a4d", "#1b81c4", "#a8d3c4",
+        "#f5f0a8", "#f9b04e", "#c93920", "#3c0404",
+    ],
     "tp": [
         "#f4f4f4", "#9dd1ee", "#1a73b3",
         "#2e8b3d", "#f0d643", "#e54d24", "#5e1660",
+    ],
+    "sd": [
+        "#f4f4f4", "#bcd5ea", "#5c9bd0", "#1a4486", "#0f2a5e",
+    ],
+    "tcc": [
+        "#1e2230", "#3e4458", "#737888", "#9aa0ad", "#eef0f4",
     ],
     "wind10m": [
         "#e6f4f5", "#52b0c0", "#7cba74",
@@ -102,10 +116,14 @@ _LAYER_GRADIENT_STOPS: dict[str, list[str]] = {
 # chart. (min, mid, max, unit). Mid is the climatological centre or
 # the most informative midpoint, not necessarily (min+max)/2.
 _LAYER_LEGEND_TICKS: dict[str, tuple[str, str, str, str]] = {
-    "msl":     ("940",  "1013", "1064", "hPa"),
-    "t2m":     ("-40",  "0",    "+40",  "°C"),
-    "tp":      ("0.1",  "10",   "200",  "mm"),
-    "wind10m": ("0",    "15",   "60",   "m/s"),
+    "msl":     ("940",   "1013", "1064", "hPa"),
+    "t2m":     ("-40",   "0",    "+40",  "°C"),
+    "d2m":     ("-40",   "0",    "+40",  "°C"),
+    "skt":     ("-40",   "0",    "+40",  "°C"),
+    "tp":      ("0.1",   "10",   "200",  "mm"),
+    "sd":      ("0.01",  "0.2",  "2.0",  "m (SWE)"),
+    "tcc":     ("0",     "0.5",  "1",    "0..1"),
+    "wind10m": ("0",     "15",   "60",   "m/s"),
 }
 
 # Choices we expose in the Data dialog. Horizon caps where the animation
@@ -389,8 +407,8 @@ def _layer_card(field, *, is_selected: bool, on_pick) -> ft.Control:
                     width=92, height=14,
                     border_radius=3,
                     gradient=ft.LinearGradient(
-                        begin=ft.alignment.center_left,
-                        end=ft.alignment.center_right,
+                        begin=ft.Alignment(x=-1.0, y=0.0),
+                        end=ft.Alignment(x=1.0, y=0.0),
                         colors=stops,
                     ),
                 ),
@@ -432,8 +450,8 @@ def _layer_legend(field) -> ft.Control:
                         ft.Container(
                             width=bar_w, height=10, border_radius=2,
                             gradient=ft.LinearGradient(
-                                begin=ft.alignment.center_left,
-                                end=ft.alignment.center_right,
+                                begin=ft.Alignment(x=-1.0, y=0.0),
+                                end=ft.Alignment(x=1.0, y=0.0),
                                 colors=stops,
                             ),
                         ),
