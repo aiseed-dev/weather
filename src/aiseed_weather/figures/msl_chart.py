@@ -99,13 +99,15 @@ def _palette_rgb_for(value_hpa: float) -> tuple[int, int, int]:
 
 
 # ── Alpha-blend parameters ──────────────────────────────────────────
-# Calibration point — see skill. Tied to the palette saturation:
-# bumping the LUT anchors toward pure hues lets us drop alpha back
-# to 0.45 so the gray base map (land vs sea) reads clearly under
-# the data. The two knobs trade off — saturated palette + low
-# alpha beats desaturated palette + high alpha because the latter
-# kills the geographic cue.
-_DATA_ALPHA = 0.45
+# Calibration point — see skill. At 0.45 the saturated palette was
+# loud enough to swallow the 1 px coastline visually even though it
+# was stamped on top: high-chroma neighbouring pixels and a dark
+# thin line don't separate cleanly on a low-DPI display. Dropping
+# to 0.30 keeps the green / beige / brown bands legible as tinted
+# regions while leaving the coastline and the gray base map clearly
+# in front. The palette saturation absorbs the alpha cut without
+# washing the data out.
+_DATA_ALPHA = 0.30
 
 
 # ── Pill label font ─────────────────────────────────────────────────
