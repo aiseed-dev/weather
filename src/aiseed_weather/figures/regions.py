@@ -28,23 +28,38 @@ class Region:
     extent: tuple[float, float, float, float] | None
 
 
-GLOBAL = Region("global", "全球 / Global", "robinson", None)
-JAPAN = Region("japan", "日本周辺 / Japan", "mercator", (115.0, 155.0, 20.0, 50.0))
-EAST_ASIA = Region("east_asia", "東アジア / East Asia", "mercator", (95.0, 165.0, 5.0, 60.0))
+GLOBAL = Region("global", "全球 / Global", "platecarree", None)
+ARCTIC = Region(
+    "arctic", "北極中心 / Arctic",
+    projection="north_polar",
+    # Equidistant-azimuthal disc from the pole out to 30° N. The
+    # extent is informational only — the renderer uses a precomputed
+    # polar reindex table, not a plate-carrée crop.
+    extent=(-180.0, 180.0, 30.0, 90.0),
+)
+ANTARCTIC = Region(
+    "antarctic", "南極中心 / Antarctic",
+    projection="south_polar",
+    extent=(-180.0, 180.0, -90.0, -30.0),
+)
+JAPAN = Region("japan", "日本周辺 / Japan", "platecarree", (115.0, 155.0, 20.0, 50.0))
+EAST_ASIA = Region("east_asia", "東アジア / East Asia", "platecarree", (95.0, 165.0, 5.0, 60.0))
 NORTH_PACIFIC = Region(
-    "north_pacific", "北太平洋 / N. Pacific", "mercator", (130.0, 240.0, 10.0, 65.0),
+    "north_pacific", "北太平洋 / N. Pacific", "platecarree", (130.0, 240.0, 10.0, 65.0),
 )
 NORTH_ATLANTIC = Region(
-    "north_atlantic", "北大西洋 / N. Atlantic", "mercator", (-80.0, 20.0, 20.0, 70.0),
+    "north_atlantic", "北大西洋 / N. Atlantic", "platecarree", (-80.0, 20.0, 20.0, 70.0),
 )
-EUROPE = Region("europe", "ヨーロッパ / Europe", "mercator", (-25.0, 50.0, 30.0, 72.0))
+EUROPE = Region("europe", "ヨーロッパ / Europe", "platecarree", (-25.0, 50.0, 30.0, 72.0))
 NORTH_AMERICA = Region(
-    "north_america", "北米 / N. America", "mercator", (-170.0, -50.0, 15.0, 75.0),
+    "north_america", "北米 / N. America", "platecarree", (-170.0, -50.0, 15.0, 75.0),
 )
 
 
 PRESETS: tuple[Region, ...] = (
     GLOBAL,
+    ARCTIC,
+    ANTARCTIC,
     JAPAN,
     EAST_ASIA,
     NORTH_PACIFIC,

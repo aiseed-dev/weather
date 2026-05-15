@@ -24,7 +24,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from aiseed_weather.figures._fast import (
-    apply_binned_lut, crop_grid, palette_to_lut,
+    apply_binned_lut, crop_grid, is_polar, palette_to_lut, shade_for_region,
 )
 from aiseed_weather.figures.regions import GLOBAL
 
@@ -157,21 +157,24 @@ def render_wind(
     longitudes = ds["longitude"].values
     latitudes = ds["latitude"].values
 
-    wspd, lons2, lats2 = crop_grid(wspd, longitudes, latitudes, region)
-    u_img, _, _ = crop_grid(u, longitudes, latitudes, region)
-    v_img, _, _ = crop_grid(v, longitudes, latitudes, region)
-
-    rgb = apply_binned_lut(wspd, WIND_BOUNDS_MS, _WIND_LUT)
+    rgb = shade_for_region(
+        lambda arr: apply_binned_lut(arr, WIND_BOUNDS_MS, _WIND_LUT),
+        wspd, longitudes, latitudes, region,
+    )
     from aiseed_weather.figures._coastlines import apply_coastlines
     apply_coastlines(rgb, region.key)
     img = Image.fromarray(rgb, mode="RGB")
-    draw = ImageDraw.Draw(img)
 
-    step_lat, step_lon = _arrow_steps(wspd.shape, region)
-    # Scale arrows so a 10 m/s wind spans roughly one subsample cell —
-    # readable but not so long the heads collide with neighbours.
-    pixel_per_ms = min(step_lon, step_lat) * 0.35
-    _draw_arrows(draw, u_img, v_img, step_lat, step_lon, pixel_per_ms)
+    # Direction arrows on PlateCarree only. Polar would need a per-
+    # vertex forward projection of u/v; the speed shading already
+    # carries the magnitude information.
+    if not is_polar(region):
+        u_img, _, _ = crop_grid(u, longitudes, latitudes, region)
+        v_img, _, _ = crop_grid(v, longitudes, latitudes, region)
+        draw = ImageDraw.Draw(img)
+        step_lat, step_lon = _arrow_steps(u_img.shape, region)
+        pixel_per_ms = min(step_lon, step_lat) * 0.35
+        _draw_arrows(draw, u_img, v_img, step_lat, step_lon, pixel_per_ms)
 
     buf = io.BytesIO()
     from PIL import PngImagePlugin

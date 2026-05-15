@@ -134,22 +134,38 @@ def _to_pixel_grid(
 def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
     """Render an MSL chart to PNG bytes.
 
-    Parameters
-    ----------
-    ds : xr.Dataset
-        Decoded GRIB containing ``msl`` (Pa), ``longitude``, ``latitude``,
-        ``valid_time``.
-    region : Region
-        Display region. ``region.extent`` (or None for global) drives the
-        numpy crop. Projection is ignored on the fast path — the output
-        is PlateCarree.
-    run_id : str
-        Cycle / step label embedded in the PNG metadata (textual footer
-        is not rendered onto the image to keep the fast path pure-C).
+    PlateCarree regions use the existing crop + LUT + contour path.
+    Polar regions (Arctic / Antarctic centred hemispheres) bypass the
+    crop and instead reindex a global LUT result through the
+    precomputed polar lookup table from :mod:`_fast`. Contour drawing
+    is skipped on polar projections — it would need a separate
+    forward-projection step that doesn't pay for itself on the
+    once-per-render budget.
     """
+    from aiseed_weather.figures._coastlines import apply_coastlines
+    from aiseed_weather.figures._fast import (
+        apply_polar_reindex, is_polar, source_grid_for_global,
+    )
+
     msl_hpa = (ds["msl"].values / 100.0).astype(np.float32)
     longitudes = np.asarray(ds["longitude"].values, dtype=np.float32)
     latitudes = np.asarray(ds["latitude"].values, dtype=np.float32)
+
+    if is_polar(region):
+        # Normalise to the global source frame the polar lookup was
+        # built against, then color-shade and reindex.
+        msl_global = source_grid_for_global(msl_hpa, longitudes, latitudes)
+        norm = np.clip(
+            (msl_global - _VMIN_HPA) / (_VMAX_HPA - _VMIN_HPA), 0.0, 1.0,
+        )
+        indices = (norm * 255.0).astype(np.uint8)
+        rgb_source = _LUT[indices]
+        rgb = apply_polar_reindex(rgb_source, region.key)
+        apply_coastlines(rgb, region.key)
+        img = Image.fromarray(rgb, mode="RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", pnginfo=_png_metadata(run_id))
+        return buf.getvalue()
 
     msl_hpa, longitudes, latitudes = _to_pixel_grid(
         msl_hpa, longitudes, latitudes, region,
@@ -167,7 +183,6 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
     # via numpy fancy indexing. No projection, no line drawing — the
     # rasterisation happened once on the dev machine; runtime cost is
     # a single boolean assign.
-    from aiseed_weather.figures._coastlines import apply_coastlines
     apply_coastlines(rgb, region.key)
 
     # ── Isobar overlay ───────────────────────────────────────────────

@@ -25,7 +25,7 @@ import numpy as np
 from PIL import Image
 
 from aiseed_weather.figures._fast import (
-    apply_binned_lut, crop_grid, palette_to_lut,
+    apply_binned_lut, palette_to_lut, shade_for_region,
 )
 from aiseed_weather.figures.regions import GLOBAL
 
@@ -80,10 +80,10 @@ def render_tp(
     longitudes = ds["longitude"].values
     latitudes = ds["latitude"].values
 
-    tp_mm, longitudes, latitudes = crop_grid(
+    rgb = shade_for_region(
+        lambda arr: apply_binned_lut(arr, TP_BOUNDS_MM, _TP_LUT),
         tp_mm, longitudes, latitudes, region,
     )
-    rgb = apply_binned_lut(tp_mm, TP_BOUNDS_MM, _TP_LUT)
     from aiseed_weather.figures._coastlines import apply_coastlines
     apply_coastlines(rgb, region.key)
 

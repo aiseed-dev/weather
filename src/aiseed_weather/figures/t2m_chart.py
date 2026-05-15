@@ -27,7 +27,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from aiseed_weather.figures._fast import (
-    apply_binned_lut, crop_grid, palette_to_lut,
+    apply_binned_lut, palette_to_lut, shade_for_region,
 )
 from aiseed_weather.figures.regions import GLOBAL
 
@@ -82,26 +82,36 @@ def render_t2m(
     longitudes = ds["longitude"].values
     latitudes = ds["latitude"].values
 
-    t_c, longitudes, latitudes = crop_grid(t_c, longitudes, latitudes, region)
-    h, w = t_c.shape
+    rgb = shade_for_region(
+        lambda arr: apply_binned_lut(arr, T2M_BOUNDS_C, _T2M_LUT),
+        t_c, longitudes, latitudes, region,
+    )
 
-    rgb = apply_binned_lut(t_c, T2M_BOUNDS_C, _T2M_LUT)  # (h, w, 3) uint8
     from aiseed_weather.figures._coastlines import apply_coastlines
+    from aiseed_weather.figures._fast import is_polar
     apply_coastlines(rgb, region.key)
 
     img = Image.fromarray(rgb, mode="RGB")
-    draw = ImageDraw.Draw(img)
 
-    # Bold 0 °C isotherm — climatologically important boundary.
-    x_pix = np.arange(w, dtype=np.float32)
-    y_pix = np.arange(h, dtype=np.float32)
-    cgen = contourpy.contour_generator(x=x_pix, y=y_pix, z=t_c)
-    for line in cgen.lines(0.0):
-        if len(line) >= 2:
-            draw.line(
-                [(float(p[0]), float(p[1])) for p in line],
-                fill=(0, 0, 0), width=2,
-            )
+    # 0 °C isotherm on PlateCarree only — polar would need a forward
+    # projection of the polyline vertices and isn't worth the wire
+    # for the freezing line specifically.
+    if not is_polar(region):
+        h, w = rgb.shape[:2]
+        # Recompute the cropped value field for contourpy. Cheap;
+        # already in the pipeline.
+        from aiseed_weather.figures._fast import crop_grid
+        t_crop, _, _ = crop_grid(t_c, longitudes, latitudes, region)
+        x_pix = np.arange(w, dtype=np.float32)
+        y_pix = np.arange(h, dtype=np.float32)
+        draw = ImageDraw.Draw(img)
+        cgen = contourpy.contour_generator(x=x_pix, y=y_pix, z=t_crop)
+        for line in cgen.lines(0.0):
+            if len(line) >= 2:
+                draw.line(
+                    [(float(p[0]), float(p[1])) for p in line],
+                    fill=(0, 0, 0), width=2,
+                )
 
     buf = io.BytesIO()
     from PIL import PngImagePlugin
