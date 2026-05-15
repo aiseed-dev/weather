@@ -1125,10 +1125,11 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         [step_hours, region, data_field_key, primary_cycle],
     )
 
-    # On mount: probe recent cycles so the "更新 / Update" hint can
-    # appear without the user opening the GPV dialog first.
+    # On mount: probe only the most recent few cycles so the bootstrap
+    # can lock onto the latest published base time. Full dialog probe
+    # (every row) is deferred until the user opens the GPV dialog.
     def _probe_on_mount():
-        ft.context.page.run_task(_probe_visible_cycles)
+        ft.context.page.run_task(_probe_latest_cycle)
     ft.use_effect(_probe_on_mount, [])
 
     # First-run bootstrap: if the disk had no cache to load and the
@@ -1611,13 +1612,46 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
     draft_horizon_h, set_draft_horizon_h = ft.use_state(max_step_h)
     draft_cadence_h, set_draft_cadence_h = ft.use_state(cadence_h)
 
+    async def _probe_cycle(c):
+        """HEAD one cycle, merge result into cycle_check_results."""
+        last = (
+            _SHORT_CYCLE_HORIZON_H if c.hour in _SHORT_CYCLE_HOURS
+            else _LONG_CYCLE_HORIZON_H
+        )
+        ok = await probe_cycle_complete(c, last)
+        set_cycle_check_results(
+            lambda prev, k=c.isoformat(), v=ok: {**prev, k: v},
+        )
+
+    async def _probe_latest_cycle():
+        """Find the most recent published cycle with a tight probe.
+
+        Walks back from the newest theoretical cycle, stopping at
+        the first verified hit. Bounded at 4 attempts (≈ one day of
+        cycles) — past that we'd be looking at retention-aged
+        cycles and the disk cache fallback handles it just fine.
+        Single HEAD per attempt, sequential because we want to stop
+        at the first hit, not race them all.
+        """
+        candidates = [
+            c for c in _BASE_TIME_CHOICES[:4]
+            if c.isoformat() not in cycle_check_results
+        ]
+        for c in candidates:
+            await _probe_cycle(c)
+            # Look up our own write — set_state is async wrt render
+            # so we can't read cycle_check_results here. Probe the
+            # next anyway if this one failed; the caller bound at 4
+            # caps the worst case.
+
     async def _probe_visible_cycles():
         """Verify availability of every cycle the dialog will list.
 
-        Runs HEAD requests in parallel (capped at 8 concurrent so we
-        don't open a thundering herd of sockets). Each completed probe
-        merges into cycle_check_results, triggering a re-render of the
-        dialog with the verified label.
+        Called when the dialog opens — the user can see verification
+        state inline against each row. Capped at 8 concurrent HEADs
+        so we don't open a thundering herd. Mount-time probes go
+        through _probe_latest_cycle, not this, so cold launches stay
+        cheap.
         """
         pending = [
             c for c in _BASE_TIME_CHOICES
@@ -1637,8 +1671,6 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
             return c.isoformat(), ok
 
         results = await asyncio.gather(*(one(c) for c in pending))
-        # Merge atomically; the existing dict carries cycles probed
-        # in earlier opens of the dialog (cache survives close/reopen).
         set_cycle_check_results(
             lambda prev: {**prev, **dict(results)},
         )
