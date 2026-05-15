@@ -50,8 +50,8 @@ _LEGEND_TICKS_C = (-20.0, -10.0, 0.0, 10.0, 20.0, 30.0, 40.0)
 
 def _build_diverging_lut() -> np.ndarray:
     anchors: list[tuple[float, tuple[int, int, int]]] = [
-        (-20.0, (75, 50, 130)),     # deep violet (cold extreme)
-        (-10.0, (80, 130, 200)),    # medium blue
+        (-20.0, (50, 30, 165)),     # saturated indigo (cold extreme)
+        (-10.0, (40, 115, 225)),    # vivid blue
         (0.0,   (230, 225, 215)),   # warm pale (freezing pivot)
         (10.0,  (190, 220, 100)),   # light green-yellow
         (20.0,  (245, 200, 80)),    # yellow
