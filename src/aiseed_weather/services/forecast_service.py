@@ -129,6 +129,11 @@ class ForecastRequest:
     # caller doesn't care about cache filename collisions — that's
     # handled by filename_part() below.
     param: str
+    # Pressure level in hPa for upper-air fields (gh / t / u / v / w /
+    # r at e.g. 500 hPa). ``None`` means surface / single-level. The
+    # ecmwf-opendata client takes this as ``levelist=`` and the cache
+    # path embeds it so the on-disk file is unambiguous.
+    level: int | None = None
 
     def param_list(self):
         """Return what to hand to ``ecmwf-opendata Client.retrieve(param=...)``."""
@@ -137,8 +142,11 @@ class ForecastRequest:
         return self.param
 
     def filename_part(self) -> str:
-        """Filesystem-safe identifier for this param set."""
-        return self.param.replace("/", "-")
+        """Filesystem-safe identifier for this param set + level."""
+        base = self.param.replace("/", "-")
+        if self.level is None:
+            return base
+        return f"{base}@{self.level}"
 
 
 class ForecastDisabledError(RuntimeError):
@@ -236,7 +244,7 @@ class ForecastService:
 
     def _download(self, r: ForecastRequest, target: Path) -> None:
         _verify_multiurl_patch()
-        self._client.retrieve(
+        kwargs: dict = dict(
             type="fc",
             step=r.step_hours,
             param=r.param_list(),  # str or list[str] for multi-param
@@ -244,6 +252,13 @@ class ForecastService:
             time=r.run_time.hour,
             target=str(target),
         )
+        if r.level is not None:
+            # Pressure-level field: ecmwf-opendata wants levelist (hPa).
+            # Type "pl" selects the pressure-level product set.
+            kwargs["type"] = "fc"
+            kwargs["levtype"] = "pl"
+            kwargs["levelist"] = r.level
+        self._client.retrieve(**kwargs)
 
     def _decode(self, path: Path) -> xr.Dataset:
         return xr.open_dataset(path, engine="cfgrib")
@@ -254,6 +269,7 @@ def grib_cache_path(
     run_time: datetime,
     step_hours: int,
     param: str = "msl",
+    level: int | None = None,
 ) -> Path:
     """Compute the on-disk cache path for an ECMWF GRIB2 frame.
 
@@ -261,9 +277,12 @@ def grib_cache_path(
     code can inspect cache state without going through the (potentially
     expensive, requires-network-ready settings) full service object.
     ``param`` may be a multi-param string like "10u/10v"; the cache
-    filename uses "-" in place of "/" for filesystem safety.
+    filename uses "-" in place of "/" for filesystem safety. ``level``
+    is appended as ``@<level>`` for pressure-level fields.
     """
     filename_part = param.replace("/", "-")
+    if level is not None:
+        filename_part = f"{filename_part}@{level}"
     return (
         resolved_data_dir(settings) / "ecmwf"
         / run_time.strftime("%Y%m%d")
@@ -277,8 +296,9 @@ def is_grib_cached(
     run_time: datetime,
     step_hours: int,
     param: str = "msl",
+    level: int | None = None,
 ) -> bool:
-    p = grib_cache_path(settings, run_time, step_hours, param)
+    p = grib_cache_path(settings, run_time, step_hours, param, level)
     return p.exists() and p.stat().st_size > 0
 
 

@@ -82,20 +82,31 @@ FRAMES_CACHE_LIMIT = 500
 # Windy-style thumbnail gradients for the in-panel layer cards. Color
 # stops sampled from each layer's actual LUT so the chip previews the
 # rendered chart at a glance — no separate art asset to maintain.
+# Diverging temperature gradient reused for t2m / d2m / skt / t@level
+# so the eye doesn't recalibrate when toggling related fields.
+_TEMP_CHIP_STOPS = [
+    "#2c0a4d", "#1b81c4", "#a8d3c4",
+    "#f5f0a8", "#f9b04e", "#c93920", "#3c0404",
+]
+_WIND_CHIP_STOPS = [
+    "#e6f4f5", "#52b0c0", "#7cba74",
+    "#f3d33d", "#e9572a", "#5a155f",
+]
+_GH_CHIP_STOPS = _TEMP_CHIP_STOPS  # same palette family
+_RH_CHIP_STOPS = [
+    "#704020", "#a06848", "#d8a268",
+    "#cfd8c4", "#5da3d0", "#0a3a82",
+]
+_W_CHIP_STOPS = [
+    "#1a4486", "#5c9bd0", "#f4f4f4",
+    "#f0b894", "#7a1f15",
+]
+
 _LAYER_GRADIENT_STOPS: dict[str, list[str]] = {
     "msl": ["#193282", "#ffffff", "#82194d"],
-    "t2m": [
-        "#2c0a4d", "#1b81c4", "#a8d3c4",
-        "#f5f0a8", "#f9b04e", "#c93920", "#3c0404",
-    ],
-    "d2m": [
-        "#2c0a4d", "#1b81c4", "#a8d3c4",
-        "#f5f0a8", "#f9b04e", "#c93920", "#3c0404",
-    ],
-    "skt": [
-        "#2c0a4d", "#1b81c4", "#a8d3c4",
-        "#f5f0a8", "#f9b04e", "#c93920", "#3c0404",
-    ],
+    "t2m": _TEMP_CHIP_STOPS,
+    "d2m": _TEMP_CHIP_STOPS,
+    "skt": _TEMP_CHIP_STOPS,
     "tp": [
         "#f4f4f4", "#9dd1ee", "#1a73b3",
         "#2e8b3d", "#f0d643", "#e54d24", "#5e1660",
@@ -106,11 +117,21 @@ _LAYER_GRADIENT_STOPS: dict[str, list[str]] = {
     "tcc": [
         "#1e2230", "#3e4458", "#737888", "#9aa0ad", "#eef0f4",
     ],
-    "wind10m": [
-        "#e6f4f5", "#52b0c0", "#7cba74",
-        "#f3d33d", "#e9572a", "#5a155f",
-    ],
+    "wind10m": _WIND_CHIP_STOPS,
 }
+# Pressure-level family chips share the same gradient as their
+# surface counterpart so the visual language stays consistent.
+for _L in (925, 850, 700, 500, 300, 200):
+    _LAYER_GRADIENT_STOPS[f"gh{_L}"] = _GH_CHIP_STOPS
+for _L in (925, 850, 700, 500, 300):
+    _LAYER_GRADIENT_STOPS[f"t{_L}"] = _TEMP_CHIP_STOPS
+for _L in (850, 500, 250):
+    _LAYER_GRADIENT_STOPS[f"wind{_L}"] = _WIND_CHIP_STOPS
+for _L in (700, 500):
+    _LAYER_GRADIENT_STOPS[f"w{_L}"] = _W_CHIP_STOPS
+for _L in (925, 850, 700):
+    _LAYER_GRADIENT_STOPS[f"r{_L}"] = _RH_CHIP_STOPS
+
 
 # Legend tick labels per layer — Windy-style colorbar shown below the
 # chart. (min, mid, max, unit). Mid is the climatological centre or
@@ -125,6 +146,26 @@ _LAYER_LEGEND_TICKS: dict[str, tuple[str, str, str, str]] = {
     "tcc":     ("0",     "0.5",  "1",    "0..1"),
     "wind10m": ("0",     "15",   "60",   "m/s"),
 }
+# Pressure-level legend ticks. Temperature / RH / vertical velocity /
+# wind use the same scale at every level. Geopotential height varies
+# strongly with level, so the tick triplet is per-level (matching the
+# per-level bin grid in _scalar_chart._GH_BOUNDS_AND_PALETTE).
+for _L in (925, 850, 700, 500, 300):
+    _LAYER_LEGEND_TICKS[f"t{_L}"] = ("-40", "0", "+40", "°C")
+for _L in (850, 500, 250):
+    _LAYER_LEGEND_TICKS[f"wind{_L}"] = ("0", "15", "60", "m/s")
+for _L in (700, 500):
+    _LAYER_LEGEND_TICKS[f"w{_L}"] = ("-3", "0", "+2", "Pa/s")
+for _L in (925, 850, 700):
+    _LAYER_LEGEND_TICKS[f"r{_L}"] = ("10", "60", "95", "%")
+_LAYER_LEGEND_TICKS.update({
+    "gh925": ("600",   "740",   "880",   "m"),
+    "gh850": ("1250",  "1430",  "1610",  "m"),
+    "gh700": ("2700",  "3000",  "3300",  "m"),
+    "gh500": ("5100",  "5640",  "6000",  "m"),
+    "gh300": ("8400",  "9300",  "9900",  "m"),
+    "gh200": ("11000", "12000", "13000", "m"),
+})
 
 # Choices we expose in the Data dialog. Horizon caps where the animation
 # stops; cadence is the spacing between frames. ECMWF only publishes 6h
@@ -842,7 +883,8 @@ def MapView(settings: UserSettings, fetch=None):
         primary cycle and the extension cycle when they differ.
         """
         request = ForecastRequest(
-            run_time=src_cycle, step_hours=src_step, param=selected_field.ecmwf_param,
+            run_time=src_cycle, step_hours=src_step,
+            param=selected_field.ecmwf_param, level=selected_field.level,
         )
         # Worker process handles decode + render. Main process never
         # holds the xr.Dataset — keeps memory + GIL out of the loop.
@@ -936,7 +978,8 @@ def MapView(settings: UserSettings, fetch=None):
                     f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(step)}"
                 )
             request = ForecastRequest(
-                run_time=src_cycle, step_hours=src_step, param=selected_field.ecmwf_param,
+                run_time=src_cycle, step_hours=src_step,
+                param=selected_field.ecmwf_param, level=selected_field.level,
             )
             hit_cache = service.is_cached(request)
             set_progress(
@@ -1065,7 +1108,7 @@ def MapView(settings: UserSettings, fetch=None):
         src_cycle, src_step = cur_lookup.get(
             display_step, (cur_primary, display_step),
         )
-        if src_cycle is None or not is_grib_cached(settings, src_cycle, src_step, param=cur_field.ecmwf_param):
+        if src_cycle is None or not is_grib_cached(settings, src_cycle, src_step, param=cur_field.ecmwf_param, level=cur_field.level):
             # No GRIB for this layer/cycle yet. If we're failing to
             # render the *visible* step, clear the on-screen image so
             # the user doesn't keep staring at the previous layer's
@@ -1088,7 +1131,7 @@ def MapView(settings: UserSettings, fetch=None):
                 f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
             )
         # Worker process decodes + renders. We just hand it the path.
-        gpath = grib_cache_path(settings, src_cycle, src_step, param=cur_field.ecmwf_param)
+        gpath = grib_cache_path(settings, src_cycle, src_step, param=cur_field.ecmwf_param, level=cur_field.level)
         # Overlay GRIB path — must be cached already; we don't kick off
         # a download here because _ensure_rendered runs in latency-
         # sensitive paths (slider scrubbing, animation). If not cached,
@@ -1239,7 +1282,7 @@ def MapView(settings: UserSettings, fetch=None):
                             continue
                         if not is_grib_cached(
                             snap_settings, src_cycle, src_step,
-                            param=fld.ecmwf_param,
+                            param=fld.ecmwf_param, level=fld.level,
                         ):
                             continue
                         cache_key = (
@@ -1249,7 +1292,7 @@ def MapView(settings: UserSettings, fetch=None):
                             continue
                         gpath = grib_cache_path(
                             snap_settings, src_cycle, src_step,
-                            param=fld.ecmwf_param,
+                            param=fld.ecmwf_param, level=fld.level,
                         )
                         if src_cycle == snap_cycle:
                             label = (
@@ -1361,6 +1404,7 @@ def MapView(settings: UserSettings, fetch=None):
                 req = ForecastRequest(
                     run_time=src_cycle, step_hours=src_step,
                     param=selected_field.ecmwf_param,
+                    level=selected_field.level,
                 )
                 ext_tag = (
                     f" [ext {src_cycle:%Hz}]" if src_cycle != cycle else ""
@@ -2440,6 +2484,7 @@ def MapView(settings: UserSettings, fetch=None):
             if is_grib_cached(
                 settings, src_c, src_s,
                 param=selected_field.ecmwf_param,
+                level=selected_field.level,
             )
         )
         to_fetch_count = len(stitch_plan) - already_cached_count
@@ -2656,7 +2701,7 @@ def MapView(settings: UserSettings, fetch=None):
                 color = (
                     ft.Colors.LIGHT_GREEN if stitched else ft.Colors.GREEN
                 )
-            elif is_grib_cached(settings, src_cycle, src_step, param=selected_field.ecmwf_param):
+            elif is_grib_cached(settings, src_cycle, src_step, param=selected_field.ecmwf_param, level=selected_field.level):
                 color = ft.Colors.AMBER
                 cache_grib += 1
             else:

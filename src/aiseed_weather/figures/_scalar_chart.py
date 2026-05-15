@@ -217,7 +217,183 @@ TCC_CONFIG = ScalarLayerConfig(
 )
 
 
+# ── Pressure-level fields ────────────────────────────────────────────
+# Generated config-per-(variable, level) — render_pool dispatches all
+# of them through this generic pipeline. The single-band GRIB at the
+# requested levelist means the extractor just reads the variable;
+# any residual level axis is squeezed.
+
+
+def _squeeze_2d(arr: np.ndarray) -> np.ndarray:
+    """Drop leading singleton dims (e.g. a single-level axis) so the
+    result is (lat, lon). The fast pipeline assumes a 2D field."""
+    while arr.ndim > 2:
+        arr = arr[0]
+    return arr
+
+
+def _extract_kelvin_at_level(var_names: tuple[str, ...]):
+    def _fn(ds):
+        for n in var_names:
+            if n in ds.data_vars:
+                return _squeeze_2d(np.asarray(ds[n].values, dtype=np.float32)) - 273.15
+        raise ValueError(
+            f"None of {var_names!r} found in dataset; "
+            f"vars={list(ds.data_vars)}",
+        )
+    return _fn
+
+
+def _extract_wind_speed_at_level():
+    def _fn(ds):
+        u = v = None
+        for n in ("u", "U"):
+            if n in ds.data_vars:
+                u = _squeeze_2d(np.asarray(ds[n].values, dtype=np.float32))
+                break
+        for n in ("v", "V"):
+            if n in ds.data_vars:
+                v = _squeeze_2d(np.asarray(ds[n].values, dtype=np.float32))
+                break
+        if u is None or v is None:
+            raise ValueError(
+                f"No u/v in dataset; vars={list(ds.data_vars)}",
+            )
+        return np.hypot(u, v)
+    return _fn
+
+
+def _extract_value_at_level(var_names: tuple[str, ...]):
+    def _fn(ds):
+        for n in var_names:
+            if n in ds.data_vars:
+                return _squeeze_2d(np.asarray(ds[n].values, dtype=np.float32))
+        raise ValueError(
+            f"None of {var_names!r} found in dataset; "
+            f"vars={list(ds.data_vars)}",
+        )
+    return _fn
+
+
+# Geopotential height bin layouts per level. Climatological ranges
+# from ECMWF reanalysis (m); bin widths chosen so the standard
+# synoptic isolines (e.g. 5640 m at 500 hPa) land on a bin edge.
+_GH_BOUNDS_AND_PALETTE = {
+    925: np.arange(600, 880, 12, dtype=np.float32),
+    850: np.arange(1250, 1610, 16, dtype=np.float32),
+    700: np.arange(2700, 3300, 28, dtype=np.float32),
+    500: np.arange(5100, 6000, 40, dtype=np.float32),
+    300: np.arange(8400, 9900, 70, dtype=np.float32),
+    200: np.arange(11000, 13000, 95, dtype=np.float32),
+}
+
+# Generic 22-stop palette reused for every gh level (cool blue at
+# the lower end → warm red at the upper end of the climatological
+# range for that level). Same 22 colours as the temperature palette
+# so the chart language stays consistent across layers.
+_GH_PALETTE = _TEMP_PALETTE
+
+
+# Vertical velocity ω (Pa/s) bin layout. Negative = upward motion
+# (the synoptically interesting half); the palette emphasises that.
+_W_BOUNDS = np.array(
+    [-3.0, -2.0, -1.0, -0.5, -0.2, -0.05,
+     0.05, 0.2, 0.5, 1.0, 2.0],
+    dtype=np.float32,
+)
+_W_PALETTE = (
+    "#1a4486",  # under: < -3 (strong upward)
+    "#2860a8", "#3b7fc3", "#5c9bd0", "#88b9dd", "#bcd5ea",
+    "#f4f4f4",  # near zero
+    "#f4e4c8", "#f0b894", "#e98565", "#c4502b", "#7a1f15",  # downward
+)
+# under + len(bounds) bins; total = len(bounds) + 1 = 12. ✓
+
+
+# Relative humidity (%) bin layout. 70%+ is the "moist plume" range.
+_RH_BOUNDS = np.array(
+    [10, 20, 30, 40, 50, 60, 70, 80, 90, 95], dtype=np.float32,
+)
+_RH_PALETTE = (
+    "#704020",  # under (<10%, very dry)
+    "#8a5532", "#a06848", "#bd8458", "#d8a268", "#e8c08c",
+    "#cfd8c4", "#9fcfd0", "#5da3d0", "#1a6cbf", "#0a3a82",
+)
+# under + 10 bins = 11 entries. ✓
+
+
+def _make_t_config(level: int) -> ScalarLayerConfig:
+    return ScalarLayerConfig(
+        layer_key=f"t{level}",
+        bounds=_TEMP_BOUNDS,
+        palette=_TEMP_PALETTE,
+        extractor=_extract_kelvin_at_level(("t",)),
+        isoline_value=0.0,
+    )
+
+
+def _make_gh_config(level: int) -> ScalarLayerConfig:
+    return ScalarLayerConfig(
+        layer_key=f"gh{level}",
+        bounds=_GH_BOUNDS_AND_PALETTE[level],
+        palette=_GH_PALETTE,
+        extractor=_extract_value_at_level(("gh", "z")),
+    )
+
+
+def _make_wind_config(level: int) -> ScalarLayerConfig:
+    # Imported lazily to avoid a circular dep between modules; we just
+    # mirror wind_chart's bin grid here.
+    bounds = np.array(
+        [0, 2, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60],
+        dtype=np.float32,
+    )
+    palette = (
+        "#e6f4f5",
+        "#e6f4f5", "#b8e0e8", "#83c8d4", "#52b0c0", "#3a98ad",
+        "#7cba74", "#bccf4d", "#f3d33d", "#f59a35", "#e9572a",
+        "#a72333", "#5a155f", "#5a155f",
+    )
+    return ScalarLayerConfig(
+        layer_key=f"wind{level}",
+        bounds=bounds,
+        palette=palette,
+        extractor=_extract_wind_speed_at_level(),
+    )
+
+
+def _make_w_config(level: int) -> ScalarLayerConfig:
+    return ScalarLayerConfig(
+        layer_key=f"w{level}",
+        bounds=_W_BOUNDS,
+        palette=_W_PALETTE,
+        extractor=_extract_value_at_level(("w",)),
+        isoline_value=0.0,
+    )
+
+
+def _make_r_config(level: int) -> ScalarLayerConfig:
+    return ScalarLayerConfig(
+        layer_key=f"r{level}",
+        bounds=_RH_BOUNDS,
+        palette=_RH_PALETTE,
+        extractor=_extract_value_at_level(("r",)),
+    )
+
+
+_PRESSURE_CONFIGS: list[ScalarLayerConfig] = (
+    [_make_gh_config(L) for L in (925, 850, 700, 500, 300, 200)]
+    + [_make_t_config(L) for L in (925, 850, 700, 500, 300)]
+    + [_make_wind_config(L) for L in (850, 500, 250)]
+    + [_make_w_config(L) for L in (700, 500)]
+    + [_make_r_config(L) for L in (925, 850, 700)]
+)
+
+
 CONFIGS: dict[str, ScalarLayerConfig] = {
     cfg.layer_key: cfg
-    for cfg in (D2M_CONFIG, SKT_CONFIG, SD_CONFIG, TCC_CONFIG)
+    for cfg in (
+        D2M_CONFIG, SKT_CONFIG, SD_CONFIG, TCC_CONFIG,
+        *_PRESSURE_CONFIGS,
+    )
 }
