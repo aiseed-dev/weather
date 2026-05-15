@@ -816,6 +816,14 @@ def MapView(settings: UserSettings, fetch=None):
             overlay_path = grib_cache_path(
                 settings, src_cycle, src_step, param="msl",
             )
+        # Visible step about to render: transition state so the main
+        # area drops the "press 取得 / Fetch" idle placeholder and shows
+        # a spinner. Without this, the user sees the misleading idle
+        # placeholder for the entire 5-15s cartopy render — even though
+        # the GRIB is on disk and we are actually rendering from cache.
+        if display_step == step_hours:
+            set_state("loading")
+            set_progress("キャッシュ済データから描画中… / Rendering from cache…")
         try:
             png = await render_layer_in_pool(
                 gpath, cur_region, label, cur_layer,
@@ -823,6 +831,12 @@ def MapView(settings: UserSettings, fetch=None):
             )
         except Exception:
             logger.exception("Render of step=%dh failed", display_step)
+            if display_step == step_hours:
+                # Don't strand the user on a spinner. Roll back to idle
+                # so the placeholder appears again; an error message is
+                # surfaced via the logger.
+                set_state("idle")
+                set_progress("")
             return
         # Functional update with FIFO bound so we don't clobber
         # concurrent renders or grow without limit.
@@ -831,10 +845,10 @@ def MapView(settings: UserSettings, fetch=None):
         if display_step == step_hours:
             set_image_bytes(png)
             set_run_label(label)
+            set_progress("")
             # _ensure_rendered runs as a background task and is the only
             # path that paints a PNG when a download finishes the visible
-            # step. Move out of "idle" so the main area drops the
-            # "Press 取得" placeholder and actually shows the chart.
+            # step. Move out of "loading" so the main area shows the chart.
             set_state("ready")
 
     async def _download_loop(cycle, plan, cancel_event):
@@ -2462,21 +2476,40 @@ def MapView(settings: UserSettings, fetch=None):
 
     # ----- Main: chart area depending on state -----
     if state == "idle":
+        # Context-aware placeholder. When GRIBs are already on disk for
+        # this cycle, the user has nothing left to do — they're waiting
+        # for a render. When nothing is on disk, point them at Fetch.
+        any_cached = (
+            primary_cycle is not None
+            and cache_none < len(step_options)
+        )
+        idle_message = (
+            "キャッシュ済 GPV から描画準備中…\n"
+            "(初回は cartopy + matplotlib のインポートで数秒〜十数秒)"
+            if any_cached
+            else "左側 GPV カードの「取得 / Fetch」を押してください。"
+        )
+        idle_controls = [
+            ft.Icon(
+                ft.Icons.PUBLIC, size=64, color=ft.Colors.OUTLINE_VARIANT,
+            ),
+        ]
+        if any_cached:
+            idle_controls.append(ft.ProgressRing(width=24, height=24))
+        idle_controls.append(
+            ft.Text(
+                idle_message,
+                size=14, color=ft.Colors.GREY,
+                text_align=ft.TextAlign.CENTER,
+            ),
+        )
         main_area = ft.Container(
             alignment=ft.Alignment.CENTER,
             content=ft.Column(
                 alignment=ft.MainAxisAlignment.CENTER,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 spacing=8,
-                controls=[
-                    ft.Icon(
-                        ft.Icons.PUBLIC, size=64, color=ft.Colors.OUTLINE_VARIANT,
-                    ),
-                    ft.Text(
-                        "左側 GPV カードの「取得 / Fetch」を押してください。",
-                        size=14, color=ft.Colors.GREY,
-                    ),
-                ],
+                controls=idle_controls,
             ),
         )
     elif state == "loading" and not has_image:
