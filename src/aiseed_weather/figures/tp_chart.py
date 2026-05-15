@@ -90,6 +90,7 @@ def render_tp(
     region: Region = GLOBAL,
     run_id: str,
     dpi: int = _DPI,
+    msl_overlay_ds: xr.Dataset | None = None,
 ) -> bytes:
     tp_mm = _extract_tp_mm(ds)
     longitudes = ds["longitude"].values
@@ -117,6 +118,11 @@ def render_tp(
 
     ax.coastlines(linewidth=0.6, color="#333333")
     ax.gridlines(draw_labels=False, linewidth=0.3, color="#888888", alpha=0.5)
+
+    # Optional MSL contour overlay — Windy-style "rain + isobars".
+    if msl_overlay_ds is not None:
+        from aiseed_weather.figures.overlays import add_msl_contours
+        add_msl_contours(ax, msl_overlay_ds)
 
     cbar = fig.colorbar(
         mesh, ax=ax,

@@ -116,6 +116,7 @@ def render_wind(
     region: Region = GLOBAL,
     run_id: str,
     dpi: int = _DPI,
+    msl_overlay_ds: xr.Dataset | None = None,
 ) -> bytes:
     u, v = _extract_uv10(ds)
     wspd = np.sqrt(u * u + v * v)
@@ -159,6 +160,11 @@ def render_wind(
         color="black",
         alpha=0.75,
     )
+
+    # Optional MSL contour overlay (e.g. wind speed + isobars).
+    if msl_overlay_ds is not None:
+        from aiseed_weather.figures.overlays import add_msl_contours
+        add_msl_contours(ax, msl_overlay_ds)
 
     cbar = fig.colorbar(
         mesh, ax=ax,

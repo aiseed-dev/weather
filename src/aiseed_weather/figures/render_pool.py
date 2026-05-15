@@ -78,33 +78,55 @@ def _worker_render(
     region: Region,
     run_id: str,
     layer_key: str,
+    msl_overlay_path: str | None = None,
 ) -> bytes:
-    """Worker entry point: decode GRIB + render → PNG bytes.
+    """Worker entry point: decode GRIB(s) + render → PNG bytes.
 
     Imports are deferred so each worker only pays the cartopy /
     matplotlib import cost once, lazily. Dispatch on layer_key picks
     the right renderer module. Adding a new layer = one elif here +
     a new figures/{layer}_chart.py file.
+
+    ``msl_overlay_path`` lets the caller stack MSL isobars on top of
+    the base. It's a separate GRIB because MSL is a different ECMWF
+    field from the base (t2m / tp / wind speed). When None, no
+    overlay; renderers that don't accept it ignore the kwarg.
     """
     import xarray as xr
 
     ds = xr.open_dataset(grib_path, engine="cfgrib")
+    msl_overlay_ds = None
+    if msl_overlay_path:
+        msl_overlay_ds = xr.open_dataset(msl_overlay_path, engine="cfgrib")
     try:
         if layer_key == "msl":
+            # MSL chart already draws its own contours — overlay would
+            # be redundant. Ignore msl_overlay_ds for this layer.
             from aiseed_weather.figures.msl_chart import render_msl
             return render_msl(ds, region=region, run_id=run_id)
         if layer_key == "t2m":
             from aiseed_weather.figures.t2m_chart import render_t2m
-            return render_t2m(ds, region=region, run_id=run_id)
+            return render_t2m(
+                ds, region=region, run_id=run_id,
+                msl_overlay_ds=msl_overlay_ds,
+            )
         if layer_key == "tp":
             from aiseed_weather.figures.tp_chart import render_tp
-            return render_tp(ds, region=region, run_id=run_id)
+            return render_tp(
+                ds, region=region, run_id=run_id,
+                msl_overlay_ds=msl_overlay_ds,
+            )
         if layer_key == "wind10m":
             from aiseed_weather.figures.wind_chart import render_wind
-            return render_wind(ds, region=region, run_id=run_id)
+            return render_wind(
+                ds, region=region, run_id=run_id,
+                msl_overlay_ds=msl_overlay_ds,
+            )
         raise ValueError(f"No renderer wired for layer {layer_key!r}")
     finally:
         ds.close()
+        if msl_overlay_ds is not None:
+            msl_overlay_ds.close()
 
 
 async def render_layer_in_pool(
@@ -112,6 +134,8 @@ async def render_layer_in_pool(
     region: Region,
     run_id: str,
     layer_key: str = "msl",
+    *,
+    msl_overlay_path: Path | None = None,
 ) -> bytes:
     """Submit a render job to the pool and await the resulting PNG.
 
@@ -128,6 +152,7 @@ async def render_layer_in_pool(
         region,
         run_id,
         layer_key,
+        str(msl_overlay_path) if msl_overlay_path is not None else None,
     )
 
 

@@ -317,6 +317,12 @@ def MapView(settings: UserSettings):
     show_catalog_dialog, set_show_catalog_dialog = ft.use_state(False)
     selected_product = product_by_key(product_key)
 
+    # Overlay toggles. The base layer carries the color shading; the
+    # user may stack contour / vector overlays from other fields on
+    # top (Windy-style). For now only MSL isobars are supported;
+    # gh@500 isohypsae and 10m wind arrows are planned.
+    msl_overlay, set_msl_overlay = ft.use_state(False)
+
     # Selected data source per product. Initial value for ECMWF HRES
     # comes from config.toml (settings.forecast_source) so the user's
     # config-time preference is honoured before they touch the dialog.
@@ -386,8 +392,22 @@ def MapView(settings: UserSettings):
     render_params_ref["primary"] = primary_cycle
     render_params_ref["source_lookup"] = source_lookup
     render_params_ref["data_source_key"] = data_source_key
+    render_params_ref["msl_overlay"] = msl_overlay
 
-    def _frame_key(step, *, cycle=None, region_=None, layer=None):
+    def _overlay_signature() -> tuple[str, ...]:
+        """Sorted tuple of enabled overlay names, used in the cache key.
+
+        Renders for the same (cycle, region, layer, step) with vs
+        without overlays are distinct PNGs; both can coexist in the
+        cache so toggling the checkbox feels instant when both have
+        been generated.
+        """
+        active: list[str] = []
+        if msl_overlay and data_field_key != "msl":
+            active.append("msl")
+        return tuple(sorted(active))
+
+    def _frame_key(step, *, cycle=None, region_=None, layer=None, overlays=None):
         """Build the composite key used by the frames PNG cache.
 
         Defaults pull from the current MapView render scope, but
@@ -397,8 +417,9 @@ def MapView(settings: UserSettings):
         c = cycle if cycle is not None else primary_cycle
         r = region_ if region_ is not None else region
         ly = layer if layer is not None else data_field_key
+        ov = overlays if overlays is not None else _overlay_signature()
         cycle_iso = c.isoformat() if c is not None else "none"
-        return (cycle_iso, r.key, ly, step)
+        return (cycle_iso, r.key, ly, ov, step)
 
     def _get_frame(step, **kw):
         return frames.get(_frame_key(step, **kw))
@@ -409,6 +430,30 @@ def MapView(settings: UserSettings):
             oldest = next(iter(new))
             del new[oldest]
         return new
+
+    async def _ensure_overlay_path(service, src_cycle, src_step, *, want_msl: bool):
+        """Ensure the MSL overlay GRIB is on disk if ``want_msl`` is
+        True, then return its path. Returns None if the overlay isn't
+        requested, or if the base layer is already MSL (overlay would
+        be redundant). On download failure we return None and let the
+        renderer proceed without the overlay rather than aborting the
+        whole frame.
+        """
+        if not want_msl:
+            return None
+        msl_req = ForecastRequest(
+            run_time=src_cycle, step_hours=src_step, param="msl",
+        )
+        if not service.is_cached(msl_req):
+            try:
+                await service.download(msl_req)
+            except Exception:
+                logger.exception(
+                    "MSL overlay download failed for step=%dh; "
+                    "rendering without overlay", src_step,
+                )
+                return None
+        return grib_cache_path(settings, src_cycle, src_step, param="msl")
 
     async def _render_one(
         service,
@@ -432,6 +477,10 @@ def MapView(settings: UserSettings):
         # Worker process handles decode + render. Main process never
         # holds the xr.Dataset — keeps memory + GIL out of the loop.
         grib_path = await service.download(request)
+        overlay_path = await _ensure_overlay_path(
+            service, src_cycle, src_step,
+            want_msl=msl_overlay and data_field_key != "msl",
+        )
         if src_cycle == primary:
             label = f"{primary:%Y%m%d %Hz} IFS · {_step_label(display_step)}"
         else:
@@ -439,7 +488,10 @@ def MapView(settings: UserSettings):
                 f"{primary:%Y%m%d %Hz} IFS "
                 f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
             )
-        return await render_layer_in_pool(grib_path, region_, label, data_field_key)
+        return await render_layer_in_pool(
+            grib_path, region_, label, data_field_key,
+            msl_overlay_path=overlay_path,
+        )
 
     async def _resolve_run_time(service, *, force: bool):
         """Pick the IFS cycle every frame must come from.
@@ -524,9 +576,19 @@ def MapView(settings: UserSettings):
             )
             # Download the GRIB; worker process will decode + render.
             grib_path = await service.download(request, force=force)
+            # Optional MSL overlay GRIB. Downloaded in the same task
+            # rather than in parallel because we want to fail soft if
+            # the overlay isn't available (render base anyway).
+            overlay_path = await _ensure_overlay_path(
+                service, run_time, step,
+                want_msl=msl_overlay and data_field_key != "msl",
+            )
             t_fetch = time.perf_counter()
             set_progress(f"Rendering chart ({region_used.label})…")
-            png_bytes = await render_layer_in_pool(grib_path, region_used, label, data_field_key)
+            png_bytes = await render_layer_in_pool(
+                grib_path, region_used, label, data_field_key,
+                msl_overlay_path=overlay_path,
+            )
             t_render = time.perf_counter()
             t_encode = t_render  # decode + encode are folded into the worker
 
@@ -581,6 +643,9 @@ def MapView(settings: UserSettings):
                     cur_region_key, cur_layer_key,
                 )
                 return
+            # Use the current overlay signature so we re-render
+            # frames if the overlay changed even when region/layer
+            # didn't.
             key = _frame_key(
                 display_step, cycle=cycle,
                 region_=region_by_key(target_region_key)
@@ -608,8 +673,12 @@ def MapView(settings: UserSettings):
         cur_layer = render_params_ref.get("data_field", data_field_key)
         cur_lookup = render_params_ref.get("source_lookup", source_lookup)
         cur_source = render_params_ref.get("data_source_key", data_source_key)
+        cur_overlay = render_params_ref.get("msl_overlay", msl_overlay)
+        want_msl_overlay = bool(cur_overlay) and cur_layer != "msl"
+        cur_overlay_sig = ("msl",) if want_msl_overlay else ()
         cache_key = _frame_key(
-            display_step, cycle=cur_primary, region_=cur_region, layer=cur_layer,
+            display_step, cycle=cur_primary, region_=cur_region,
+            layer=cur_layer, overlays=cur_overlay_sig,
         )
         if cache_key in frames:
             # Still serve it as the visible image if it matches.
@@ -625,9 +694,6 @@ def MapView(settings: UserSettings):
             service = ForecastService(settings, override_source=cur_source)
         except ForecastDisabledError:
             return
-        req = ForecastRequest(
-            run_time=src_cycle, step_hours=src_step, param=selected_field.ecmwf_param,
-        )
         if cur_primary is not None and src_cycle == cur_primary:
             label = (
                 f"{cur_primary:%Y%m%d %Hz} IFS · {_step_label(display_step)}"
@@ -639,8 +705,22 @@ def MapView(settings: UserSettings):
             )
         # Worker process decodes + renders. We just hand it the path.
         gpath = grib_cache_path(settings, src_cycle, src_step, param=selected_field.ecmwf_param)
+        # Overlay GRIB path — must be cached already; we don't kick off
+        # a download here because _ensure_rendered runs in latency-
+        # sensitive paths (slider scrubbing, animation). If not cached,
+        # render the base only and let the background loop pick it up.
+        overlay_path = None
+        if want_msl_overlay and is_grib_cached(
+            settings, src_cycle, src_step, param="msl"
+        ):
+            overlay_path = grib_cache_path(
+                settings, src_cycle, src_step, param="msl",
+            )
         try:
-            png = await render_layer_in_pool(gpath, cur_region, label, cur_layer)
+            png = await render_layer_in_pool(
+                gpath, cur_region, label, cur_layer,
+                msl_overlay_path=overlay_path,
+            )
         except Exception:
             logger.exception("Render of step=%dh failed", display_step)
             return
@@ -705,6 +785,33 @@ def MapView(settings: UserSettings):
                         continue
                     if not cancel_event.is_set() and i + 1 < total:
                         await asyncio.sleep(PRELOAD_SPACING_SEC)
+
+                # Also pull the MSL overlay GRIB if the user has the
+                # overlay toggled on and the base isn't already MSL.
+                # Read overlay state from the shared ref so a mid-loop
+                # toggle takes effect without restarting.
+                want_overlay = (
+                    render_params_ref.get("msl_overlay", msl_overlay)
+                    and render_params_ref.get(
+                        "data_field", data_field_key,
+                    ) != "msl"
+                )
+                if want_overlay and not cancel_event.is_set():
+                    msl_req = ForecastRequest(
+                        run_time=src_cycle, step_hours=src_step, param="msl",
+                    )
+                    if not service.is_cached(msl_req):
+                        try:
+                            await service.download(msl_req)
+                            if not cancel_event.is_set() and i + 1 < total:
+                                await asyncio.sleep(PRELOAD_SPACING_SEC)
+                        except Exception:
+                            logger.exception(
+                                "MSL overlay DL failed for step=%dh; "
+                                "rendering will skip overlay for this frame",
+                                src_step,
+                            )
+
                 set_download_progress(
                     lambda prev, k=i + 1: {**prev, "done": k},
                 )
@@ -1897,6 +2004,23 @@ def MapView(settings: UserSettings):
                     content=ft.Text("レイヤー変更 / Change layer…", size=12),
                     icon=ft.Icons.LAYERS,
                     on_click=lambda _: set_show_data_dialog(True),
+                ),
+
+                # ── Overlay: optional contour/vector on top of the base ──
+                ft.Divider(height=14),
+                ft.Text(
+                    "オーバーレイ / Overlay", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Checkbox(
+                    label="海面気圧 (MSL) 等圧線",
+                    value=msl_overlay,
+                    disabled=(data_field_key == "msl"),
+                    on_change=lambda e: set_msl_overlay(bool(e.control.value)),
+                ),
+                ft.Text(
+                    "(将来: 500hPa 等高度線、10m風矢印)",
+                    size=10, color=ft.Colors.GREY, italic=True,
                 ),
 
                 # ── Time: valid time = base time + lead time (slider-driven) ──

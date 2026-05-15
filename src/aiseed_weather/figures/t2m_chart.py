@@ -87,6 +87,7 @@ def render_t2m(
     region: Region = GLOBAL,
     run_id: str,
     dpi: int = _DPI,
+    msl_overlay_ds: xr.Dataset | None = None,
 ) -> bytes:
     t_C = _extract_t2m(ds)
     longitudes = ds["longitude"].values
@@ -119,6 +120,11 @@ def render_t2m(
         transform=ccrs.PlateCarree(),
         colors="black", linewidths=1.3,
     )
+
+    # Optional MSL contour overlay (must be fetched separately by caller).
+    if msl_overlay_ds is not None:
+        from aiseed_weather.figures.overlays import add_msl_contours
+        add_msl_contours(ax, msl_overlay_ds)
 
     # Colorbar (horizontal, below chart). Sparse ticks every 10°C.
     cbar = fig.colorbar(
