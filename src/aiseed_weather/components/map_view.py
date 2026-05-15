@@ -373,6 +373,136 @@ def _valid_time_display(base_time, step_hours: int) -> str:
     return (base_time + timedelta(hours=step_hours)).strftime("%Y-%m-%d %H:%M UTC")
 
 
+# Standard pressure levels we lay out in the matrix picker. Order
+# matches the surface→stratosphere reading of a synoptic chart book.
+_MATRIX_PRESSURE_LEVELS: tuple[int, ...] = (1000, 925, 850, 700, 500, 300, 200)
+
+# Variable prefix → bilingual short label for the matrix row header.
+_PRESSURE_VAR_LABELS: dict[str, str] = {
+    "gh": "高度 / GH",
+    "t":  "気温 / Temp",
+    "w":  "鉛直流 / ω",
+    "r":  "相対湿度 / RH",
+    "u":  "東西風 / U",
+    "v":  "南北風 / V",
+    "q":  "比湿 / SH",
+}
+
+
+def _pressure_variable_prefix(field) -> str:
+    """Derive the variable family (gh / t / w / r / ...) from a
+    pressure-level DataField. Trims the level suffix from the key."""
+    suffix = str(field.level)
+    if field.key.endswith(suffix):
+        return field.key[: -len(suffix)]
+    return field.key
+
+
+def _build_pressure_matrix(
+    pressure_fields, current_key: str, on_select,
+) -> ft.Control:
+    """Render the variable × pressure-level matrix picker.
+
+    Rows are variable families (高度, 気温, 鉛直流, ...). Columns are
+    the standard pressure levels (1000, 925, ..., 200 hPa). Each cell
+    is a small status-tinted button: green for IMPLEMENTED (clickable),
+    amber for PLANNED (clickable for info but no-op), empty when the
+    catalog doesn't list that (var, level) combination at all.
+    """
+    by_var: dict[str, dict] = {}
+    for f in pressure_fields:
+        by_var.setdefault(_pressure_variable_prefix(f), {})[f.level] = f
+
+    cell_w = 56
+    cell_h = 26
+
+    # Header row: pressure-level labels.
+    header_cells = [
+        ft.Container(width=cell_w * 2, height=cell_h),  # row-label spacer
+    ]
+    for level in _MATRIX_PRESSURE_LEVELS:
+        header_cells.append(
+            ft.Container(
+                width=cell_w, height=cell_h,
+                alignment=ft.Alignment(x=0.0, y=0.0),
+                content=ft.Text(
+                    f"{level}", size=10,
+                    weight=ft.FontWeight.BOLD, color=ft.Colors.GREY,
+                ),
+            ),
+        )
+
+    rows: list[ft.Control] = [ft.Row(controls=header_cells, spacing=2)]
+
+    # Order rows so the variables the user is most likely to scan run
+    # top-to-bottom in the conventional synoptic order.
+    var_order = [v for v in ("gh", "t", "w", "r", "u", "v", "q") if v in by_var]
+    var_order.extend(sorted(v for v in by_var if v not in var_order))
+
+    for prefix in var_order:
+        cells = [
+            ft.Container(
+                width=cell_w * 2, height=cell_h,
+                alignment=ft.Alignment(x=-1.0, y=0.0),
+                content=ft.Text(
+                    _PRESSURE_VAR_LABELS.get(prefix, prefix),
+                    size=11, weight=ft.FontWeight.BOLD,
+                ),
+            ),
+        ]
+        for level in _MATRIX_PRESSURE_LEVELS:
+            f = by_var[prefix].get(level)
+            if f is None:
+                cells.append(ft.Container(width=cell_w, height=cell_h))
+                continue
+            is_implemented = f.status == Status.IMPLEMENTED
+            is_current = f.key == current_key
+            cells.append(
+                ft.Container(
+                    width=cell_w, height=cell_h,
+                    border_radius=4,
+                    border=ft.Border.all(
+                        width=2 if is_current else 1,
+                        color=(
+                            ft.Colors.PRIMARY if is_current
+                            else (
+                                ft.Colors.GREEN
+                                if is_implemented else ft.Colors.AMBER
+                            )
+                        ),
+                    ),
+                    bgcolor=(
+                        ft.Colors.PRIMARY_CONTAINER if is_current
+                        else (
+                            ft.Colors.GREEN_900
+                            if is_implemented else ft.Colors.AMBER_900
+                        )
+                    ),
+                    alignment=ft.Alignment(x=0.0, y=0.0),
+                    content=ft.Text(
+                        f.unit, size=9,
+                        color=(
+                            ft.Colors.ON_PRIMARY_CONTAINER if is_current
+                            else ft.Colors.WHITE
+                        ),
+                    ),
+                    tooltip=(
+                        f"{_PRESSURE_VAR_LABELS.get(prefix, prefix)} "
+                        f"@ {level} hPa\n"
+                        f"key: {f.key}  ·  unit: {f.unit}\n"
+                        f"status: {f.status.name}"
+                    ),
+                    on_click=(
+                        (lambda _, k=f.key: on_select(k))
+                        if is_implemented else None
+                    ),
+                ),
+            )
+        rows.append(ft.Row(controls=cells, spacing=2))
+
+    return ft.Column(spacing=2, controls=rows)
+
+
 def _layer_card(field, *, is_selected: bool, on_pick) -> ft.Control:
     """Windy-style chip: small gradient swatch + label + unit, all
     clickable. Selected state shows a primary-coloured border."""
@@ -1829,10 +1959,24 @@ def MapView(settings: UserSettings, fetch=None):
             ),
         )
 
-    # Group by surface vs pressure-level for readability.
-    surface_fields = [f for f in DATA_FIELDS if f.level is None and not f.key.startswith("thickness") and not f.key.startswith("theta")]
-    pressure_fields = [f for f in DATA_FIELDS if f.level is not None]
-    derived_fields = [f for f in DATA_FIELDS if f.key.startswith("thickness") or f.key.startswith("theta")]
+    # Hierarchical grouping: surface flat-list, pressure-level matrix
+    # (variable × level), derived flat-list.
+    surface_fields = [
+        f for f in DATA_FIELDS
+        if f.level is None
+        and not f.key.startswith("thickness")
+        and not f.key.startswith("theta")
+    ]
+    derived_fields = [
+        f for f in DATA_FIELDS
+        if f.key.startswith("thickness") or f.key.startswith("theta")
+    ]
+    # Pressure-level fields excluding derived (theta_e_850 has level=850
+    # but belongs in 'derived' for the UI grouping).
+    pressure_fields = [
+        f for f in DATA_FIELDS
+        if f.level is not None and f not in derived_fields
+    ]
 
     data_sections: list[ft.Control] = []
     if surface_fields:
@@ -1851,7 +1995,14 @@ def MapView(settings: UserSettings, fetch=None):
                 color=ft.Colors.GREY,
             )
         )
-        data_sections.extend(_build_field_card(f) for f in pressure_fields)
+        data_sections.append(ft.Text(
+            "種類 (行) × 気圧面 (列) の表から選択します。"
+            " 緑 = 実装済 (取得可)、橙 = 計画中 (未対応)。",
+            size=10, color=ft.Colors.GREY, italic=True,
+        ))
+        data_sections.append(_build_pressure_matrix(
+            pressure_fields, data_field_key, _select_data_field,
+        ))
         data_sections.append(ft.Container(height=4))
     if derived_fields:
         data_sections.append(
