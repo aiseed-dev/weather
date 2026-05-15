@@ -803,6 +803,102 @@ ZOS_CONFIG = ScalarLayerConfig(
 )
 
 
+# Mean wave direction (mwd) — circular 0..360°. A wraparound palette
+# of 13 stops puts identical colour at 0° and 360° so the legend reads
+# as a colour wheel. Bin edges every 30° between them.
+_MWD_BOUNDS = np.linspace(0, 360, 13, dtype=np.float32)[1:-1]
+_MWD_PALETTE = (
+    "#e74c3c",  # under (≤ 0°, wraps from north-from)
+    "#e67e22", "#f1c40f", "#a8d33b", "#27ae60",
+    "#16a085", "#1abc9c", "#3498db", "#2980b9",
+    "#8e44ad", "#9b59b6", "#c0392b", "#e74c3c",
+)
+MWD_CONFIG = ScalarLayerConfig(
+    layer_key="mwd",
+    bounds=_MWD_BOUNDS,
+    palette=_MWD_PALETTE,
+    extractor=lambda ds: _squeeze_2d(
+        np.asarray(ds["mwd"].values, dtype=np.float32),
+    ) % 360.0,
+)
+
+
+# Precipitation type (ptype) — categorical. ECMWF codes:
+# 0=none, 1=rain, 3=freezing rain, 5=snow, 6=mixed/sleet,
+# 7=wet snow, 8=ice pellets/hail. Bin edges between consecutive
+# codes; under = 0 (no precip), then one bin per category.
+_PTYPE_BOUNDS = np.array(
+    [0.5, 1.5, 4.0, 5.5, 6.5, 7.5], dtype=np.float32,
+)
+_PTYPE_PALETTE = (
+    "#1e2230",  # 0 — no precip (matches dark panel bg)
+    "#1f78b4",  # 1 — rain (blue)
+    "#9c27b0",  # 3 — freezing rain (violet, hazard)
+    "#90caf9",  # 5 — snow (pale icy blue)
+    "#80deea",  # 6 — sleet / mixed
+    "#cfd8dc",  # 7 — wet snow
+    "#e53935",  # 8 — ice pellets / hail (red, hazard)
+)
+PTYPE_CONFIG = ScalarLayerConfig(
+    layer_key="ptype",
+    bounds=_PTYPE_BOUNDS,
+    palette=_PTYPE_PALETTE,
+    extractor=_extract_value_at_level(("ptype",), level=None),
+)
+
+
+# Static fields (step=0 only). The data is the same shape as any
+# other surface raster; the renderer can't tell the difference.
+# Plumbing-wise these come along with the sfc multi-band fetch
+# whenever ECMWF includes them (typically only at step=0).
+
+# Geopotential at the surface (z): m²/s² — orography expressed as
+# gravitational potential. Realistic global range 0..650000.
+Z_SFC_CONFIG = ScalarLayerConfig(
+    layer_key="z_sfc",
+    bounds=np.linspace(0, 6e5, 21, dtype=np.float32),
+    palette=_TEMP_PALETTE,  # reuse the 22-stop diverging palette
+    extractor=_extract_value_at_level(("z",), level=None),
+)
+
+# Land-sea mask (lsm): 0..1; nominally binary but cfgrib gives floats
+# at coarsely-resolved coastlines.
+LSM_CONFIG = ScalarLayerConfig(
+    layer_key="lsm",
+    bounds=np.linspace(0.1, 0.9, 11, dtype=np.float32),
+    palette=(
+        "#1e2230", "#2a3548", "#3d4f6e", "#587294",
+        "#7a93b3", "#9aabb8", "#a6a48a", "#a89770",
+        "#a78557", "#9e6f3e", "#85572b", "#5a3a1a",
+    ),
+    extractor=_extract_value_at_level(("lsm",), level=None),
+)
+
+# Sub-grid orography stddev (sdor): metres, 0..1000
+SDOR_CONFIG = ScalarLayerConfig(
+    layer_key="sdor",
+    bounds=np.linspace(50, 1000, 11, dtype=np.float32),
+    palette=(
+        "#f4f4f4", "#e8efe2", "#cfe2c8", "#a8d3b1",
+        "#80c1a6", "#5cae9c", "#3a8fa0", "#216e9c",
+        "#16548a", "#0e3d6e", "#0a3052", "#06223a",
+    ),
+    extractor=_extract_value_at_level(("sdor",), level=None),
+)
+
+# Sub-grid orography slope (slor): dimensionless, 0..1
+SLOR_CONFIG = ScalarLayerConfig(
+    layer_key="slor",
+    bounds=np.linspace(0.05, 0.5, 11, dtype=np.float32),
+    palette=(
+        "#f4f4f4", "#e0eab2", "#c4dfba", "#a8d3c4",
+        "#84c0c8", "#5cabc8", "#3296c8", "#1b81c4",
+        "#2965b2", "#3a4a9d", "#43378e", "#3c1d7a",
+    ),
+    extractor=_extract_value_at_level(("slor",), level=None),
+)
+
+
 _SURFACE_CONFIGS: list[ScalarLayerConfig] = [
     SP_CONFIG,
     U10M_CONFIG, V10M_CONFIG, U100M_CONFIG, V100M_CONFIG,
@@ -815,6 +911,8 @@ _SURFACE_CONFIGS: list[ScalarLayerConfig] = [
     EWSS_CONFIG, NSSS_CONFIG,
     SWH_CONFIG, MP2_CONFIG, MWP_CONFIG, PP1D_CONFIG,
     SVE_CONFIG, SVN_CONFIG, SITHICK_CONFIG, ZOS_CONFIG,
+    MWD_CONFIG, PTYPE_CONFIG,
+    Z_SFC_CONFIG, LSM_CONFIG, SDOR_CONFIG, SLOR_CONFIG,
 ]
 
 

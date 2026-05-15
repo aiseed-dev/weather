@@ -1146,7 +1146,7 @@ _SURFACE_NEW: tuple[tuple[str, str, str, str, str, Status, str], ...] = (
     # (sp explicit entry above is PLANNED; promote here)
     # ── Precipitation extras ──
     ("tprate","tprate","降水率",          "Precipitation rate",    "mm/s",  Status.IMPLEMENTED, ""),
-    ("ptype", "ptype", "降水タイプ",      "Precipitation type",    "—",     Status.PLANNED,     "カテゴリカル: 0=なし,1=雨,3=凍結雨,5=雪,6=霙,7=みぞれ,8=雹"),
+    ("ptype", "ptype", "降水タイプ",      "Precipitation type",    "—",     Status.IMPLEMENTED, "離散カテゴリ: 0=なし,1=雨,3=凍結雨,5=雪,6=みぞれ,7=湿雪,8=雹"),
     ("ro",    "ro",    "流出量 (累積)",   "Runoff",                "m",     Status.IMPLEMENTED, ""),
     # ── Snow extras ──
     ("sf",    "sf",    "降雪量 (SWE)",    "Snowfall (SWE)",        "m",     Status.IMPLEMENTED, ""),
@@ -1170,17 +1170,17 @@ _SURFACE_NEW: tuple[tuple[str, str, str, str, str, Status, str], ...] = (
     ("mwp",   "mwp",   "平均波周期",      "Mean wave period",      "s",     Status.IMPLEMENTED, ""),
     ("mp2",   "mp2",   "ゼロクロス周期",  "Mean zero-crossing T",  "s",     Status.IMPLEMENTED, ""),
     ("pp1d",  "pp1d",  "ピーク波周期",    "Peak wave period",      "s",     Status.IMPLEMENTED, ""),
-    ("mwd",   "mwd",   "平均波向",        "Mean wave direction",   "deg",   Status.PLANNED,     "円形量 (0..360°) — 専用パレットが必要"),
+    ("mwd",   "mwd",   "平均波向",        "Mean wave direction",   "deg",   Status.IMPLEMENTED, "円形量 (0..360°) — 周期的 HSV パレット"),
     # ── Sea / sea-ice ──
     ("sve",   "sve",   "東向き海流",      "Eastward sea velocity", "m/s",   Status.IMPLEMENTED, ""),
     ("svn",   "svn",   "北向き海流",      "Northward sea velocity","m/s",   Status.IMPLEMENTED, ""),
     ("sithick","sithick","海氷厚",        "Sea ice thickness",     "m",     Status.IMPLEMENTED, ""),
     ("zos",   "zos",   "海面高度",        "Sea surface height",    "m",     Status.IMPLEMENTED, ""),
     # ── Static (step=0) — fetch handling differs, keep PLANNED ──
-    ("z",     "z_sfc", "ジオポテンシャル (地表)", "Geopotential (sfc)","m²/s²", Status.PLANNED, "static: step=0 only"),
-    ("lsm",   "lsm",   "海陸マスク",      "Land-sea mask",         "0..1",  Status.PLANNED,     "static"),
-    ("sdor",  "sdor",  "地形標準偏差",    "Sub-grid orog. stddev", "m",     Status.PLANNED,     "static"),
-    ("slor",  "slor",  "地形傾斜",        "Sub-grid orog. slope",  "—",     Status.PLANNED,     "static"),
+    ("z",     "z_sfc", "ジオポテンシャル (地表)", "Geopotential (sfc)","m²/s²", Status.IMPLEMENTED, "static field (step=0 のみ実値); 山岳=高,海=0"),
+    ("lsm",   "lsm",   "海陸マスク",      "Land-sea mask",         "0..1",  Status.IMPLEMENTED, "static field (0=海, 1=陸)"),
+    ("sdor",  "sdor",  "地形標準偏差",    "Sub-grid orog. stddev", "m",     Status.IMPLEMENTED, "static field (粗格子内の地形ばらつき)"),
+    ("slor",  "slor",  "地形傾斜",        "Sub-grid orog. slope",  "—",     Status.IMPLEMENTED, "static field (粗格子内の代表傾斜)"),
     # ── Currently unavailable ──
     ("t20d",  "t20d",  "20°C 等温面深さ", "Depth of 20°C isotherm","m",     Status.PLANNED,     "currently unavailable (2024-03-11 per ECMWF docs)"),
     ("sav300","sav300","300m 平均塩分",   "Avg salinity (top 300m)","psu",  Status.PLANNED,     "currently unavailable"),
