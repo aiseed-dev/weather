@@ -12,8 +12,9 @@ Skills are located in `.agents/skills/`.
 6. `climatology-analysis` — ERA5 climatology, anomalies, percentiles (the differentiator)
 7. `jma-data-access` — JMA radar + AMeDAS (Japan nowcast)
 8. `weather-rendering` — Synoptic-quality map rendering
-9. `figure-export` — Publication-ready exports with provenance
-10. `open-meteo-access` — Supporting point-forecast feature (lower priority)
+9. `chart-base-design` — Layered chart design (base / data / isoline / pill); pairs with weather-rendering for the visual-structure side
+10. `figure-export` — Publication-ready exports with provenance
+11. `open-meteo-access` — Supporting point-forecast feature (lower priority)
 
 ## Skill selection per task type
 
