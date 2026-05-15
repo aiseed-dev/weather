@@ -113,18 +113,41 @@ def _compute_steps(max_h: int, cadence_h: int) -> tuple[int, ...]:
     return tuple(sorted(set(steps)))
 
 
-def _recent_base_times(n: int = 20):
-    """Compute the last `n` synoptic cycles (00/06/12/18 UTC) ending now.
+# ECMWF Open Data retention windows. Anything older is always 404 on
+# the public mirror, so listing it would just waste HEAD requests and
+# fill the dialog with "リテンション切れ" rows the user can't act on.
+_RETENTION_LONG_DAYS = 5    # 00z / 12z (T+360h) kept ~5 days
+_RETENTION_SHORT_DAYS = 3   # 06z / 18z (T+144h) kept ~3 days
 
-    Doesn't probe the server — these are theoretical cycle stamps. Some
-    may not yet be published; the user finds out at fetch time. Listing
-    them all is more useful than guessing publication status here.
+
+def _recent_base_times():
+    """Synoptic cycles within ECMWF Open Data's retention window.
+
+    Returns cycles in descending order (newest first), filtered per
+    retention so the dialog never lists a cycle we know in advance
+    can no longer be downloaded. Long cycles get the longer window
+    because ECMWF retains them longer.
     """
     from datetime import datetime, timezone, timedelta
     now = datetime.now(tz=timezone.utc)
     cycle_hour = (now.hour // 6) * 6
     latest = now.replace(hour=cycle_hour, minute=0, second=0, microsecond=0)
-    return [latest - timedelta(hours=6 * i) for i in range(n)]
+    # Generate enough cycles to span the long retention window, then
+    # filter each one against the appropriate horizon. The +1 day of
+    # slack absorbs the publication lag so the very newest cycle
+    # (still being published) stays on the list.
+    span_cycles = (_RETENTION_LONG_DAYS + 1) * 4
+    out = []
+    for i in range(span_cycles):
+        c = latest - timedelta(hours=6 * i)
+        age_days = (now - c).total_seconds() / 86400
+        limit = (
+            _RETENTION_SHORT_DAYS if c.hour in _SHORT_CYCLE_HOURS
+            else _RETENTION_LONG_DAYS
+        )
+        if age_days <= limit:
+            out.append(c)
+    return out
 
 
 def _scan_latest_cached_cycle(settings):
@@ -1576,7 +1599,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
     # live values.
     from datetime import datetime, timezone, timedelta
 
-    _BASE_TIME_CHOICES = _recent_base_times(20)
+    _BASE_TIME_CHOICES = _recent_base_times()
     _current_base_iso = (
         manual_cycle.isoformat() if manual_cycle is not None
         else (run_time_holder.isoformat() if run_time_holder is not None else "auto")
