@@ -8,17 +8,22 @@ in the colour-only family: the surface field is too noisy /
 spatially-discontinuous for clean iso-lines, so the chart relies on
 the data palette alone.
 
+Palette is calibrated to Windy's 3-hour precipitation legend
+(1.5 / 2 / 3 / 7 / 10 / 20 / 30 mm). For ECMWF Open Data the ``tp``
+variable is *cumulative* since the run start — caller is responsible
+for differencing between consecutive steps if a 3-hour accumulation
+is what the analyst actually wants on screen.
+
 Two precipitation-specific traits the renderer handles:
 
-  * **Below-threshold transparency.** Values below 0.1 mm read as
-    'no precipitation' by JMA convention — the base map should show
-    through unchanged instead of getting a stale-faint-colour wash
-    over every dry patch.
-  * **Non-uniform palette anchors.** Precipitation is heavily
-    skewed: most pixels are 0–2 mm, a handful are 50+ mm. Anchors
-    spaced at ~log-2 cadence (0.5 / 1 / 5 / 10 / 20 / 50 / 100 / 200
-    mm) keep visible discrimination across that range without
-    needing a true log-norm transform on the continuous LUT.
+  * **Below-threshold transparency.** Values below the lowest legend
+    tick (1 mm) read as 'effectively no precipitation' — the base
+    map shows through unchanged instead of getting a stale-faint
+    colour wash everywhere it drizzled trace amounts.
+  * **Non-uniform palette anchors.** The legend ticks are placed
+    1.5, 2, 3, 7, 10, 20, 30 — sub-mm precision below 3 mm, then
+    coarse steps for the heavier bands. np.interp handles the
+    non-uniform x positions natively when sampling 256 LUT entries.
 """
 
 from __future__ import annotations
@@ -48,35 +53,34 @@ if TYPE_CHECKING:
 
 # ── Palette ─────────────────────────────────────────────────────────
 _VMIN_MM = 0.0
-_VMAX_MM = 200.0
-# Anchors at JMA / WMO bands: 0.5, 1, 5, 10, 20, 50, 100, 200 mm.
-# Non-uniform spacing (~log-2) keeps fine resolution at low values
-# (where most observations sit) and still saturates predictably at
-# extreme totals.
-_LEGEND_TICKS_MM = (0.5, 1.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0)
-# Pixels below this read as "no precipitation" — fully transparent,
-# base map shown unchanged.
-_DRY_THRESHOLD_MM = 0.1
+_VMAX_MM = 30.0
+# Windy 3-hour precipitation legend: 1.5, 2, 3, 7, 10, 20, 30 mm.
+# Note the dense sub-mm cadence at the low end and the wider gap
+# above 10 mm — operational reading wants to distinguish a light
+# shower from drizzle but treats 20+ mm as 'heavy regardless'.
+_LEGEND_TICKS_MM = (1.5, 2.0, 3.0, 7.0, 10.0, 20.0, 30.0)
+# Pixels below 1 mm (just under the lowest tick) read as "effectively
+# no precipitation" and pass through to the base map unchanged.
+_DRY_THRESHOLD_MM = 1.0
 
 
 def _build_sequential_lut() -> np.ndarray:
-    """Sequential pale-cyan → blue → green → yellow → red → purple.
+    """Sequential pale-cyan → blue → green → yellow → orange → magenta.
 
-    Anchors are at the JMA precipitation tick values. Linear
-    interpolation between them in the [0, vmax] range, then sampled
-    256 times for the uint8 LUT. Because the anchor xs are spaced
-    non-uniformly, np.interp does the right thing without us having
-    to switch to a log-norm transform on the data side.
+    Anchors line up with the Windy legend tick values. Linear
+    interpolation between them, then sampled 256 times for the uint8
+    LUT. Anchor RGB values are first-cut approximations of Windy's
+    palette read from the screenshot the user shared on 2026-05-15;
+    expect them to drift as the calibration converges.
     """
     anchors: list[tuple[float, tuple[int, int, int]]] = [
-        (0.5,   (200, 230, 250)),   # very pale cyan
-        (1.0,   (165, 215, 240)),   # pale cyan
-        (5.0,   (100, 175, 215)),   # mid blue
-        (10.0,  (50, 125, 200)),    # deeper blue
-        (20.0,  (50, 165, 90)),     # green
-        (50.0,  (200, 200, 60)),    # yellow-green / yellow
-        (100.0, (235, 130, 50)),    # orange-red
-        (200.0, (135, 30, 95)),     # crimson-purple
+        (1.5,   (170, 220, 230)),   # pale cyan
+        (2.0,   (120, 195, 220)),   # light cyan-blue
+        (3.0,   (60, 140, 200)),    # mid blue
+        (7.0,   (60, 175, 105)),    # green
+        (10.0,  (220, 215, 75)),    # yellow
+        (20.0,  (230, 145, 55)),    # orange
+        (30.0,  (190, 80, 140)),    # magenta-pink
     ]
     xs = np.array(
         [(v - _VMIN_MM) / (_VMAX_MM - _VMIN_MM) for v, _ in anchors],
