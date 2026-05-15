@@ -189,23 +189,37 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
     apply_coastlines(rgb, region.key)
 
     # ── Isobar overlay ───────────────────────────────────────────────
-    # contourpy returns each contour level as a list of (N, 2) float
-    # arrays in (x, y) pixel coordinates. We feed it grid-index axes
-    # so the output is already in image-pixel space.
-    x_pix = np.arange(w, dtype=np.float32)
-    y_pix = np.arange(h, dtype=np.float32)
-    cgen = contourpy.contour_generator(x=x_pix, y=y_pix, z=msl_hpa)
+    # The global frame at the native 0.25° grid (1440×721 = ~1M cells)
+    # makes contourpy walk ~2,400 segments across 31 levels — ~150 ms
+    # in pure C time, our floor at full detail. For the wide-zoom
+    # GLOBAL view those thin 4-hPa lines collide with each other
+    # anyway, so we trade detail there for speed:
+    #   * downsample MSL 2× per axis (1M cells → 260k) → 4× fewer
+    #     cells for contourpy to traverse
+    #   * widen the thin-isobar interval 4 hPa → 8 hPa (still bold
+    #     every 20 hPa) → half the contour calls
+    # Regional crops are already small enough that this is wasted, so
+    # they keep the full 4-hPa fan at native resolution.
+    if region.key == "global":
+        msl_contour = msl_hpa[::2, ::2]
+        x_pix = np.arange(msl_contour.shape[1], dtype=np.float32) * 2.0
+        y_pix = np.arange(msl_contour.shape[0], dtype=np.float32) * 2.0
+        thin_step = 8
+    else:
+        msl_contour = msl_hpa
+        x_pix = np.arange(w, dtype=np.float32)
+        y_pix = np.arange(h, dtype=np.float32)
+        thin_step = 4
+    cgen = contourpy.contour_generator(x=x_pix, y=y_pix, z=msl_contour)
 
     img = Image.fromarray(rgb, mode="RGB")
     draw = ImageDraw.Draw(img)
 
-    # Thin isobars at 4 hPa, bold every 20 hPa — synoptic convention.
-    # Per-polyline Python overhead dominates the cost on the global
-    # frame (~2400 segments). contourpy hands us float32 (N, 2) arrays;
-    # ``.astype(int).tolist()`` materialises them as int pixel coords
-    # in one C call instead of the per-element ``float(p[0])`` loop
-    # the earlier comprehension forced. Saves ~70 ms on GLOBAL.
-    for level in range(940, 1064, 4):
+    # ``.astype(int).tolist()`` materialises each (N,2) float32 polyline
+    # as pixel coords in one C call instead of a per-vertex Python
+    # ``float(p[0])`` loop. Saves ~70 ms on GLOBAL on top of the
+    # downsample.
+    for level in range(940, 1064, thin_step):
         is_bold = (level % 20 == 0)
         width = 2 if is_bold else 1
         for line in cgen.lines(float(level)):
