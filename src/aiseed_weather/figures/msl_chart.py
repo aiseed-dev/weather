@@ -106,7 +106,7 @@ def _palette_rgb_for(value_hpa: float) -> tuple[int, int, int]:
 # of 0.70 means the final pixel is 30% data + 70% base — the data
 # colour reads as a clear tint while the base map and coastline
 # stay visibly in front.
-_DATA_TRANSPARENCY = 0.70
+_DATA_TRANSPARENCY = 1.0
 
 
 # ── Pill label font ─────────────────────────────────────────────────
