@@ -195,17 +195,8 @@ _LONG_CYCLE_HORIZON_H = 360
 _SHORT_CYCLE_HORIZON_H = 144
 _LONG_CYCLE_HOURS = (0, 12)
 _SHORT_CYCLE_HOURS = (6, 18)
-# Conservative estimates of how long after the nominal cycle time
-# the full run becomes available on the public mirror. The ECMWF
-# Open Data README states "between 7 and 9 hours, depending on
-# forecasting system and time step" — i.e. the long-range tail of
-# the run lands later than the early steps. Empirical observation
-# also shows day-to-day variation (May 14 00z run was scheduled
-# +7h34m; May 15 00z run was still 404 at +11h58m). So we go to
-# the upper bound of the documented range to avoid showing a
-# stale "公開予定 07:30" hours after the actual time has passed.
-_PUBLICATION_LAG_LONG_H = 9.0   # 00z / 12z atomic publication
-_PUBLICATION_LAG_SHORT_H = 7.5  # 06z / 18z atomic publication
+_PUBLICATION_LAG_LONG_H = 7.5   # 00z / 12z atomic publication
+_PUBLICATION_LAG_SHORT_H = 6.5  # 06z / 18z atomic publication
 
 
 def _is_short_cycle(cycle_dt) -> bool:
@@ -1107,38 +1098,25 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
 
     # First-run bootstrap: if the disk had no cache to load and the
     # mount-time probe has landed at least one verified cycle, set
-    # run_time_holder to that cycle.
-    #
-    # Prefers LONG cycles (00z/12z) over short ones (06z/18z) because
-    # the long cycles carry the full T+360h horizon. A naive max()
-    # over all verified cycles would pick e.g. 18z (short, T+144h)
-    # when the latest 00z is still being published — leaving the user
-    # locked into a short horizon by default. Falls back to "any
-    # verified" only if no long cycle is verified.
+    # run_time_holder to the newest verified cycle. Short cycles
+    # (06z/18z, T+144h) are fine here — the stitch_plan transparently
+    # extends past their horizon by pulling from the prior 00z/12z.
     def _bootstrap_run_time_from_probe():
         if run_time_holder is not None:
             return
         if not cycle_check_results:
             return
         from datetime import datetime as _dt
-        verified_long = []
-        verified_any = []
+        verified = []
         for iso, ok in cycle_check_results.items():
             if not ok:
                 continue
             try:
-                c = _dt.fromisoformat(iso)
+                verified.append(_dt.fromisoformat(iso))
             except ValueError:
-                continue
-            verified_any.append(c)
-            if c.hour in _LONG_CYCLE_HOURS:
-                verified_long.append(c)
-        picked = (
-            max(verified_long) if verified_long
-            else (max(verified_any) if verified_any else None)
-        )
-        if picked is not None:
-            set_run_time_holder(picked)
+                pass
+        if verified:
+            set_run_time_holder(max(verified))
     ft.use_effect(
         _bootstrap_run_time_from_probe,
         [cycle_check_results, run_time_holder],
@@ -1730,8 +1708,8 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         ft.Radio(
             value="auto",
             label=(
-                "Auto: 全予報範囲が公開済みの最新 base time を自動選択 "
-                "(常に 00z/12z を選びます; 推奨)"
+                "Auto: 公開済みの最新 base time を自動選択 "
+                "(06z/18z の場合は前 00z/12z で T+144h 以降を延長; 推奨)"
             ),
         ),
     ] + [
@@ -2016,17 +1994,12 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
 
     # Newer-cycle detection: any cycle the mount-time probe verified
     # as published, strictly newer than what we're currently showing.
-    # Triggers the "更新 / Update" button in the GPV card.
-    #
-    # When the current cycle is LONG (00z/12z, T+360h), only suggest
-    # an upgrade to another long cycle — a switch from "20260514 12z
-    # (long)" to "20260514 18z (short, T+144h)" would silently chop
-    # the forecast horizon in half. When the current is short, any
-    # newer cycle is a fair upgrade.
+    # Triggers the "更新 / Update" button in the GPV card. Short
+    # cycles (06z/18z) qualify too — stitching extends them past
+    # T+144h via the prior 00z/12z when the user crosses the boundary.
     from datetime import datetime as _dt
     newer_cycle = None
     if run_time_holder is not None and cycle_check_results:
-        current_is_long = run_time_holder.hour in _LONG_CYCLE_HOURS
         verified_newer = []
         for iso, ok in cycle_check_results.items():
             if not ok:
@@ -2035,12 +2008,8 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                 c = _dt.fromisoformat(iso)
             except ValueError:
                 continue
-            if c <= run_time_holder:
-                continue
-            if current_is_long and c.hour not in _LONG_CYCLE_HOURS:
-                # Don't propose a horizon downgrade.
-                continue
-            verified_newer.append(c)
+            if c > run_time_holder:
+                verified_newer.append(c)
         if verified_newer:
             newer_cycle = max(verified_newer)
 
