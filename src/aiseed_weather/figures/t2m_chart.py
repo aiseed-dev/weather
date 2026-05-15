@@ -37,23 +37,46 @@ if TYPE_CHECKING:
     from aiseed_weather.figures.regions import Region
 
 
-# Bin edges in °C; LUT has len(bounds)+1 = 42 entries (under, 41 bins,
-# over). Diverging deep-purple → cool blue → white → red → dark-red.
-T2M_BOUNDS_C: np.ndarray = np.arange(-40, 42, 2, dtype=np.float32)
+# Bin edges in °C at 4 °C resolution. arange(-40, 44, 4) gives 21
+# edges → 22 bins counting under (<-40) and over (>40). Earlier
+# versions used a 2 °C grid but the palette only had 24 colour stops,
+# so digitize indices past ~bin 25 all aliased to the same dark-red
+# "over" colour — every value above ~8 °C rendered identical. The
+# 4 °C grid lets a hand-tuned palette of exactly 22 entries align
+# one-to-one with the bins.
+T2M_BOUNDS_C: np.ndarray = np.arange(-40, 44, 4, dtype=np.float32)
 
+# 22 entries = under + 20 internal bins + over. Stops chosen so the
+# freezing line falls on a near-white/cream cell and the warm bins
+# climb through yellow → orange → red → dark red, à la Windy.
 _T2M_PALETTE: list[str] = [
-    "#1a0030",  # under: -∞..-40
-    "#2c0a4d", "#3c1d7a", "#43378e", "#3a4a9d", "#2965b2",
-    "#1b81c4", "#3296c8", "#5cabc8", "#84c0c8", "#a8d3c4",
-    "#c4dfba", "#e0eab2", "#f5f0a8", "#f9e088", "#facb68",
-    "#f9b04e", "#f5933a", "#ed7530", "#de5526", "#c93920",
-    "#a82418", "#82130f", "#580808", "#3c0404",
+    "#1a0030",  # under:  <-40
+    "#27093f",  # -40..-36
+    "#341a5f",  # -36..-32
+    "#412b7f",  # -32..-28
+    "#3c428f",  # -28..-24
+    "#2f5aa3",  # -24..-20
+    "#2b7ab3",  # -20..-16
+    "#2f93c3",  # -16..-12
+    "#52a8d0",  # -12..-8
+    "#80c0d8",  #  -8..-4
+    "#b8d8d0",  #  -4.. 0
+    "#e8e8b8",  #   0.. 4   (freezing line on the warm side)
+    "#d8e88c",  #   4.. 8
+    "#c4e060",  #   8..12
+    "#f5db58",  #  12..16
+    "#f9b840",  #  16..20
+    "#f59030",  #  20..24
+    "#ec6c28",  #  24..28
+    "#d84820",  #  28..32
+    "#bb2418",  #  32..36
+    "#8a1414",  #  36..40
+    "#1f0000",  # over:   >40
 ]
-# Pad to len(bounds)+1 = 42 entries (one for each bin incl. over-range).
-while len(_T2M_PALETTE) < len(T2M_BOUNDS_C) + 1:
-    _T2M_PALETTE.append(_T2M_PALETTE[-1])
-_T2M_PALETTE.append("#1f0000")  # over: 40..+∞
-_T2M_LUT: np.ndarray = palette_to_lut(_T2M_PALETTE[: len(T2M_BOUNDS_C) + 1])
+assert len(_T2M_PALETTE) == len(T2M_BOUNDS_C) + 1, (
+    f"palette={len(_T2M_PALETTE)} vs bins={len(T2M_BOUNDS_C) + 1}"
+)
+_T2M_LUT: np.ndarray = palette_to_lut(_T2M_PALETTE)
 
 
 def _extract_t2m_c(ds: "xr.Dataset") -> np.ndarray:

@@ -1066,6 +1066,13 @@ def MapView(settings: UserSettings, fetch=None):
             display_step, (cur_primary, display_step),
         )
         if src_cycle is None or not is_grib_cached(settings, src_cycle, src_step, param=cur_field.ecmwf_param):
+            # No GRIB for this layer/cycle yet. If we're failing to
+            # render the *visible* step, clear the on-screen image so
+            # the user doesn't keep staring at the previous layer's
+            # PNG paired with the new layer's colorbar.
+            if display_step == step_hours:
+                set_image_bytes(None)
+                set_state("idle")
             return  # GRIB not yet downloaded
         try:
             service = ForecastService(settings, override_source=cur_source)
@@ -3092,7 +3099,8 @@ def MapView(settings: UserSettings, fetch=None):
                 ft.Container(
                     padding=ft.Padding.symmetric(horizontal=16, vertical=8),
                     content=ft.Text(
-                        f"MSL · ECMWF IFS · {run_label}",
+                        f"{selected_field.label_ja}{selected_field.level_suffix()}"
+                        f" · {selected_product.display_name()} · {run_label}",
                         size=15, weight=ft.FontWeight.BOLD,
                     ),
                 ),

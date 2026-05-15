@@ -124,21 +124,40 @@ def _extract_kelvin_as_celsius(*names: str):
     return _fn
 
 
-# Dewpoint: same -40..+40 bins as t2m so the eye doesn't have to
-# re-calibrate when toggling between the two.
-_TEMP_BOUNDS = np.arange(-40, 42, 2, dtype=np.float32)
+# Shared temperature bin grid for d2m / skt. 4 °C resolution gives
+# 22 bins (under + 20 internal + over), and the palette below has
+# exactly that many entries so each bin gets a distinct colour. An
+# earlier 2 °C grid was paired with only 25 palette colours, so
+# digitize indices past ~bin 25 all aliased to the same dark-red
+# "over" colour — every value above ~8 °C rendered identical.
+_TEMP_BOUNDS = np.arange(-40, 44, 4, dtype=np.float32)
 _TEMP_PALETTE = (
-    "#1a0030",
-    "#2c0a4d", "#3c1d7a", "#43378e", "#3a4a9d", "#2965b2",
-    "#1b81c4", "#3296c8", "#5cabc8", "#84c0c8", "#a8d3c4",
-    "#c4dfba", "#e0eab2", "#f5f0a8", "#f9e088", "#facb68",
-    "#f9b04e", "#f5933a", "#ed7530", "#de5526", "#c93920",
-    "#a82418", "#82130f", "#580808", "#3c0404",
+    "#1a0030",  # under:  <-40
+    "#27093f",  # -40..-36
+    "#341a5f",  # -36..-32
+    "#412b7f",  # -32..-28
+    "#3c428f",  # -28..-24
+    "#2f5aa3",  # -24..-20
+    "#2b7ab3",  # -20..-16
+    "#2f93c3",  # -16..-12
+    "#52a8d0",  # -12..-8
+    "#80c0d8",  #  -8..-4
+    "#b8d8d0",  #  -4.. 0
+    "#e8e8b8",  #   0.. 4
+    "#d8e88c",  #   4.. 8
+    "#c4e060",  #   8..12
+    "#f5db58",  #  12..16
+    "#f9b840",  #  16..20
+    "#f59030",  #  20..24
+    "#ec6c28",  #  24..28
+    "#d84820",  #  28..32
+    "#bb2418",  #  32..36
+    "#8a1414",  #  36..40
+    "#1f0000",  # over:   >40
 )
-# Pad to len(bounds)+1 = 42 entries
-_TEMP_PALETTE = _TEMP_PALETTE + ("#3c0404",) * (
-    len(_TEMP_BOUNDS) + 1 - len(_TEMP_PALETTE) - 1
-) + ("#1f0000",)
+assert len(_TEMP_PALETTE) == len(_TEMP_BOUNDS) + 1, (
+    f"palette={len(_TEMP_PALETTE)} vs bins={len(_TEMP_BOUNDS) + 1}"
+)
 
 
 D2M_CONFIG = ScalarLayerConfig(
