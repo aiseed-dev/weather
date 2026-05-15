@@ -60,6 +60,43 @@ def config_path() -> Path:
     return Path(user_config_dir("aiseed-weather")) / "config.toml"
 
 
+def window_state_path() -> Path:
+    """Sidecar JSON with the last-known window geometry.
+
+    Kept separate from config.toml because (a) it mutates on every
+    resize/move while config.toml is hand-edited and stable;
+    (b) JSON is the natural format for a small machine-managed dict.
+    Path: ``{user_config_dir}/window.json``.
+    """
+    return Path(user_config_dir("aiseed-weather")) / "window.json"
+
+
+def load_window_state() -> dict:
+    """Return the persisted window geometry, or {} if no file exists
+    or it's unreadable. Caller applies sensible defaults."""
+    import json
+
+    path = window_state_path()
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_window_state(state: dict) -> None:
+    """Persist window geometry. Atomic write-then-rename so a crash
+    mid-write doesn't leave a truncated file."""
+    import json
+
+    path = window_state_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
 def resolved_data_dir(settings: UserSettings) -> Path:
     """The on-disk root for caches and downloads.
 

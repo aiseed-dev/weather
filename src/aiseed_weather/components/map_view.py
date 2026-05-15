@@ -97,6 +97,16 @@ _LAYER_GRADIENT_STOPS: dict[str, list[str]] = {
     ],
 }
 
+# Legend tick labels per layer — Windy-style colorbar shown below the
+# chart. (min, mid, max, unit). Mid is the climatological centre or
+# the most informative midpoint, not necessarily (min+max)/2.
+_LAYER_LEGEND_TICKS: dict[str, tuple[str, str, str, str]] = {
+    "msl":     ("940",  "1013", "1064", "hPa"),
+    "t2m":     ("-40",  "0",    "+40",  "°C"),
+    "tp":      ("0.1",  "10",   "200",  "mm"),
+    "wind10m": ("0",    "15",   "60",   "m/s"),
+}
+
 # Choices we expose in the Data dialog. Horizon caps where the animation
 # stops; cadence is the spacing between frames. ECMWF only publishes 6h
 # after T+144h, so a 3h cadence past 144h actually yields 6h there.
@@ -391,6 +401,53 @@ def _layer_card(field, *, is_selected: bool, on_pick) -> ft.Control:
                 ft.Text(
                     field.unit, size=9, color=ft.Colors.GREY,
                 ),
+            ],
+        ),
+    )
+
+
+def _layer_legend(field) -> ft.Control:
+    """Horizontal colorbar + min / mid / max tick labels for the
+    chart's current layer. Big-screen UX — small enough to sit at
+    the bottom of the chart without crowding the timeline."""
+    stops = _LAYER_GRADIENT_STOPS.get(field.key, ["#888888", "#cccccc"])
+    ticks = _LAYER_LEGEND_TICKS.get(field.key, ("", "", "", field.unit))
+    lo, mid, hi, unit = ticks
+    bar_w = 280
+    return ft.Container(
+        padding=ft.Padding.symmetric(horizontal=12, vertical=4),
+        content=ft.Row(
+            alignment=ft.MainAxisAlignment.CENTER,
+            spacing=8,
+            controls=[
+                ft.Text(
+                    field.label_ja + field.level_suffix(),
+                    size=11, color=ft.Colors.GREY,
+                ),
+                ft.Column(
+                    spacing=2,
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    controls=[
+                        ft.Container(
+                            width=bar_w, height=10, border_radius=2,
+                            gradient=ft.LinearGradient(
+                                begin=ft.alignment.center_left,
+                                end=ft.alignment.center_right,
+                                colors=stops,
+                            ),
+                        ),
+                        ft.Row(
+                            width=bar_w,
+                            alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                            controls=[
+                                ft.Text(lo, size=9, color=ft.Colors.GREY),
+                                ft.Text(mid, size=9, color=ft.Colors.GREY),
+                                ft.Text(hi, size=9, color=ft.Colors.GREY),
+                            ],
+                        ),
+                    ],
+                ),
+                ft.Text(unit, size=11, color=ft.Colors.GREY),
             ],
         ),
     )
@@ -2717,6 +2774,8 @@ def MapView(settings: UserSettings, fetch=None):
                     ),
                     expand=True,
                 ),
+                # Windy-style legend strip: gradient + min / mid / max.
+                _layer_legend(selected_field),
                 ft.Container(
                     padding=ft.Padding.symmetric(horizontal=8, vertical=0),
                     content=timeline,
