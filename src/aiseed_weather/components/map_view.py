@@ -281,6 +281,24 @@ def MapView(settings: UserSettings):
     # can read it back even though both closures are recreated every
     # render.
     anim_task_ref, _ = ft.use_state(lambda: {"task": None})
+    # Background acquisition (download) lifecycle. The download loop
+    # runs independently of the view: changing region or layer does
+    # NOT cancel it; only the explicit Stop button does. The shared
+    # mutable cancel_event lets us tell the loop to wind down without
+    # a hard cancel (which can leave half-written files).
+    download_task_ref, _ = ft.use_state(
+        lambda: {"task": None, "cancel_event": None},
+    )
+    # Render parameters the loop should use for any frame that needs
+    # rendering. Updated every render so a region/layer change is
+    # picked up by the next iteration of the loop without restarting
+    # the download. The loop reads these via the holder rather than
+    # closure-capturing them at task launch.
+    render_params_ref, _ = ft.use_state(lambda: {})
+    download_running, set_download_running = ft.use_state(False)
+    download_progress, set_download_progress = ft.use_state(
+        lambda: {"done": 0, "total": 0}
+    )
 
     # User-facing selectors. region drives the chart projection +
     # extent; data_field_key picks which meteorological field to fetch
@@ -359,6 +377,15 @@ def MapView(settings: UserSettings):
         return source_lookup.get(
             display_step, (primary_cycle, display_step),
         )
+
+    # Refresh the render-params holder so the (independent) download
+    # loop can read the latest region/layer/cycle/source on each
+    # iteration without restarting.
+    render_params_ref["region"] = region
+    render_params_ref["data_field"] = data_field_key
+    render_params_ref["primary"] = primary_cycle
+    render_params_ref["source_lookup"] = source_lookup
+    render_params_ref["data_source_key"] = data_source_key
 
     async def _render_one(
         service,
@@ -514,97 +541,186 @@ def MapView(settings: UserSettings):
             set_error(f"{type(e).__name__}: {e}")
             set_state("error")
 
-    async def load_all_steps_and_play():
-        """Pre-fetch every step in step_options, then start animation.
+    async def _ensure_rendered(display_step: int):
+        """Render one display step from cached GRIB into the frames dict.
 
-        Stays in "ready" state throughout so the chart, slider, and label
-        stay visible. Each frame's display update happens AFTER its image
-        is rendered — the slider does not move ahead of the picture.
+        No-op if the frame is already rendered (frames[display_step]
+        exists) or if the GRIB isn't on disk yet. Reads the current
+        region/layer from render_params_ref so a region change between
+        when this was scheduled and when it runs uses the latest.
+        Updates image_bytes + run_label only if display_step matches
+        the currently-visible step.
         """
-        # Don't transition to "loading"; that would hide the image. We
-        # stay in "ready" and surface progress via the progress overlay.
+        cur_region = render_params_ref.get("region", region)
+        cur_primary = render_params_ref.get("primary", primary_cycle)
+        cur_lookup = render_params_ref.get("source_lookup", source_lookup)
+        cur_source = render_params_ref.get("data_source_key", data_source_key)
+        if display_step in frames:
+            return
+        src_cycle, src_step = cur_lookup.get(
+            display_step, (cur_primary, display_step),
+        )
+        if src_cycle is None or not is_grib_cached(settings, src_cycle, src_step):
+            return  # GRIB not yet downloaded
+        try:
+            service = ForecastService(settings, override_source=cur_source)
+        except ForecastDisabledError:
+            return
+        req = ForecastRequest(
+            run_time=src_cycle, step_hours=src_step, param="msl",
+        )
+        try:
+            ds = await service.decode(req)
+        except FileNotFoundError:
+            return
+        if cur_primary is not None and src_cycle == cur_primary:
+            label = (
+                f"{cur_primary:%Y%m%d %Hz} IFS · {_step_label(display_step)}"
+            )
+        else:
+            label = (
+                f"{cur_primary:%Y%m%d %Hz} IFS "
+                f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
+            )
+        try:
+            fig = await asyncio.to_thread(
+                render_msl, ds, region=cur_region, run_id=label,
+            )
+            png = await asyncio.to_thread(_figure_to_png_bytes, fig)
+        except Exception:
+            logger.exception("Render of step=%dh failed", display_step)
+            return
+        # Functional update so we don't clobber concurrent renders.
+        set_frames(lambda prev: {**prev, display_step: png})
+        # Only swap the visible image if this is still the current step.
+        if display_step == step_hours:
+            set_image_bytes(png)
+            set_run_label(label)
+
+    async def _download_loop(cycle, plan, cancel_event):
+        """Pure background download. No rendering inside the loop —
+        rendering is on demand via _ensure_rendered. Region/layer
+        changes during the loop don't restart it.
+        """
+        set_download_running(True)
         set_error(None)
-        set_is_playing(False)
+        try:
+            service = ForecastService(settings, override_source=data_source_key)
+        except ForecastDisabledError as e:
+            set_error(str(e))
+            set_state("disabled")
+            set_download_running(False)
+            return
+        total = len(plan)
+        set_download_progress({"done": 0, "total": total})
+        try:
+            for i, (display_step, src_cycle, src_step) in enumerate(plan):
+                if cancel_event.is_set():
+                    logger.info(
+                        "Download loop cancelled at frame %d/%d", i, total,
+                    )
+                    break
+                req = ForecastRequest(
+                    run_time=src_cycle, step_hours=src_step, param="msl",
+                )
+                hit_cache = service.is_cached(req)
+                ext_tag = (
+                    f" [ext {src_cycle:%Hz}]" if src_cycle != cycle else ""
+                )
+                if hit_cache:
+                    set_progress(
+                        f"Cache check {i + 1}/{total} · "
+                        f"{_step_label(display_step)}{ext_tag}"
+                    )
+                else:
+                    set_progress(
+                        f"DL {i + 1}/{total} · "
+                        f"{_step_label(display_step)}{ext_tag}…"
+                    )
+                    try:
+                        await service.download(req)
+                    except Exception:
+                        logger.exception(
+                            "Download of step=%dh (src=%s/%dh) failed",
+                            display_step, src_cycle, src_step,
+                        )
+                        # Don't abort the whole loop on one failure — the
+                        # next iteration may succeed and the failed step
+                        # is reflected as "未取得" in the cache bar.
+                        continue
+                    if not cancel_event.is_set() and i + 1 < total:
+                        await asyncio.sleep(PRELOAD_SPACING_SEC)
+                set_download_progress(
+                    lambda prev, k=i + 1: {**prev, "done": k},
+                )
+                # Render this step immediately if it's the visible one,
+                # so the user sees their selected frame come alive as
+                # soon as the bytes land.
+                if display_step == step_hours:
+                    await _ensure_rendered(display_step)
+        finally:
+            set_download_running(False)
+            set_progress("")
+
+    def start_download():
+        # Cancel any previous download first.
+        stop_download()
+        if primary_cycle is None:
+            # We don't have a cycle yet — kick off probe + download.
+            ft.context.page.run_task(_probe_then_download)
+            return
+        cancel_event = asyncio.Event()
+        plan = _stitch_plan(primary_cycle, max_step_h, cadence_h)
+        task = ft.context.page.run_task(
+            _download_loop, primary_cycle, plan, cancel_event,
+        )
+        download_task_ref["task"] = task
+        download_task_ref["cancel_event"] = cancel_event
+
+    def stop_download():
+        ev = download_task_ref.get("cancel_event")
+        if ev is not None:
+            ev.set()
+        task = download_task_ref.get("task")
+        if task is not None and not task.done():
+            task.cancel()
+        download_task_ref["task"] = None
+        download_task_ref["cancel_event"] = None
+        set_download_running(False)
+
+    async def _probe_then_download():
         try:
             service = ForecastService(settings, override_source=data_source_key)
         except ForecastDisabledError as e:
             set_error(str(e))
             set_state("disabled")
             return
+        run_time, _ = await _resolve_run_time(service, force=False)
+        set_run_time_holder(run_time)
+        # Build plan against the just-probed cycle (render-scope plan
+        # was empty until run_time_holder was set).
+        plan = _stitch_plan(run_time, max_step_h, cadence_h)
+        cancel_event = asyncio.Event()
+        download_task_ref["cancel_event"] = cancel_event
+        download_task_ref["task"] = None
+        await _download_loop(run_time, plan, cancel_event)
 
-        try:
-            run_time, _ = await _resolve_run_time(service, force=False)
-            # New cycle → drop the dict so half-cached old-run frames
-            # don't get mixed in.
-            if run_time_holder is not None and run_time != run_time_holder:
-                set_frames({})
-                new_frames = {}
-            else:
-                new_frames = dict(frames)
-            set_run_time_holder(run_time)
-
-            # Build the plan against the (possibly newly probed) run_time.
-            # source_lookup from the render scope might be stale if
-            # primary_cycle was None then.
-            local_plan = _stitch_plan(run_time, max_step_h, cadence_h)
-            total = len(local_plan)
-            local_steps = tuple(p[0] for p in local_plan)
-
-            for i, (display_step, src_cycle, src_step) in enumerate(local_plan):
-                if display_step in new_frames:
-                    # Already loaded — sweep through visually so the user
-                    # sees the timeline progress for cached frames too.
-                    set_step_hours(display_step)
-                    set_image_bytes(new_frames[display_step])
-                    set_run_label(
-                        f"{run_time:%Y%m%d %Hz} IFS · {_step_label(display_step)}"
-                        + (
-                            f" + {src_cycle:%Hz} ext"
-                            if src_cycle != run_time else ""
-                        )
-                    )
-                    continue
-                req = ForecastRequest(
-                    run_time=src_cycle, step_hours=src_step, param="msl",
-                )
-                hit_cache = service.is_cached(req)
-                ext_tag = (
-                    f" [ext {src_cycle:%Hz}]" if src_cycle != run_time else ""
-                )
-                set_progress(
-                    f"Loading frame {i + 1}/{total} · "
-                    f"{_step_label(display_step)}{ext_tag}"
-                    f"{' (cached)' if hit_cache else ''}…"
-                )
-                # _render_step uses _source_for via the render-scope
-                # source_lookup, which is correct for the COMMITTED
-                # primary_cycle. Inside this loop, run_time may differ
-                # if we just probed a new cycle. Call _render_step with
-                # the source we resolved locally instead.
-                png = await _render_one(
-                    service, src_cycle, src_step, region,
-                    display_step=display_step, primary=run_time,
-                )
-                new_frames[display_step] = png
-                set_frames(dict(new_frames))
-                set_step_hours(display_step)
-                set_image_bytes(png)
-                set_run_label(
-                    f"{run_time:%Y%m%d %Hz} IFS · {_step_label(display_step)}"
-                    + (
-                        f" + {src_cycle:%Y%m%d %Hz} ext"
-                        if src_cycle != run_time else ""
-                    )
-                )
-                if not hit_cache and i + 1 < total:
-                    await asyncio.sleep(PRELOAD_SPACING_SEC)
-
-            set_progress("")
-            set_is_playing(True)
-        except Exception as e:
-            logger.exception("Map view failed to preload animation frames")
-            set_error(f"{type(e).__name__}: {e}")
-            set_state("error")
+    async def load_all_steps_and_play():
+        """Compatibility shim for the old ▶ button: start the download
+        + flip is_playing once the first frame is rendered. The animation
+        engine plays through whatever frames are rendered at the time
+        of each tick — frames not yet ready are skipped silently.
+        """
+        set_is_playing(False)
+        start_download()
+        # Wait briefly for the first frame to land, then start playing.
+        # If the user's selected step isn't downloaded yet, we'll still
+        # start the loop; the tick will just stall on missing frames.
+        for _ in range(40):  # up to ~10s
+            if step_hours in frames or download_progress.get("done", 0) > 0:
+                break
+            await asyncio.sleep(0.25)
+        set_is_playing(True)
 
     async def _advance_one_frame():
         """One animation tick: sleep, then advance to next step."""
@@ -653,6 +769,18 @@ def MapView(settings: UserSettings):
         _animation_cleanup,
     )
 
+    # When the visible step or the render params change, ensure the
+    # currently-displayed frame matches. Region/layer change ↔ frames
+    # dict cleared elsewhere; this kicks the rendering for the visible
+    # step from disk if it's there. No-op if the GRIB isn't downloaded.
+    def _maybe_render_visible():
+        ft.context.page.run_task(_ensure_rendered, step_hours)
+
+    ft.use_effect(
+        _maybe_render_visible,
+        [step_hours, region, data_field_key, primary_cycle],
+    )
+
     def handle_slider_change(e):
         idx = int(e.control.value)
         new_step = step_options[idx]
@@ -686,22 +814,17 @@ def MapView(settings: UserSettings):
             ft.context.page.run_task(load, step=new_step)
 
     def apply_region(new_region: Region):
-        # Region change invalidates the rendered-PNG cache (different
-        # projection/extent → different image) but NOT the GRIB2 cache
-        # on disk. Re-rendering all 65 frames means CPU work, not network
-        # traffic, so it's fast-ish (~5 min cold render).
+        # Region change invalidates the rendered-PNG cache but NOT the
+        # GRIB2 cache on disk. The download loop (if running) is left
+        # alone — it doesn't care about region. _maybe_render_visible
+        # (effect, deps include region) re-renders the visible step
+        # from disk. Other frames are re-rendered lazily on demand.
         if new_region == region:
             set_show_region_dialog(False)
             return
         set_region(new_region)
         set_frames({})
         set_show_region_dialog(False)
-        # Re-render the currently-displayed step in the new region so
-        # the user sees the change immediately.
-        if run_time_holder is not None:
-            ft.context.page.run_task(
-                load, step=step_hours, region_=new_region, force=False,
-            )
 
     def toggle_play(_):
         if is_playing:
@@ -1419,29 +1542,83 @@ def MapView(settings: UserSettings):
     )
 
     # ----- Left: control panel -----
+    # Acquisition controls: Start always available; Stop visible only
+    # while a download is in flight. The download is independent of
+    # the view — region/layer changes don't touch it.
     if state == "error":
-        primary_action = ft.FilledButton(
-            content=ft.Text("再取得 / Retry"),
-            width=208,
-            on_click=lambda _: ft.context.page.run_task(
-                load, step=step_hours, force=True,
-            ),
+        primary_action = ft.Column(
+            spacing=4,
+            controls=[
+                ft.FilledButton(
+                    content=ft.Text("再取得 / Retry"),
+                    width=208,
+                    on_click=lambda _: ft.context.page.run_task(
+                        load, step=step_hours, force=True,
+                    ),
+                ),
+            ],
+        )
+    elif download_running:
+        primary_action = ft.Column(
+            spacing=4,
+            controls=[
+                ft.FilledTonalButton(
+                    content=ft.Text(
+                        f"停止 / Stop  ({download_progress.get('done', 0)}"
+                        f"/{download_progress.get('total', 0)})"
+                    ),
+                    width=208,
+                    icon=ft.Icons.STOP_CIRCLE,
+                    on_click=lambda _: stop_download(),
+                ),
+                ft.Text(
+                    "取得は表示と独立して進みます。"
+                    "地域・レイヤー変更で停止しません。",
+                    size=10, color=ft.Colors.GREY,
+                ),
+            ],
         )
     elif not has_image:
-        primary_action = ft.FilledButton(
-            content=ft.Text("取得 / Fetch (T+0h)"),
-            width=208,
-            disabled=(state == "loading"),
-            on_click=lambda _: ft.context.page.run_task(load, step=0),
+        primary_action = ft.Column(
+            spacing=4,
+            controls=[
+                ft.FilledButton(
+                    content=ft.Text("取得開始 / Start fetch"),
+                    width=208,
+                    icon=ft.Icons.DOWNLOAD,
+                    on_click=lambda _: start_download(),
+                ),
+                ft.FilledTonalButton(
+                    content=ft.Text("単発取得 (現 step)"),
+                    width=208,
+                    icon=ft.Icons.PHOTO,
+                    disabled=(state == "loading"),
+                    on_click=lambda _: ft.context.page.run_task(
+                        load, step=step_hours,
+                    ),
+                ),
+            ],
         )
     else:
-        primary_action = ft.FilledButton(
-            content=ft.Text("再取得 / Refresh"),
-            width=208,
-            disabled=is_working,
-            on_click=lambda _: ft.context.page.run_task(
-                load, step=step_hours, force=True,
-            ),
+        primary_action = ft.Column(
+            spacing=4,
+            controls=[
+                ft.FilledButton(
+                    content=ft.Text("取得開始 / Start fetch"),
+                    width=208,
+                    icon=ft.Icons.DOWNLOAD,
+                    on_click=lambda _: start_download(),
+                ),
+                ft.FilledTonalButton(
+                    content=ft.Text("再取得 / Refresh (現 step)"),
+                    width=208,
+                    icon=ft.Icons.REFRESH,
+                    disabled=is_working,
+                    on_click=lambda _: ft.context.page.run_task(
+                        load, step=step_hours, force=True,
+                    ),
+                ),
+            ],
         )
 
     region_dropdown = ft.Dropdown(

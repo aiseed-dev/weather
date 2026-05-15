@@ -169,6 +169,31 @@ class ForecastService:
             await asyncio.to_thread(self._download, request, path)
         return await asyncio.to_thread(self._decode, path)
 
+    async def download(self, request: ForecastRequest, *, force: bool = False) -> Path:
+        """Just download the GRIB to disk. No decode, no render.
+
+        Used by the background acquisition loop, which is decoupled
+        from rendering: rendering happens later, on demand, against
+        whatever is currently on disk for the active region/layer.
+        Returns the cached path (whether freshly downloaded or
+        already present).
+        """
+        path = self._cache_path(request)
+        if force or not path.exists() or path.stat().st_size == 0:
+            await asyncio.to_thread(self._download, request, path)
+        return path
+
+    async def decode(self, request: ForecastRequest) -> xr.Dataset:
+        """Decode an already-cached GRIB. Raises FileNotFoundError if
+        the file isn't on disk — caller should check is_cached first
+        or download() before decoding."""
+        path = self._cache_path(request)
+        if not path.exists() or path.stat().st_size == 0:
+            raise FileNotFoundError(
+                f"No cached GRIB for {request}: {path}",
+            )
+        return await asyncio.to_thread(self._decode, path)
+
     def is_cached(self, request: ForecastRequest) -> bool:
         path = self._cache_path(request)
         return path.exists() and path.stat().st_size > 0
