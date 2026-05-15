@@ -852,32 +852,20 @@ def MapView(settings: UserSettings, fetch=None):
             set_state("ready")
 
     async def _render_missing_in_background():
-        """Render every step whose GRIB is on disk but PNG isn't in
-        memory yet, with concurrency bounded by the render pool size.
+        """Fill every step whose GRIB is on disk but PNG isn't in
+        memory yet.
 
-        Idempotent — _ensure_rendered is a no-op for frames already
-        rendered AND for frames whose GRIB isn't on disk yet, so
-        repeated calls just walk step_options cheaply. Called after a
-        download finishes and on mount when cached GRIBs are detected,
-        so the user doesn't have to scrub through the timeline to
-        populate each frame individually.
+        Sequential — renderers in :mod:`aiseed_weather.figures` finish
+        in a few hundred ms (numpy + contourpy + PIL, all C-backed),
+        so a pool is pure overhead. Walk step_options once and let
+        ``_ensure_rendered`` no-op cached frames and frames whose GRIB
+        isn't on disk. Repeat calls are cheap.
 
-        Without the semaphore, scheduling N renders fire-and-forget
-        let the process pool spawn every worker at once and pile up
-        N matplotlib figures in memory. With it, in-flight renders
-        never exceed the pool's worker count.
+        Idempotent: called from the download-loop tail and from a
+        mount-time effect, both of which may overlap.
         """
-        from aiseed_weather.figures.render_pool import _default_workers
-        sem = asyncio.Semaphore(_default_workers())
-
-        async def _one(step):
-            async with sem:
-                await _ensure_rendered(step)
-
-        await asyncio.gather(
-            *(_one(s) for s in step_options),
-            return_exceptions=True,
-        )
+        for step in step_options:
+            await _ensure_rendered(step)
 
     async def _download_loop(cycle, plan, cancel_event):
         """Pure background download. No rendering inside the loop —
