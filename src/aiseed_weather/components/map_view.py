@@ -1386,23 +1386,6 @@ def MapView(settings: UserSettings, fetch=None):
         download_task_ref.current["task"] = None
         await _download_loop(run_time, plan, cancel_event)
 
-    async def load_all_steps_and_play():
-        """Compatibility shim for the old ▶ button: start the download
-        + flip is_playing once the first frame is rendered. The animation
-        engine plays through whatever frames are rendered at the time
-        of each tick — frames not yet ready are skipped silently.
-        """
-        set_is_playing(False)
-        start_download()
-        # Wait briefly for the first frame to land, then start playing.
-        # If the user's selected step isn't downloaded yet, we'll still
-        # start the loop; the tick will just stall on missing frames.
-        for _ in range(40):  # up to ~10s
-            if _get_frame(step_hours) is not None or session.progress.get("done", 0) > 0:
-                break
-            await asyncio.sleep(0.25)
-        set_is_playing(True)
-
     async def _advance_one_frame():
         """One animation tick: sleep, then advance to next step."""
         try:
@@ -1580,12 +1563,15 @@ def MapView(settings: UserSettings, fetch=None):
         if is_playing:
             set_is_playing(False)
             return
-        # Missing means "not in memory cache for current view".
-        missing = [s for s in step_options if _get_frame(s) is None]
-        if missing:
-            ft.context.page.run_task(load_all_steps_and_play)
-        else:
-            set_is_playing(True)
+        # Play only animates frames that are already in the memory
+        # cache; it does NOT trigger a download. Per the user-action-
+        # fetch skill, network requests happen only on the explicit
+        # 取得 / Fetch button — otherwise switching layer + pressing
+        # Play would surprise the user with a multi-minute fetch.
+        # Background renders fill the cache as GRIBs become available
+        # on disk, so the animation engine silently skips frames that
+        # haven't been rendered yet.
+        set_is_playing(True)
 
     # ----- Dialogs (region + time) -----
     # Local draft state so canceling the dialog doesn't mutate the
