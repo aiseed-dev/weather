@@ -23,13 +23,10 @@ Animation:
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import time
 
 import flet as ft
-import matplotlib.pyplot as plt
-from matplotlib.figure import Figure
 
 from aiseed_weather.figures.msl_chart import render_msl
 from aiseed_weather.figures.regions import (
@@ -257,13 +254,6 @@ def _valid_time_display(base_time, step_hours: int) -> str:
     return (base_time + timedelta(hours=step_hours)).strftime("%Y-%m-%d %H:%M UTC")
 
 
-def _figure_to_png_bytes(fig: Figure, *, dpi: int = 120) -> bytes:
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
-    return buf.getvalue()
-
-
 @ft.component
 def MapView(settings: UserSettings):
     state, set_state = ft.use_state("idle")  # idle | loading | ready | error | disabled
@@ -446,10 +436,9 @@ def MapView(settings: UserSettings):
                 f"{primary:%Y%m%d %Hz} IFS "
                 f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
             )
-        fig = await asyncio.to_thread(
+        return await asyncio.to_thread(
             render_msl, ds, region=region_, run_id=label,
         )
-        return await asyncio.to_thread(_figure_to_png_bytes, fig)
 
     async def _resolve_run_time(service, *, force: bool):
         """Pick the IFS cycle every frame must come from.
@@ -535,13 +524,13 @@ def MapView(settings: UserSettings):
             ds = await service.fetch(request, force=force)
             t_fetch = time.perf_counter()
             set_progress(f"Rendering chart ({region_used.label})…")
-            fig = await asyncio.to_thread(
+            # render_msl now returns PNG bytes directly (basemap cached
+            # internally per region). The savefig/encode is folded in.
+            png_bytes = await asyncio.to_thread(
                 render_msl, ds, region=region_used, run_id=label,
             )
             t_render = time.perf_counter()
-            set_progress("Encoding PNG…")
-            png_bytes = await asyncio.to_thread(_figure_to_png_bytes, fig)
-            t_encode = time.perf_counter()
+            t_encode = t_render  # encoding is rolled into render_msl now
 
             set_image_bytes(png_bytes)
             set_run_label(label)
@@ -655,10 +644,9 @@ def MapView(settings: UserSettings):
                 f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
             )
         try:
-            fig = await asyncio.to_thread(
+            png = await asyncio.to_thread(
                 render_msl, ds, region=cur_region, run_id=label,
             )
-            png = await asyncio.to_thread(_figure_to_png_bytes, fig)
         except Exception:
             logger.exception("Render of step=%dh failed", display_step)
             return
