@@ -213,6 +213,41 @@ class ForecastService:
         path = self._cache_path(request)
         return path.exists() and path.stat().st_size > 0
 
+    async def latest_run(self, *, step_hours: int, param: str) -> datetime:
+        """Return the run datetime of the most recent publicly available run
+        that contains the requested field. Probes the server.
+        """
+        run = await asyncio.to_thread(
+            self._client.latest, type="fc", step=step_hours, param=param,
+        )
+        # ecmwf-opendata returns a naive UTC datetime; attach the timezone so
+        # callers can format/compare without surprises.
+        if run.tzinfo is None:
+            run = run.replace(tzinfo=timezone.utc)
+        logger.info("ECMWF latest run for step=%s param=%s: %s", step_hours, param, run)
+        return run
+
+    def _cache_path(self, r: ForecastRequest) -> Path:
+        # Hierarchical layout so a single run gathers all its fields under
+        # one directory and many runs don't crowd a single flat folder.
+        run_dir = self._cache_dir / r.run_time.strftime("%Y%m%d") / r.run_time.strftime("%Hz")
+        run_dir.mkdir(parents=True, exist_ok=True)
+        return run_dir / f"{r.filename_part()}_{r.step_hours}h.grib2"
+
+    def _download(self, r: ForecastRequest, target: Path) -> None:
+        _verify_multiurl_patch()
+        self._client.retrieve(
+            type="fc",
+            step=r.step_hours,
+            param=r.param_list(),  # str or list[str] for multi-param
+            date=r.run_time.strftime("%Y-%m-%d"),
+            time=r.run_time.hour,
+            target=str(target),
+        )
+
+    def _decode(self, path: Path) -> xr.Dataset:
+        return xr.open_dataset(path, engine="cfgrib")
+
 
 def grib_cache_path(
     settings: UserSettings,
@@ -287,38 +322,3 @@ async def probe_cycle_complete(
             cycle_dt, last_step_h, e,
         )
         return False
-
-    async def latest_run(self, *, step_hours: int, param: str) -> datetime:
-        """Return the run datetime of the most recent publicly available run
-        that contains the requested field. Probes the server.
-        """
-        run = await asyncio.to_thread(
-            self._client.latest, type="fc", step=step_hours, param=param,
-        )
-        # ecmwf-opendata returns a naive UTC datetime; attach the timezone so
-        # callers can format/compare without surprises.
-        if run.tzinfo is None:
-            run = run.replace(tzinfo=timezone.utc)
-        logger.info("ECMWF latest run for step=%s param=%s: %s", step_hours, param, run)
-        return run
-
-    def _cache_path(self, r: ForecastRequest) -> Path:
-        # Hierarchical layout so a single run gathers all its fields under
-        # one directory and many runs don't crowd a single flat folder.
-        run_dir = self._cache_dir / r.run_time.strftime("%Y%m%d") / r.run_time.strftime("%Hz")
-        run_dir.mkdir(parents=True, exist_ok=True)
-        return run_dir / f"{r.filename_part()}_{r.step_hours}h.grib2"
-
-    def _download(self, r: ForecastRequest, target: Path) -> None:
-        _verify_multiurl_patch()
-        self._client.retrieve(
-            type="fc",
-            step=r.step_hours,
-            param=r.param_list(),  # str or list[str] for multi-param
-            date=r.run_time.strftime("%Y-%m-%d"),
-            time=r.run_time.hour,
-            target=str(target),
-        )
-
-    def _decode(self, path: Path) -> xr.Dataset:
-        return xr.open_dataset(path, engine="cfgrib")

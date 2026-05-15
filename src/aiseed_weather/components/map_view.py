@@ -1971,85 +1971,11 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         else f"全フレームを読み込んで再生 ({loaded_count}/{total_count})"
     )
 
-    # ----- Left: control panel -----
-    # Acquisition controls: Start always available; Stop visible only
-    # while a download is in flight. The download is independent of
-    # the view — region/layer changes don't touch it.
-    if state == "error":
-        primary_action = ft.Column(
-            spacing=4,
-            controls=[
-                ft.FilledButton(
-                    content=ft.Text("再取得 / Retry"),
-                    width=208,
-                    on_click=lambda _: ft.context.page.run_task(
-                        load, step=step_hours, force=True,
-                    ),
-                ),
-            ],
-        )
-    elif download_running:
-        primary_action = ft.Column(
-            spacing=4,
-            controls=[
-                ft.FilledTonalButton(
-                    content=ft.Text(
-                        f"停止 / Stop  ({download_progress.get('done', 0)}"
-                        f"/{download_progress.get('total', 0)})"
-                    ),
-                    width=208,
-                    icon=ft.Icons.STOP_CIRCLE,
-                    on_click=lambda _: stop_download(),
-                ),
-                ft.Text(
-                    "取得は表示と独立して進みます。"
-                    "地域・レイヤー変更で停止しません。",
-                    size=10, color=ft.Colors.GREY,
-                ),
-            ],
-        )
-    elif not has_image:
-        primary_action = ft.Column(
-            spacing=4,
-            controls=[
-                ft.FilledButton(
-                    content=ft.Text("取得開始 / Start fetch"),
-                    width=208,
-                    icon=ft.Icons.DOWNLOAD,
-                    on_click=lambda _: _request_fetch(),
-                ),
-                ft.FilledTonalButton(
-                    content=ft.Text("単発取得 (現 step)"),
-                    width=208,
-                    icon=ft.Icons.PHOTO,
-                    disabled=(state == "loading"),
-                    on_click=lambda _: ft.context.page.run_task(
-                        load, step=step_hours,
-                    ),
-                ),
-            ],
-        )
-    else:
-        primary_action = ft.Column(
-            spacing=4,
-            controls=[
-                ft.FilledButton(
-                    content=ft.Text("取得開始 / Start fetch"),
-                    width=208,
-                    icon=ft.Icons.DOWNLOAD,
-                    on_click=lambda _: _request_fetch(),
-                ),
-                ft.FilledTonalButton(
-                    content=ft.Text("再取得 / Refresh (現 step)"),
-                    width=208,
-                    icon=ft.Icons.REFRESH,
-                    disabled=is_working,
-                    on_click=lambda _: ft.context.page.run_task(
-                        load, step=step_hours, force=True,
-                    ),
-                ),
-            ],
-        )
+    # (Left panel previously had a "取得 / 再取得 / 停止" button block
+    # at the bottom. Removed per user direction: the fetch lifecycle
+    # is now driven from the GPV card ("GPV データ変更…" → confirm
+    # dialog) and the bottom panel ("停止 / Stop" in the tab header),
+    # so the per-view duplicate was just noise.)
 
     region_dropdown = ft.Dropdown(
         label="地域 / Region",
@@ -2395,9 +2321,6 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                     f"Lead: {_step_label(step_hours)}",
                     size=10, color=ft.Colors.GREY,
                 ),
-
-                ft.Divider(height=14),
-                primary_action,
             ],
         ),
     )
