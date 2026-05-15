@@ -119,6 +119,66 @@ land/sea and the dark coastline stay crisp through the round-
 trip — only the new line geometry benefits from the downsample
 filter.
 
+## Which variables get isolines? (physics-driven, not aesthetics)
+
+Two readability modes split the catalogue:
+
+### Colour-only (no isolines drawn)
+
+Variables whose field at the rendered resolution is **not smooth
+enough for clean iso-lines to be physically meaningful**. Drawing
+isolines on these fields produces dense tangles at the
+boundary-layer / land-sea / orography discontinuities and only
+clutters the chart.
+
+Examples:
+
+- **2 m temperature (t2m)** — diurnal heating, land-sea contrast,
+  orography, urban heat island all produce strong sub-synoptic
+  gradients. A summer-afternoon Japan chart at 2 m has ~10 °C of
+  contrast inside a few grid cells along every coastline.
+  Plotting 2 °C isotherms would draw a wall of parallel lines
+  around each shore; gaussian smoothing strong enough to suppress
+  them would also wipe out the synoptic temperature pattern.
+- **Precipitation totals**, **snow depth**, **cloud cover** — same
+  reason at the boundary layer / surface.
+
+Render these with the data overlay alone. The continuous LUT and
+the legend bar carry the value information.
+
+### Colour + isolines
+
+Variables whose field is **synoptic-scale smooth and where line
+shape carries the analysis information**: troughs, ridges, jets,
+fronts. Iso-lines here are not a decoration but the primary value
+carrier; the colour fill is supporting.
+
+Examples:
+
+- **Mean sea level pressure (msl)** — 2 hPa isobars trace the
+  synoptic pressure pattern. The surface layer's noise on pressure
+  is small relative to the 2 hPa contour interval after a σ=3
+  gaussian.
+- **Geopotential height at pressure levels (gh500, gh850, …)** —
+  every 60 gpm at 500 hPa is the synoptic convention.
+- **Upper-air temperature** (`t` at 850, 500, 250 hPa) — above the
+  boundary layer the temperature field smooths out and an 850-hPa
+  isotherm has real synoptic meaning (frontal positions, thermal
+  troughs).
+- **Wind speed at upper levels** — jet-axis lines.
+
+### How to decide for a new variable
+
+Ask: *can this field be drawn as clean iso-lines at the chosen
+contour interval after a synoptic-scale smoothing pass?* If yes,
+it's "colour + isolines". If the smoothing erases the synoptic
+pattern before it erases the noise, it's "colour-only".
+
+This is a **physics test**, not an aesthetic preference. The first
+draft of this skill called the split "what carries the value
+better" — but the deeper reason is whether the field itself is
+isoline-tractable at the rendered resolution.
+
 ## Palette construction — continuous LUT, not binned
 
 Each variable carries `(vmin, vmax, palette_family)` rather than
