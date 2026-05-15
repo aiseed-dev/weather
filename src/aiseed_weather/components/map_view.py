@@ -1881,14 +1881,54 @@ def MapView(settings: UserSettings):
             scroll=ft.ScrollMode.ADAPTIVE,
             controls=[
                 # ───────────────────────────────────────────────
-                # GPV データ (base time) — THE primary concept in this
-                # app. Commercial weather apps hide this in their
-                # backend; we show it because the whole reason this
-                # app exists is to give the expert user direct
-                # control over which forecast cycle they're reading.
+                # 1. 気象モデル / Weather model
+                # Pick this first — base time is meaningless without
+                # knowing which model's cycle we're talking about.
+                # Visually understated because most users settle on
+                # one model and rarely change.
                 # ───────────────────────────────────────────────
+                ft.Text(
+                    "気象モデル / Weather model", size=11,
+                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Text(
+                    selected_product.bilingual_label(),
+                    size=12, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Row(
+                    spacing=6,
+                    controls=[
+                        ft.Container(
+                            width=8, height=8, bgcolor=product_status_color,
+                            border_radius=4,
+                        ),
+                        ft.Text(
+                            product_status_text,
+                            size=10, color=ft.Colors.GREY,
+                        ),
+                    ],
+                ),
+                ft.Text(
+                    selected_product.spec,
+                    size=10, color=ft.Colors.GREY,
+                ),
+                ft.TextButton(
+                    content=ft.Text("モデル変更 / Change…", size=12),
+                    icon=ft.Icons.LIST_ALT,
+                    on_click=lambda _: set_show_catalog_dialog(True),
+                ),
+
+                # ───────────────────────────────────────────────
+                # 2. GPV データ (base time) — THE primary action.
+                # Commercial weather apps hide this in their backend
+                # ("always latest"); we expose it because the whole
+                # point of this app is to give the expert user direct
+                # control over which forecast cycle they're reading.
+                # Primary-coloured card so the eye lands here.
+                # ───────────────────────────────────────────────
+                ft.Divider(height=14),
                 ft.Container(
-                    padding=ft.Padding.symmetric(horizontal=4, vertical=4),
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=8),
                     border_radius=8,
                     bgcolor=ft.Colors.PRIMARY_CONTAINER,
                     content=ft.Column(
@@ -1953,42 +1993,9 @@ def MapView(settings: UserSettings):
                 ),
 
                 # ───────────────────────────────────────────────
-                # Below: configuration (which model, what to draw,
-                # where, on top of what). Less prominent visually
-                # because once set, the user rarely changes these.
+                # 3+. Display configuration. Less prominent because
+                # once set the user rarely changes these mid-session.
                 # ───────────────────────────────────────────────
-
-                ft.Divider(height=14),
-                ft.Text(
-                    "気象モデル / Weather model", size=11,
-                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Text(
-                    selected_product.bilingual_label(),
-                    size=12, weight=ft.FontWeight.BOLD,
-                ),
-                ft.Row(
-                    spacing=6,
-                    controls=[
-                        ft.Container(
-                            width=8, height=8, bgcolor=product_status_color,
-                            border_radius=4,
-                        ),
-                        ft.Text(
-                            product_status_text,
-                            size=10, color=ft.Colors.GREY,
-                        ),
-                    ],
-                ),
-                ft.Text(
-                    selected_product.spec,
-                    size=10, color=ft.Colors.GREY,
-                ),
-                ft.TextButton(
-                    content=ft.Text("モデル変更 / Change…", size=12),
-                    icon=ft.Icons.LIST_ALT,
-                    on_click=lambda _: set_show_catalog_dialog(True),
-                ),
 
                 # ── Layer: field + rendering style ──
                 ft.Divider(height=14),
