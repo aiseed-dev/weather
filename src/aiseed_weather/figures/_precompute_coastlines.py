@@ -109,7 +109,12 @@ def _rasterise_mask(
             continue
         xs = (lons - lon_min) * sx
         ys = (lat_max - lats) * sy
-        draw.line(list(zip(xs.tolist(), ys.tolist())), fill=255, width=1)
+        # width=2 — a 1 px coastline disappears on a regional chart at
+        # display sizes typical for the UI (240-pixel-wide previews
+        # downscaled further). Two pixels is the minimum that reads as
+        # a definite geographic boundary on top of the data overlay
+        # without becoming a heavy frame.
+        draw.line(list(zip(xs.tolist(), ys.tolist())), fill=255, width=2)
     return np.asarray(img, dtype=bool)
 
 
