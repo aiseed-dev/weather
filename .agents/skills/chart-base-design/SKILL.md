@@ -80,16 +80,37 @@ readability that makes the chart work.
 ## Current calibration values
 
 ```
-SEA_RGB        = #585c64
-LAND_RGB       = #767a80
-COASTLINE_RGB  = #18181c
-ISOLINE_RGB    = #ffffff
-ISOLINE_WIDTH  = 1 px (thin), 2 px (bold every N)
-DATA_ALPHA     = 0.5 (first cut — expect to tune)
-PILL_TEXT_RGB  = #ffffff
-PILL_RADIUS    = text_height / 2
-PILL_PAD_X     = 4 px
+SEA_RGB             = #585c64
+LAND_RGB            = #767a80
+COASTLINE_RGB       = #18181c
+ISOLINE_RGB         = #ffffff
+ISOLINE_WIDTH_THIN  = 1 px (at supersample resolution)
+ISOLINE_WIDTH_BOLD  = 2 px (at supersample resolution)
+ISOLINE_SUPERSAMPLE = 2  (render isolines at 2× then LANCZOS downsample
+                          → effective ~0.5 px antialiased line)
+SMOOTH_SIGMA        = 3.0  (gaussian pre-smoothing of the field in grid
+                            cells, before contouring — suppresses
+                            small-scale noise without rounding off
+                            synoptic features)
+MIN_SEGMENT_VERTICES = 30  (drop short polyline fragments that don't
+                            carry information at this scale)
+DATA_ALPHA          = 0.45
+PILL_TEXT_RGB       = #ffffff
+PILL_RADIUS         = text_height / 2
+PILL_PAD_X          = 4 px
 ```
+
+## Isoline rendering — supersample + downsample
+
+PIL's `ImageDraw.line` has a 1 px integer minimum stroke width.
+Native 1 px white lines on this chart size still read chunky.
+Rendering at 2× resolution with width=1 and downsampling with
+LANCZOS yields an antialiased ~0.5 px effective line without
+adding a dependency for a vector toolkit. The composite (base +
+data + coastline) is upsampled with NEAREST first so the gray
+land/sea and the dark coastline stay crisp through the round-
+trip — only the new line geometry benefits from the downsample
+filter.
 
 ## Palette construction — continuous LUT, not binned
 

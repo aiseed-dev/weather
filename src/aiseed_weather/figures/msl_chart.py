@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 import contourpy
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from scipy.ndimage import gaussian_filter
 
 from aiseed_weather.figures._basemap import base_map_rgb
 from aiseed_weather.figures._coastlines import apply_coastlines
@@ -123,6 +124,10 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
 
 
 _PILL_FONT = _load_font(11)
+# Supersample-scaled font so the pill stays the same visual size after
+# the final Lanczos downsample. Kept as a calibrated multiple of the
+# base font rather than re-derived each call.
+_PILL_FONT_SS = _load_font(11 * 2)
 _PILL_PAD_X = 4
 _PILL_TEXT_RGB = (255, 255, 255)
 
@@ -231,10 +236,25 @@ def _draw_pill(
 
 
 _ISOLINE_RGB = (255, 255, 255)            # white, single colour
-_ISOLINE_WIDTH_THIN = 1
-_ISOLINE_WIDTH_BOLD = 2
+# Calibration points (see skill). The pipeline renders isolines at
+# ISOLINE_SUPERSAMPLE × native resolution with width=1, then Lanczos-
+# downsamples to native — yielding an *effective* 1/SUPERSAMPLE px
+# line that reads as thin and antialiased without depending on a
+# specific drawing toolkit's stroke model.
+_ISOLINE_SUPERSAMPLE = 2
+_ISOLINE_WIDTH_THIN = 1   # at the supersample resolution
+_ISOLINE_WIDTH_BOLD = 2   # at the supersample resolution
 _THIN_INTERVAL_HPA = 2
 _BOLD_INTERVAL_HPA = 20
+# Pre-contour Gaussian smoothing. σ=3 grid cells (≈0.75° at 0.25°
+# resolution) suppresses the small-scale noise that turns 2 hPa
+# isobars into a tangle of fragments near orography and weak
+# pressure gradients, without rounding off any synoptic feature.
+_SMOOTH_SIGMA = 3.0
+# Drop polyline fragments shorter than this many contourpy vertices.
+# A 30-vertex line at the 0.25° grid is ~7.5° of arc — well above
+# the resolution where short fragments stop carrying information.
+_MIN_SEGMENT_VERTICES = 30
 
 
 def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
@@ -274,11 +294,9 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
     )
     h, w = msl_hpa.shape
 
-    # 1. base map (layer 1)
+    # 1. base map (layer 1) — sea / land only
     base = base_map_rgb(region.key)
     if base is None or base.shape != (h, w, 3):
-        # No precomputed base for this region — fall back to a flat
-        # mid-gray. Chart still renders, just without land/sea cue.
         base = np.full((h, w, 3), 110, dtype=np.uint8)
 
     # 2. data overlay (layer 2) — continuous LUT, alpha-blended
@@ -288,50 +306,62 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
     data_rgb = _LUT[(norm * 255.0).astype(np.uint8)]
     final = _alpha_blend(base, data_rgb, _DATA_ALPHA)
 
-    # Coastline stamped ON TOP of the alpha-blended composite so the
-    # line keeps its full luminance. Earlier the line lived inside
-    # base_map_rgb's RGB output and got diluted by the blend — looking
-    # near-white on screen even though _COASTLINE_RGB is near-black.
+    # 3. coastline (layer 3) — stamped ON TOP of the blend so it
+    # doesn't get diluted to a mid-tone.
     apply_coastlines(final, region.key)
 
-    # 3. isolines (layer 3) — white, single colour
-    x_pix = np.arange(w, dtype=np.float32)
-    y_pix = np.arange(h, dtype=np.float32)
-    cgen = contourpy.contour_generator(x=x_pix, y=y_pix, z=msl_hpa)
+    # 4. isolines + pills (layers 4–5) — drawn on a SUPER-SAMPLED
+    # copy. Upsample the composite with NEAREST so the gray base /
+    # coastline stay crisp, then draw white lines at width=1 in the
+    # supersample frame. A final LANCZOS downsample yields an
+    # antialiased ~0.5 px line on the native frame — visibly thinner
+    # than ImageDraw can stroke directly at native resolution.
+    ss = _ISOLINE_SUPERSAMPLE
+    H, W = h * ss, w * ss
+    img_ss = Image.fromarray(final, mode="RGB").resize(
+        (W, H), Image.NEAREST,
+    )
+    draw_ss = ImageDraw.Draw(img_ss)
 
-    img = Image.fromarray(final, mode="RGB")
-    draw = ImageDraw.Draw(img)
+    # Pre-smooth the MSL field to suppress small-scale noise. Without
+    # this every weak gradient near orography spawns a litter of
+    # short isobar fragments that clutter the chart but don't carry
+    # synoptic meaning.
+    smoothed = gaussian_filter(msl_hpa, sigma=_SMOOTH_SIGMA)
 
-    # Collect line geometry as we draw, so the pill pass can reuse it
-    # without re-tracing.
+    x_ss = np.arange(w, dtype=np.float32) * ss
+    y_ss = np.arange(h, dtype=np.float32) * ss
+    cgen = contourpy.contour_generator(x=x_ss, y=y_ss, z=smoothed)
+
     pill_candidates: list[tuple[int, np.ndarray]] = []
     for level in range(940, 1064, _THIN_INTERVAL_HPA):
         is_bold = (level % _BOLD_INTERVAL_HPA == 0)
         width = _ISOLINE_WIDTH_BOLD if is_bold else _ISOLINE_WIDTH_THIN
         for line in cgen.lines(float(level)):
-            if line.shape[0] < 2:
+            if line.shape[0] < _MIN_SEGMENT_VERTICES:
                 continue
-            draw.line(
+            draw_ss.line(
                 line.astype(np.int32).tolist(),
                 fill=_ISOLINE_RGB,
                 width=width,
             )
-            if is_bold and line.shape[0] >= 8:
-                # First cut: pill only on bold isobars (every 20 hPa).
-                # Pills on every 2 hPa line would crowd out the chart.
+            if is_bold:
                 pill_candidates.append((level, line))
 
-    # 4. pill labels (layer 4)
+    # Pills also drawn in the supersample frame so their rounded
+    # corners benefit from the Lanczos downsample.
     for level, line in pill_candidates:
         anchor = _pick_pill_anchor(line)
         if anchor is None:
             continue
         cx, cy = anchor
         _draw_pill(
-            draw, cx, cy, str(level),
+            draw_ss, cx, cy, str(level),
             bg_rgb=_palette_rgb_for(float(level)),
-            font=_PILL_FONT,
+            font=_PILL_FONT_SS,
         )
+
+    img = img_ss.resize((w, h), Image.LANCZOS)
 
     buf = io.BytesIO()
     img.save(
