@@ -119,6 +119,14 @@ class ChartSpec:
     information — see the chart-base-design 'isolines: physics-driven'
     section."""
 
+    categorical: bool = False
+    """When ``True``, the renderer uses ``np.digitize`` against the
+    anchor positions instead of a continuous LUT lookup. Use for
+    discrete-code variables like ``ptype`` (precipitation type), where
+    interpolating between '1 = rain' and '3 = freezing rain' would
+    paint a meaningless mid-tone over '2'. Each anchor position then
+    represents 'the code at or above this value gets this colour'."""
+
 
 # Global registry, populated lazily by import side-effects in
 # _chart_specs.py. Map view code looks up specs by layer_key.

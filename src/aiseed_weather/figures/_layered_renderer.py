@@ -306,10 +306,7 @@ def render(
         base = np.full((h, w, 3), _FALLBACK_BASE_RGB, dtype=np.uint8)
 
     # 2. data overlay (with optional dry-pixel pass-through)
-    norm = np.clip(
-        (data_cropped - spec.vmin) / (spec.vmax - spec.vmin), 0.0, 1.0,
-    )
-    data_rgb = lut[(norm * 255.0).astype(np.uint8)]
+    data_rgb = _data_rgb_for(data_cropped, spec, lut)
     blended = _blend(base, data_rgb, spec.transparency)
     if spec.dry_threshold is not None:
         mask = data_cropped >= spec.dry_threshold
@@ -336,6 +333,40 @@ def render(
     return buf.getvalue()
 
 
+def _data_rgb_for(
+    data: np.ndarray, spec: ChartSpec, lut: np.ndarray,
+) -> np.ndarray:
+    """Map a 2D value array onto the spec's palette.
+
+    Continuous: normalise into [0, 1] over [vmin, vmax] and look up
+    the 256-entry LUT. Categorical (``spec.categorical=True``): use
+    ``np.digitize`` against the anchor positions so each discrete
+    code is paired with its own anchor colour, no interpolation
+    between codes.
+    """
+    if spec.categorical:
+        # Each anchor (value, colour) defines a category. np.digitize
+        # gives an index into the (n_anchors + 1)-entry palette; we
+        # need to look up the matching anchor colour. We build a
+        # tiny LUT on the fly from spec.anchors.
+        anchor_vals = np.array(
+            [a[0] for a in spec.anchors], dtype=np.float32,
+        )
+        anchor_cols = np.array(
+            [a[1] for a in spec.anchors], dtype=np.uint8,
+        )
+        # digitize returns indices in [0, n], so clip to [0, n-1].
+        idx = np.clip(
+            np.digitize(data, anchor_vals[1:], right=False),
+            0, len(anchor_cols) - 1,
+        )
+        return anchor_cols[idx]
+    norm = np.clip(
+        (data - spec.vmin) / (spec.vmax - spec.vmin), 0.0, 1.0,
+    )
+    return lut[(norm * 255.0).astype(np.uint8)]
+
+
 def _render_polar(
     spec: ChartSpec,
     data: np.ndarray,
@@ -347,10 +378,7 @@ def _render_polar(
 ) -> bytes:
     """Polar path — base + data overlay + coastline. No isolines."""
     data_global = source_grid_for_global(data, longitudes, latitudes)
-    norm = np.clip(
-        (data_global - spec.vmin) / (spec.vmax - spec.vmin), 0.0, 1.0,
-    )
-    data_rgb = lut[(norm * 255.0).astype(np.uint8)]
+    data_rgb = _data_rgb_for(data_global, spec, lut)
     data_polar = apply_polar_reindex(data_rgb, region.key)
 
     base = base_map_rgb(region.key)

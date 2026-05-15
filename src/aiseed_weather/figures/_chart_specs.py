@@ -422,5 +422,147 @@ TCWV = register(ChartSpec(
 ))
 
 
+# ── Bulk migration from the old _scalar_chart binned-LUT path ──────
+#
+# The 13 specs declared above are hand-tuned to the legend ticks of
+# their respective Windy / JMA references. Everything else in the old
+# ``_scalar_chart.CONFIGS`` (pressure-level fields, soil layers, the
+# long tail of surface variables) is auto-migrated below so that the
+# old binned-LUT code can be retired in one pass.
+#
+# Migration policy:
+#   * Pair the old bin edges with the old palette stops to make
+#     continuous-LUT anchors. The visual result tracks the old chart
+#     closely while losing the posterise step.
+#   * Variables whose name family marks them as synoptic-smooth (gh*,
+#     t* at pressure levels) get an IsolineSpec.
+#   * One-sided variables (accumulated snow/rain, CAPE, wave heights,
+#     radiation fluxes) get a dry-threshold so 'no data of interest'
+#     pixels skip the overlay entirely.
+#   * ``ptype`` is categorical (integer code per pixel) and uses the
+#     ChartSpec.categorical flag to short-circuit the continuous LUT
+#     in favour of np.digitize.
+
+
+def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
+    h = hex_str.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+# Per-level isoline cadence for geopotential height. Tracks the
+# WMO conventions used on operational charts.
+_GH_ISOLINE_BY_LEVEL = {
+    1000: IsolineSpec(thin_interval=20, bold_interval=100),
+    925:  IsolineSpec(thin_interval=20, bold_interval=100),
+    850:  IsolineSpec(thin_interval=30, bold_interval=150),
+    700:  IsolineSpec(thin_interval=30, bold_interval=150),
+    600:  IsolineSpec(thin_interval=60, bold_interval=300),
+    500:  IsolineSpec(thin_interval=60, bold_interval=300),
+    400:  IsolineSpec(thin_interval=60, bold_interval=300),
+    300:  IsolineSpec(thin_interval=120, bold_interval=600),
+    250:  IsolineSpec(thin_interval=120, bold_interval=600),
+    200:  IsolineSpec(thin_interval=120, bold_interval=600),
+    150:  IsolineSpec(thin_interval=200, bold_interval=1000),
+    100:  IsolineSpec(thin_interval=200, bold_interval=1000),
+    50:   IsolineSpec(thin_interval=400, bold_interval=2000),
+}
+
+_T_PL_ISOLINES = IsolineSpec(thin_interval=3.0, bold_interval=15.0)
+
+# Surface variables that benefit from a dry-pixel pass-through. Values
+# are the threshold in the same display units as the variable. Below
+# this the base map shows unchanged so a 'clear' / 'dry' / 'no signal'
+# pixel never gets a stale-faint colour wash.
+_DRY_THRESHOLDS = {
+    "sf":     0.001,    # snowfall accumulation (m)
+    "ro":     0.001,    # runoff (m)
+    "tprate": 1.0,      # mm/h — already covered by manual spec
+    "tp":     1.0,
+    "sd":     0.01,     # snow depth (m)
+    "asn":    0.1,      # snow albedo — 'no snow on ground' below
+    "rsn":    50.0,     # snow density (kg/m³) — sentinel low
+    "mucape": 100.0,    # J/kg, the operational 'weak instability' floor
+    "swh":    0.5,      # significant wave height (m)
+    "ssr":    0.1,      # short-wave radiation
+    "ssrd":   0.1,
+    "str":    0.1,
+    "strd":   0.1,
+    "ttr":    0.1,
+    "sithick": 0.05,    # sea ice thickness (m)
+}
+
+
+def _isolines_for(layer_key: str) -> IsolineSpec | None:
+    """Pick an iso-line cadence based on the layer name family.
+
+    Returns ``None`` for variables that fail the physics test in
+    chart-base-design (boundary-layer / surface noise that doesn't
+    smooth into clean iso-lines at the rendered resolution).
+    """
+    # Geopotential height at pressure levels (gh100..gh1000).
+    if layer_key.startswith("gh") and layer_key[2:].isdigit():
+        return _GH_ISOLINE_BY_LEVEL.get(int(layer_key[2:]))
+    # Temperature at pressure levels (t100..t1000), NOT t2m / skt.
+    if (
+        layer_key.startswith("t")
+        and not layer_key.startswith("t2")
+        and not layer_key in {"tcc", "tcwv", "tp"}
+        and layer_key[1:].isdigit()
+    ):
+        return _T_PL_ISOLINES
+    # sp (surface pressure) is smooth enough for isobars like msl.
+    if layer_key == "sp":
+        return IsolineSpec(thin_interval=4.0, bold_interval=20.0)
+    return None
+
+
+def _migrate_from_old() -> None:
+    """Walk ``_scalar_chart.CONFIGS`` and register a ChartSpec for
+    every key not already present in ``SPECS``.
+
+    Called once at import time. Manual specs declared above (MSL,
+    T2M, …) take precedence — the migration skips any key already in
+    the registry, so a hand-tuned palette is never silently replaced
+    by an auto-generated one.
+    """
+    # Late import to avoid a load-order cycle with _scalar_chart.
+    from aiseed_weather.figures._chart_spec import SPECS as _spec_registry
+    from aiseed_weather.figures._scalar_chart import CONFIGS as old_configs
+
+    for key, old in old_configs.items():
+        if key in _spec_registry:
+            continue
+        bounds = old.bounds
+        palette = old.palette
+        # Most old configs have len(palette) = len(bounds) + 1 (under +
+        # N bins). Cyclic variables like mwd use len(palette) =
+        # len(bounds) + 2, with a trailing wrap entry that the
+        # continuous LUT doesn't need. Either is fine — we just take
+        # the first N+1 palette stops aligned with the bounds.
+        if len(palette) < len(bounds) + 1:
+            continue  # malformed, skip
+        anchors = tuple(
+            (float(bounds[i]), _hex_to_rgb(palette[i + 1]))
+            for i in range(len(bounds))
+        )
+        is_ptype = key == "ptype"
+        register(ChartSpec(
+            layer_key=key,
+            label=key,
+            extractor=old.extractor,
+            vmin=float(bounds[0]),
+            vmax=float(bounds[-1]),
+            anchors=anchors,
+            legend_ticks=tuple(float(b) for b in bounds),
+            transparency=0.30,
+            dry_threshold=_DRY_THRESHOLDS.get(key),
+            isolines=_isolines_for(key),
+            categorical=is_ptype,
+        ))
+
+
+_migrate_from_old()
+
+
 # Public registry — re-exported for convenience.
 from aiseed_weather.figures._chart_spec import SPECS  # noqa: E402, F401
