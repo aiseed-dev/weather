@@ -751,6 +751,13 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         cur_source = render_params_ref.get("data_source_key", data_source_key)
         cur_overlay = render_params_ref.get("msl_overlay", msl_overlay)
         want_msl_overlay = bool(cur_overlay) and cur_layer != "msl"
+        # Resolve the field from cur_layer rather than the outer-scope
+        # selected_field. _ensure_rendered runs as a background task,
+        # and its closure can outlive the render that created it — so a
+        # layer switch between "render scheduled" and "render runs" would
+        # otherwise hand the worker an MSL GRIB while telling it to draw
+        # T2m (or vice versa).
+        cur_field = field_by_key(cur_layer)
         cur_overlay_sig = ("msl",) if want_msl_overlay else ()
         cache_key = _frame_key(
             display_step, cycle=cur_primary, region_=cur_region,
@@ -764,7 +771,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
         src_cycle, src_step = cur_lookup.get(
             display_step, (cur_primary, display_step),
         )
-        if src_cycle is None or not is_grib_cached(settings, src_cycle, src_step, param=selected_field.ecmwf_param):
+        if src_cycle is None or not is_grib_cached(settings, src_cycle, src_step, param=cur_field.ecmwf_param):
             return  # GRIB not yet downloaded
         try:
             service = ForecastService(settings, override_source=cur_source)
@@ -780,7 +787,7 @@ def MapView(settings: UserSettings, fetch_session: dict | None = None):
                 f"+ {src_cycle:%Y%m%d %Hz} ext · {_step_label(display_step)}"
             )
         # Worker process decodes + renders. We just hand it the path.
-        gpath = grib_cache_path(settings, src_cycle, src_step, param=selected_field.ecmwf_param)
+        gpath = grib_cache_path(settings, src_cycle, src_step, param=cur_field.ecmwf_param)
         # Overlay GRIB path — must be cached already; we don't kick off
         # a download here because _ensure_rendered runs in latency-
         # sensitive paths (slider scrubbing, animation). If not cached,
