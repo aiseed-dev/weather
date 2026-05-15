@@ -1,19 +1,24 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
-"""Total precipitation chart — numpy + PIL fast pipeline.
+"""Total precipitation — colour-only layered chart.
 
-Same C-backed pipeline as msl_chart / t2m_chart. Precipitation uses
-a non-linear binned palette so trace amounts and extreme events are
-both readable: bin edges are (0.1, 0.5, 1, 2, 5, 10, 20, 30, 50, 75,
-100, 150, 200) mm; under-range is rendered transparent so dry land
-shows the underlying base.
+Read .agents/skills/chart-base-design before editing. Precipitation is
+in the colour-only family: the surface field is too noisy /
+spatially-discontinuous for clean iso-lines, so the chart relies on
+the data palette alone.
 
-Skipped vs. the matplotlib version (Stage 2 work):
-* MSL overlay (msl_overlay_ds) — argument kept for API compat,
-  ignored on this path.
-* Coastlines / gridlines / colorbar / title / footer — captured in
-  PNG metadata instead of rasterised onto the image.
+Two precipitation-specific traits the renderer handles:
+
+  * **Below-threshold transparency.** Values below 0.1 mm read as
+    'no precipitation' by JMA convention — the base map should show
+    through unchanged instead of getting a stale-faint-colour wash
+    over every dry patch.
+  * **Non-uniform palette anchors.** Precipitation is heavily
+    skewed: most pixels are 0–2 mm, a handful are 50+ mm. Anchors
+    spaced at ~log-2 cadence (0.5 / 1 / 5 / 10 / 20 / 50 / 100 / 200
+    mm) keep visible discrimination across that range without
+    needing a true log-norm transform on the continuous LUT.
 """
 
 from __future__ import annotations
@@ -24,8 +29,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 from PIL import Image
 
+from aiseed_weather.figures._basemap import base_map_rgb
+from aiseed_weather.figures._coastlines import apply_coastlines
 from aiseed_weather.figures._fast import (
-    apply_binned_lut, palette_to_lut, shade_for_region,
+    apply_polar_reindex, is_polar, source_grid_for_global,
+)
+from aiseed_weather.figures.msl_chart import (
+    _blend_with_transparency, _to_pixel_grid,
+    _png_metadata as _msl_png_metadata,
 )
 from aiseed_weather.figures.regions import GLOBAL
 
@@ -35,32 +46,67 @@ if TYPE_CHECKING:
     from aiseed_weather.figures.regions import Region
 
 
-# Non-linear bins in mm — JMA / Windy / ECMWF Charts convention.
-TP_BOUNDS_MM: np.ndarray = np.array(
-    [0.1, 0.5, 1, 2, 5, 10, 20, 30, 50, 75, 100, 150, 200], dtype=np.float32,
-)
+# ── Palette ─────────────────────────────────────────────────────────
+_VMIN_MM = 0.0
+_VMAX_MM = 200.0
+# Anchors at JMA / WMO bands: 0.5, 1, 5, 10, 20, 50, 100, 200 mm.
+# Non-uniform spacing (~log-2) keeps fine resolution at low values
+# (where most observations sit) and still saturates predictably at
+# extreme totals.
+_LEGEND_TICKS_MM = (0.5, 1.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0)
+# Pixels below this read as "no precipitation" — fully transparent,
+# base map shown unchanged.
+_DRY_THRESHOLD_MM = 0.1
 
-# 14 entries: under (transparent → background grey here) + 13 bins.
-_TP_PALETTE: list[str] = [
-    "#f4f4f4",  # under: < 0.1 mm (dry; near-white so colored bins pop)
-    "#c8e6f5",  # 0.1-0.5  very pale blue
-    "#9dd1ee",  # 0.5-1
-    "#6cb6e0",  # 1-2
-    "#3a92c8",  # 2-5
-    "#1a73b3",  # 5-10
-    "#2e8b3d",  # 10-20    green
-    "#62b04f",  # 20-30
-    "#a4cd47",  # 30-50    yellow-green
-    "#f0d643",  # 50-75    yellow
-    "#f59f1b",  # 75-100   orange
-    "#e54d24",  # 100-150  red
-    "#a31a3a",  # 150-200  crimson
-    "#5e1660",  # >200     purple
-]
-_TP_LUT: np.ndarray = palette_to_lut(_TP_PALETTE)
+
+def _build_sequential_lut() -> np.ndarray:
+    """Sequential pale-cyan → blue → green → yellow → red → purple.
+
+    Anchors are at the JMA precipitation tick values. Linear
+    interpolation between them in the [0, vmax] range, then sampled
+    256 times for the uint8 LUT. Because the anchor xs are spaced
+    non-uniformly, np.interp does the right thing without us having
+    to switch to a log-norm transform on the data side.
+    """
+    anchors: list[tuple[float, tuple[int, int, int]]] = [
+        (0.5,   (200, 230, 250)),   # very pale cyan
+        (1.0,   (165, 215, 240)),   # pale cyan
+        (5.0,   (100, 175, 215)),   # mid blue
+        (10.0,  (50, 125, 200)),    # deeper blue
+        (20.0,  (50, 165, 90)),     # green
+        (50.0,  (200, 200, 60)),    # yellow-green / yellow
+        (100.0, (235, 130, 50)),    # orange-red
+        (200.0, (135, 30, 95)),     # crimson-purple
+    ]
+    xs = np.array(
+        [(v - _VMIN_MM) / (_VMAX_MM - _VMIN_MM) for v, _ in anchors],
+        dtype=np.float32,
+    )
+    rgb = np.array([c for _, c in anchors], dtype=np.float32)
+    t = np.linspace(0.0, 1.0, 256, dtype=np.float32)
+    out = np.empty((256, 3), dtype=np.float32)
+    for ch in range(3):
+        out[:, ch] = np.interp(t, xs, rgb[:, ch])
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
+_LUT: np.ndarray = _build_sequential_lut()
+
+
+# Higher data weight than MSL/t2m: when a pixel IS wet, the analyst
+# wants the precipitation band to read clearly. The 0.1 mm threshold
+# below keeps dry regions free of the overlay entirely, so there's
+# no land/sea visibility cost from being opaque where it matters.
+_DATA_TRANSPARENCY = 0.20
+
+
+# ── Entry point ─────────────────────────────────────────────────────
 
 
 def _extract_tp_mm(ds: "xr.Dataset") -> np.ndarray:
+    """ECMWF ``tp`` is metres of accumulated precipitation since the
+    run start. Convert to mm here so the rest of the file is
+    unit-clean."""
     if "tp" in ds.data_vars:
         return np.asarray(ds["tp"].values, dtype=np.float32) * 1000.0
     raise ValueError(
@@ -74,28 +120,75 @@ def render_tp(
     *,
     region: "Region" = GLOBAL,
     run_id: str,
-    msl_overlay_ds: "xr.Dataset | None" = None,
+    msl_overlay_ds: "xr.Dataset | None" = None,  # API compat; unused
 ) -> bytes:
     tp_mm = _extract_tp_mm(ds)
-    longitudes = ds["longitude"].values
-    latitudes = ds["latitude"].values
+    longitudes = np.asarray(ds["longitude"].values, dtype=np.float32)
+    latitudes = np.asarray(ds["latitude"].values, dtype=np.float32)
 
-    rgb = shade_for_region(
-        lambda arr: apply_binned_lut(arr, TP_BOUNDS_MM, _TP_LUT),
+    if is_polar(region):
+        tp_global = source_grid_for_global(tp_mm, longitudes, latitudes)
+        norm = np.clip((tp_global - _VMIN_MM) / (_VMAX_MM - _VMIN_MM), 0.0, 1.0)
+        data_rgb = _LUT[(norm * 255.0).astype(np.uint8)]
+        data_polar = apply_polar_reindex(data_rgb, region.key)
+        base = base_map_rgb(region.key)
+        if base is not None and base.shape == data_polar.shape:
+            blended = _blend_with_transparency(base, data_polar, _DATA_TRANSPARENCY)
+            mask = tp_global >= _DRY_THRESHOLD_MM
+            # mask is on the source grid, reindex it through the polar
+            # lookup so it lines up with data_polar's pixels
+            from aiseed_weather.figures._fast import _polar_lookups
+            tbl = _polar_lookups().get(region.key)
+            if tbl is not None:
+                lat_row, lon_col, valid = tbl
+                mask_polar = mask[lat_row, lon_col] & valid
+                final = base.copy()
+                final[mask_polar] = blended[mask_polar]
+            else:
+                final = blended
+        else:
+            final = data_polar
+        apply_coastlines(final, region.key)
+        img = Image.fromarray(final, mode="RGB")
+        buf = io.BytesIO()
+        img.save(
+            buf, format="PNG", compress_level=1,
+            pnginfo=_png_metadata(run_id),
+        )
+        return buf.getvalue()
+
+    tp_mm, longitudes, latitudes = _to_pixel_grid(
         tp_mm, longitudes, latitudes, region,
     )
-    from aiseed_weather.figures._coastlines import apply_coastlines
-    apply_coastlines(rgb, region.key)
+    h, w = tp_mm.shape
 
-    img = Image.fromarray(rgb, mode="RGB")
+    # 1. base map at native
+    base = base_map_rgb(region.key)
+    if base is None or base.shape != (h, w, 3):
+        base = np.full((h, w, 3), 110, dtype=np.uint8)
+
+    # 2. data overlay — only where there's actually precipitation.
+    # Dry pixels (< 0.1 mm) keep the base map unchanged; wet pixels
+    # get the blended palette colour.
+    norm = np.clip((tp_mm - _VMIN_MM) / (_VMAX_MM - _VMIN_MM), 0.0, 1.0)
+    data_rgb = _LUT[(norm * 255.0).astype(np.uint8)]
+    blended = _blend_with_transparency(base, data_rgb, _DATA_TRANSPARENCY)
+    mask = tp_mm >= _DRY_THRESHOLD_MM
+    final_arr = base.copy()
+    final_arr[mask] = blended[mask]
+
+    # 3. coastline on top
+    apply_coastlines(final_arr, region.key)
 
     buf = io.BytesIO()
-    from PIL import PngImagePlugin
-
-    info = PngImagePlugin.PngInfo()
-    info.add_text("Software", "aiseed-weather")
-    info.add_text("Source", "ECMWF Open Data (CC-BY-4.0)")
-    info.add_text("Run", run_id)
-    info.add_text("Layer", "tp")
-    img.save(buf, format="PNG", compress_level=1, pnginfo=info)
+    Image.fromarray(final_arr, mode="RGB").save(
+        buf, format="PNG", compress_level=1,
+        pnginfo=_png_metadata(run_id),
+    )
     return buf.getvalue()
+
+
+def _png_metadata(run_id: str):
+    info = _msl_png_metadata(run_id)
+    info.add_text("Layer", "tp")
+    return info
