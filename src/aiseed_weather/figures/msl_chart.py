@@ -43,12 +43,15 @@ if TYPE_CHECKING:
 
 
 # ── Palette ─────────────────────────────────────────────────────────
-# Diverging green → beige → brown, anchored on 1013 hPa at the centre.
-# Five stops are linearly interpolated to 256 LUT entries. The shades
-# are taken from observation of Windy's MSL palette, not a calibrated
-# colorimetric reference — adjust as needed.
-_VMIN_HPA = 940.0
-_VMAX_HPA = 1064.0
+# Diverging green → beige → brown around the synoptic range Windy
+# uses on its MSL legend (990 .. 1030 hPa, see screenshot in the
+# 2026-05-15 thread). The visible part of the LUT lines up with the
+# pressure values an analyst actually reads from over Asia / Pacific
+# every day — the deep-low / strong-high extremes saturate at the
+# ends rather than wasting the palette on values that almost never
+# occur in the operational record.
+_VMIN_HPA = 990.0
+_VMAX_HPA = 1030.0
 _VANCHOR_HPA = 1013.0
 
 
@@ -62,16 +65,17 @@ def _build_diverging_lut() -> np.ndarray:
     carry weight at a lower alpha, letting the gray land/sea cue
     show through cleanly.
     """
-    # Anchor (data_value, RGB). Anchors clustered near the typical
-    # data range (980–1030 hPa over a regional view) so the visible
-    # part of the LUT lands in the saturated middle bands, not in
-    # the pale centre.
+    # Anchors spread across the Windy 990 .. 1030 hPa legend so the
+    # full palette is visible on a typical analysis chart. 1013 hPa
+    # (the standard atmosphere) lands at the warm-beige neutral
+    # band, which puts the green / brown halves on the
+    # mid-latitude-low and subtropical-high sides respectively.
     anchors: list[tuple[float, tuple[int, int, int]]] = [
-        (940.0,  (38, 110, 55)),    # deep saturated green
-        (990.0,  (115, 180, 110)),  # lime green
+        (990.0,  (38, 110, 55)),    # deep saturated green   (low)
+        (1002.0, (115, 180, 110)),  # lime green
         (1013.0, (230, 210, 165)),  # warm beige (atmosphere mean)
-        (1030.0, (215, 140, 75)),   # saturated orange-tan
-        (1064.0, (135, 55, 25)),    # deep rust brown
+        (1022.0, (215, 140, 75)),   # saturated orange-tan
+        (1030.0, (135, 55, 25)),    # deep rust brown        (high)
     ]
     xs = np.array(
         [(v - _VMIN_HPA) / (_VMAX_HPA - _VMIN_HPA) for v, _ in anchors],
@@ -102,11 +106,12 @@ def _palette_rgb_for(value_hpa: float) -> tuple[int, int, int]:
 # Convention: 0 = opaque (data fully covers the base map),
 #             1 = fully transparent (data invisible, base only).
 # Matches the Japanese 透明度 reading; higher = more transparent.
-# Internally the blend math is base * t + data * (1 - t) so a value
-# of 0.70 means the final pixel is 30% data + 70% base — the data
-# colour reads as a clear tint while the base map and coastline
-# stay visibly in front.
-_DATA_TRANSPARENCY = 1.0
+# Internally the blend math is base * t + data * (1 - t). At t=0.30
+# the final pixel is 70% data + 30% base — the data colour reads as
+# a clear tinted band while the base map and coastline stay visibly
+# in front. User picked this after walking the t=0.85 → 0.40 → 0.30
+# sequence on a regional crop.
+_DATA_TRANSPARENCY = 0.30
 
 
 # ── Pill label font ─────────────────────────────────────────────────
