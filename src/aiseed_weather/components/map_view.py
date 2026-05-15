@@ -1002,15 +1002,41 @@ def MapView(settings: UserSettings, fetch=None):
     # frame cache for every (region × implemented_layer × step) combo
     # whose GRIB is already on disk. Sequential renders (the matrix
     # pipeline is fast enough — 4–330 ms/frame — that parallelism
-    # buys nothing and only fights for memory). State updates push
-    # back to the asyncio loop via call_soon_threadsafe.
+    # buys nothing and only fights for memory).
     #
-    # Ref holds the live worker + a stop_event so a cycle change can
-    # cancel the prior run cleanly without leaving it churning on
-    # stale params.
+    # State writes can't happen directly from the worker thread:
+    # set_frames reaches into Flet's session context (ft.context.page)
+    # via contextvars, and that contextvar isn't set in arbitrary
+    # threads. We route results through an asyncio.Queue drained by a
+    # long-lived coroutine started inside Flet's session (via
+    # page.run_task), so set_frames runs in the right context.
     bg_ref = ft.use_ref(
-        lambda: {"thread": None, "stop_event": None},
+        lambda: {
+            "thread": None,
+            "stop_event": None,
+            "queue": asyncio.Queue(),
+            "drainer_task": None,
+        },
     )
+
+    async def _bg_drainer():
+        """Apply background-render results to the frame cache.
+
+        Runs in Flet's session context (started via run_task), so
+        ``set_frames`` sees ``ft.context.page`` and can schedule the
+        component update. ``None`` on the queue is the shutdown
+        sentinel.
+        """
+        q: asyncio.Queue = bg_ref.current["queue"]
+        while True:
+            try:
+                item = await q.get()
+            except asyncio.CancelledError:
+                return
+            if item is None:
+                return
+            cache_key, png = item
+            set_frames(lambda prev, k=cache_key, p=png: _put_frame(prev, k, p))
 
     async def _render_missing_in_background():
         """Compatibility shim for the download-loop tail.
@@ -1043,13 +1069,10 @@ def MapView(settings: UserSettings, fetch=None):
         snap_source = data_source_key
         loop = asyncio.get_running_loop()
 
-        # The worker reads the current frame cache lazily through a
-        # holder so newly-arrived frames from foreground renders
-        # (slider scrub, animation) aren't re-rendered.
-        frames_view_ref = bg_ref.current
-
-        def _apply(cache_key, png):
-            set_frames(lambda prev: _put_frame(prev, cache_key, png))
+        # Frame application uses an asyncio.Queue + drainer (above);
+        # the worker just puts results on the queue from the worker
+        # thread via call_soon_threadsafe.
+        q: asyncio.Queue = bg_ref.current["queue"]
 
         def worker():
             seen: set = set(frames.keys())
@@ -1114,8 +1137,12 @@ def MapView(settings: UserSettings, fetch=None):
                             seen.add(cache_key)  # don't retry forever
                             continue
                         seen.add(cache_key)
+                        # Hand the result to the drainer, which lives
+                        # in Flet's session context. put_nowait runs
+                        # synchronously when invoked through
+                        # call_soon_threadsafe on the loop thread.
                         loop.call_soon_threadsafe(
-                            _apply, cache_key, png,
+                            q.put_nowait, (cache_key, png),
                         )
                         # Short cooperative sleep so the foreground
                         # event loop and any active foreground render
@@ -1436,6 +1463,30 @@ def MapView(settings: UserSettings, fetch=None):
         _maybe_render_visible,
         [step_hours, region, data_field_key, primary_cycle],
     )
+
+    # Start the drainer once at mount and keep it alive for the
+    # lifetime of the component. Background renders push their
+    # results into bg_ref.current["queue"]; the drainer reads them
+    # off and calls set_frames inside Flet's session context.
+    def _start_drainer():
+        if bg_ref.current.get("drainer_task") is None:
+            bg_ref.current["drainer_task"] = (
+                ft.context.page.run_task(_bg_drainer)
+            )
+
+    def _stop_drainer():
+        # Sentinel + cancel so the drainer exits cleanly even if the
+        # queue is empty at unmount.
+        try:
+            bg_ref.current["queue"].put_nowait(None)
+        except Exception:
+            pass
+        t = bg_ref.current.get("drainer_task")
+        if t is not None and not t.done():
+            t.cancel()
+        bg_ref.current["drainer_task"] = None
+
+    ft.use_effect(_start_drainer, [], _stop_drainer)
 
     # When a base cycle is known, kick the background precompute that
     # fills every (region × layer × step) frame whose GRIB is on disk.
