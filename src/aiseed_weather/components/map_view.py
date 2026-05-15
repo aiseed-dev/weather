@@ -78,6 +78,25 @@ PRELOAD_SPACING_SEC = 0.5
 # the typical access pattern is "fill in time order, replay".
 FRAMES_CACHE_LIMIT = 500
 
+# Windy-style thumbnail gradients for the in-panel layer cards. Color
+# stops sampled from each layer's actual LUT so the chip previews the
+# rendered chart at a glance — no separate art asset to maintain.
+_LAYER_GRADIENT_STOPS: dict[str, list[str]] = {
+    "msl": ["#193282", "#ffffff", "#82194d"],
+    "t2m": [
+        "#2c0a4d", "#1b81c4", "#a8d3c4",
+        "#f5f0a8", "#f9b04e", "#c93920", "#3c0404",
+    ],
+    "tp": [
+        "#f4f4f4", "#9dd1ee", "#1a73b3",
+        "#2e8b3d", "#f0d643", "#e54d24", "#5e1660",
+    ],
+    "wind10m": [
+        "#e6f4f5", "#52b0c0", "#7cba74",
+        "#f3d33d", "#e9572a", "#5a155f",
+    ],
+}
+
 # Choices we expose in the Data dialog. Horizon caps where the animation
 # stops; cadence is the spacing between frames. ECMWF only publishes 6h
 # after T+144h, so a 3h cadence past 144h actually yields 6h there.
@@ -323,6 +342,58 @@ def _valid_time_display(base_time, step_hours: int) -> str:
         return "未取得"
     from datetime import timedelta
     return (base_time + timedelta(hours=step_hours)).strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _layer_card(field, *, is_selected: bool, on_pick) -> ft.Control:
+    """Windy-style chip: small gradient swatch + label + unit, all
+    clickable. Selected state shows a primary-coloured border."""
+    stops = _LAYER_GRADIENT_STOPS.get(
+        field.key, ["#888888", "#cccccc"],
+    )
+    return ft.Container(
+        width=104, height=78,
+        padding=ft.Padding.all(6),
+        border_radius=8,
+        border=ft.Border.all(
+            width=2,
+            color=(
+                ft.Colors.PRIMARY if is_selected
+                else ft.Colors.OUTLINE_VARIANT
+            ),
+        ),
+        bgcolor=(
+            ft.Colors.PRIMARY_CONTAINER if is_selected
+            else ft.Colors.SURFACE_CONTAINER
+        ),
+        tooltip=(
+            f"{field.bilingual_label()}{field.level_suffix()}\n"
+            f"{field.typical_layer}"
+        ),
+        on_click=lambda _, k=field.key: on_pick(k),
+        content=ft.Column(
+            tight=True, spacing=3,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            controls=[
+                ft.Container(
+                    width=92, height=14,
+                    border_radius=3,
+                    gradient=ft.LinearGradient(
+                        begin=ft.alignment.center_left,
+                        end=ft.alignment.center_right,
+                        colors=stops,
+                    ),
+                ),
+                ft.Text(
+                    field.label_ja, size=11, max_lines=1,
+                    text_align=ft.TextAlign.CENTER,
+                    overflow=ft.TextOverflow.ELLIPSIS,
+                ),
+                ft.Text(
+                    field.unit, size=9, color=ft.Colors.GREY,
+                ),
+            ],
+        ),
+    )
 
 
 @ft.component
@@ -2285,7 +2356,37 @@ def MapView(settings: UserSettings, fetch=None):
                 ),
 
                 # ───────────────────────────────────────────────
-                # 2. GPV データ (base time) — THE primary action.
+                # 2. 地域 / Region — single-line summary that opens
+                # the full region dialog (presets + custom bounds).
+                # Sits above GPV so users pick "where" before "when".
+                # ───────────────────────────────────────────────
+                ft.Divider(height=14),
+                ft.Container(
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=6),
+                    border_radius=6,
+                    on_click=lambda _: _open_region_dialog(),
+                    content=ft.Row(
+                        spacing=4,
+                        controls=[
+                            ft.Text(
+                                "地域 / Region:",
+                                size=11, color=ft.Colors.GREY,
+                            ),
+                            ft.Text(
+                                region.label,
+                                size=12, weight=ft.FontWeight.BOLD,
+                                expand=True,
+                            ),
+                            ft.Icon(
+                                ft.Icons.CHEVRON_RIGHT,
+                                size=16, color=ft.Colors.GREY,
+                            ),
+                        ],
+                    ),
+                ),
+
+                # ───────────────────────────────────────────────
+                # 3. GPV データ (base time) — THE primary action.
                 # Commercial weather apps hide this in their backend
                 # ("always latest"); we expose it because the whole
                 # point of this app is to give the expert user direct
@@ -2422,36 +2523,31 @@ def MapView(settings: UserSettings, fetch=None):
                 # once set the user rarely changes these mid-session.
                 # ───────────────────────────────────────────────
 
-                # ── Layer: field + rendering style ──
+                # ── Layer: Windy-style grid of implemented fields ──
+                # Cards preview the layer's LUT as a horizontal
+                # gradient so the user reads which palette they'll
+                # see before clicking. Click → switch layer. Less-
+                # common fields stay in the catalog dialog reachable
+                # from the "もっと…" button.
                 ft.Divider(height=14),
                 ft.Text(
                     "レイヤー / Layer", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Row(
-                    spacing=4,
+                    wrap=True, spacing=4, run_spacing=4,
                     controls=[
-                        ft.Text(
-                            selected_field.bilingual_label()
-                            + selected_field.level_suffix(),
-                            size=12, weight=ft.FontWeight.BOLD,
-                            expand=True,
-                        ),
-                        ft.Container(
-                            content=ft.Icon(
-                                ft.Icons.INFO_OUTLINE,
-                                size=14, color=ft.Colors.GREY,
-                            ),
-                            tooltip=(
-                                f"{selected_field.key} · "
-                                f"{selected_field.unit}\n"
-                                f"{selected_field.typical_layer}"
-                            ),
-                        ),
+                        _layer_card(
+                            f,
+                            is_selected=(f.key == data_field_key),
+                            on_pick=set_data_field_key,
+                        )
+                        for f in DATA_FIELDS
+                        if f.status == Status.IMPLEMENTED
                     ],
                 ),
                 ft.TextButton(
-                    content=ft.Text("レイヤー変更 / Change layer…", size=12),
+                    content=ft.Text("もっと / More layers…", size=11),
                     icon=ft.Icons.LAYERS,
                     on_click=lambda _: set_show_data_dialog(True),
                 ),
@@ -2471,19 +2567,6 @@ def MapView(settings: UserSettings, fetch=None):
                 ft.Text(
                     "(将来: 500hPa 等高度線、10m風矢印)",
                     size=10, color=ft.Colors.GREY, italic=True,
-                ),
-
-                # ── Region: geographic viewport / projection ──
-                ft.Divider(height=14),
-                ft.Text(
-                    "地域 / Region", size=11,
-                    color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
-                ),
-                region_dropdown,
-                ft.TextButton(
-                    content=ft.Text("詳細設定 / Custom bounds…", size=12),
-                    icon=ft.Icons.TUNE,
-                    on_click=lambda _: _open_region_dialog(),
                 ),
 
                 # ── Time: valid time = base time + lead time (slider-driven) ──

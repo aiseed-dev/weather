@@ -110,7 +110,10 @@ def render_t2m(
             if len(line) >= 2:
                 draw.line(
                     [(float(p[0]), float(p[1])) for p in line],
-                    fill=(0, 0, 0), width=2,
+                    # Off-white 0 °C line — Windy-style. Black would
+                    # disappear into the deep-purple cold end of the
+                    # diverging palette.
+                    fill=(245, 245, 240), width=2,
                 )
 
     buf = io.BytesIO()

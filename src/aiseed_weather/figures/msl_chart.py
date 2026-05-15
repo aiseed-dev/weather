@@ -204,7 +204,10 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
             if len(line) >= 2:
                 draw.line(
                     [(float(p[0]), float(p[1])) for p in line],
-                    fill=(0, 0, 0),
+                    # Pale yellow isobars — Windy-style: warm-but-
+                    # subtle, readable on every part of the diverging
+                    # blue-white-red shading.
+                    fill=(255, 240, 150),
                     width=width,
                 )
 

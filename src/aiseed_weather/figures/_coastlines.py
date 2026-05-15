@@ -34,9 +34,10 @@ def _load() -> dict[str, np.ndarray]:
 # Module-level cache: loaded once at first import.
 _MASKS: dict[str, np.ndarray] = _load()
 
-# Soft dark grey — dark enough to be visible on warm palettes (red /
-# yellow / brown) without dominating cool palettes (blue / cyan).
-_COASTLINE_RGB: np.ndarray = np.array([40, 40, 40], dtype=np.uint8)
+# Soft off-white — Windy-style. Reads cleanly against the cool-blue
+# ends of the diverging palettes (MSL low pressure, cold T2m, wet TP)
+# AND against the warm-red ends, without competing with the data.
+_COASTLINE_RGB: np.ndarray = np.array([235, 235, 230], dtype=np.uint8)
 
 
 def apply_coastlines(rgb: np.ndarray, region_key: str) -> None:

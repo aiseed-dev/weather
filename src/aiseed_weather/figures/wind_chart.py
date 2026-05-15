@@ -126,7 +126,7 @@ def _draw_arrows(
             x1 = x0 + dxi
             y1 = y0 + dyi
             draw.line(
-                [(x0, y0), (x1, y1)], fill=(0, 0, 0), width=1,
+                [(x0, y0), (x1, y1)], fill=(245, 245, 240), width=1,
             )
             # Chevron head: rotate the shaft vector by ±head_angle
             # and scale to head_len, then draw two short lines back
@@ -141,7 +141,7 @@ def _draw_arrows(
                 ry = uy * cos_h + sign * ux * sin_h
                 draw.line(
                     [(x1, y1), (x1 - rx * head_len, y1 - ry * head_len)],
-                    fill=(0, 0, 0), width=1,
+                    fill=(245, 245, 240), width=1,
                 )
 
 
