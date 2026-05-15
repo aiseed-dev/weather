@@ -502,10 +502,379 @@ def _build_pressure_configs() -> list[ScalarLayerConfig]:
 _PRESSURE_CONFIGS: list[ScalarLayerConfig] = _build_pressure_configs()
 
 
+# ── Additional surface configs ──────────────────────────────────────
+# Sensible palette/bounds for the long tail of ECMWF Open Data surface
+# variables (catalog._SURFACE_NEW). Each entry below has a small set
+# of bin edges + a matching palette. Adding a new surface variable to
+# the catalogue means adding one ScalarLayerConfig here and one chip
+# stops entry in map_view.
+
+# Surface pressure: ~960..1040 hPa
+_SP_BOUNDS = np.linspace(960, 1040, 21, dtype=np.float32)
+SP_CONFIG = ScalarLayerConfig(
+    layer_key="sp",
+    bounds=_SP_BOUNDS,
+    palette=_GH_PALETTE,
+    extractor=lambda ds: _squeeze_2d(
+        np.asarray(ds["sp"].values, dtype=np.float32),
+    ) / 100.0,  # Pa → hPa
+)
+
+# 10m wind components (separate from combined wind10m which uses
+# wind_chart). Use the universal ±60 m/s diverging palette.
+def _make_uv_component_config(key: str, var_names: tuple[str, ...]) -> ScalarLayerConfig:
+    return ScalarLayerConfig(
+        layer_key=key,
+        bounds=_UV_BOUNDS,
+        palette=_UV_PALETTE,
+        extractor=_extract_value_at_level(var_names, level=None),
+    )
+
+U10M_CONFIG = _make_uv_component_config("u10m", ("10u", "u10"))
+V10M_CONFIG = _make_uv_component_config("v10m", ("10v", "v10"))
+U100M_CONFIG = _make_uv_component_config("u100m", ("100u", "u100"))
+V100M_CONFIG = _make_uv_component_config("v100m", ("100v", "v100"))
+
+# Wind gust (10fg) — non-negative speed; same palette as wind10m's.
+_GUST_BOUNDS = np.array(
+    [0, 5, 10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100],
+    dtype=np.float32,
+)
+_GUST_PALETTE = (
+    "#e6f4f5",
+    "#e6f4f5", "#b8e0e8", "#83c8d4", "#52b0c0", "#3a98ad",
+    "#7cba74", "#bccf4d", "#f3d33d", "#f59a35", "#e9572a",
+    "#a72333", "#5a155f", "#5a155f",
+)
+GUST_CONFIG = ScalarLayerConfig(
+    layer_key="gust",
+    bounds=_GUST_BOUNDS,
+    palette=_GUST_PALETTE,
+    extractor=_extract_value_at_level(("10fg", "fg10", "i10fg"), level=None),
+)
+
+# 2t time-statistic siblings — reuse the temperature palette so the
+# colour language matches t2m exactly.
+def _make_t_stat_config(key: str, var: str) -> ScalarLayerConfig:
+    return ScalarLayerConfig(
+        layer_key=key,
+        bounds=_TEMP_BOUNDS,
+        palette=_TEMP_PALETTE,
+        extractor=_extract_kelvin_at_level((var,), level=None),
+        isoline_value=0.0,
+    )
+
+MN2T3_CONFIG = _make_t_stat_config("mn2t3", "mn2t3")
+MX2T3_CONFIG = _make_t_stat_config("mx2t3", "mx2t3")
+MN2T6_CONFIG = _make_t_stat_config("mn2t6", "mn2t6")
+MX2T6_CONFIG = _make_t_stat_config("mx2t6", "mx2t6")
+
+# Precip rate (tprate) — kg/m²/s. Multiply by 3600 to get mm/h for
+# readability. Bounds match the tp palette.
+TPRATE_CONFIG = ScalarLayerConfig(
+    layer_key="tprate",
+    bounds=np.array(
+        [0.1, 0.5, 1, 2, 5, 10, 20, 30, 50, 75, 100, 150, 200],
+        dtype=np.float32,
+    ),
+    palette=(
+        "#f4f4f4", "#c8e6f5", "#9dd1ee", "#6cb6e0",
+        "#3a92c8", "#1a73b3", "#2e8b3d", "#62b04f",
+        "#a4cd47", "#f0d643", "#f59f1b", "#e54d24",
+        "#a31a3a", "#5e1660",
+    ),
+    extractor=lambda ds: _squeeze_2d(
+        np.asarray(ds["tprate"].values, dtype=np.float32),
+    ) * 3600.0,  # mm/s → mm/h
+)
+
+# Runoff (ro), accumulated metres
+RO_CONFIG = ScalarLayerConfig(
+    layer_key="ro",
+    bounds=np.array(
+        [0.0001, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2],
+        dtype=np.float32,
+    ),
+    palette=(
+        "#f4f4f4", "#dfeaf3", "#bcd5ea", "#88b9dd",
+        "#5c9bd0", "#3b7fc3", "#2860a8", "#1a4486",
+        "#0f2a5e", "#06223a", "#03162a",
+    ),
+    extractor=_extract_value_at_level(("ro",), level=None),
+)
+
+# Snowfall water equivalent (sf), m
+SF_CONFIG = ScalarLayerConfig(
+    layer_key="sf",
+    bounds=np.array(
+        [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5],
+        dtype=np.float32,
+    ),
+    palette=(
+        "#f4f4f4", "#e8eff7", "#bcd5ea", "#88b9dd",
+        "#5c9bd0", "#3b7fc3", "#2860a8", "#1a4486",
+        "#0f2a5e", "#06223a",
+    ),
+    extractor=_extract_value_at_level(("sf",), level=None),
+)
+
+# Snow albedo (asn), 0..1
+ASN_CONFIG = ScalarLayerConfig(
+    layer_key="asn",
+    bounds=np.linspace(0.1, 0.9, 11, dtype=np.float32),
+    palette=(
+        "#3a3a3a", "#5a5a5a", "#7a7a7a", "#9a9a9a",
+        "#b8b8b8", "#cfcfcf", "#dedede", "#eaeaea",
+        "#f3f3f3", "#fafafa", "#ffffff", "#ffffff",
+    ),
+    extractor=_extract_value_at_level(("asn",), level=None),
+)
+
+# Snow density (rsn), kg/m³ — fresh snow ~50, packed ~400
+RSN_CONFIG = ScalarLayerConfig(
+    layer_key="rsn",
+    bounds=np.linspace(50, 450, 11, dtype=np.float32),
+    palette=(
+        "#f4f4f4", "#dfeaf3", "#bcd5ea", "#88b9dd",
+        "#5c9bd0", "#3b7fc3", "#2860a8", "#1a4486",
+        "#0f2a5e", "#06223a", "#03162a", "#02101e",
+    ),
+    extractor=_extract_value_at_level(("rsn",), level=None),
+)
+
+# Total column water vapour (tcwv), kg/m² — 0..70
+TCWV_CONFIG = ScalarLayerConfig(
+    layer_key="tcwv",
+    bounds=np.linspace(5, 65, 13, dtype=np.float32),
+    palette=(
+        "#f4f4f4", "#e8efe2", "#cfe2c8", "#a8d3b1",
+        "#80c1a6", "#5cae9c", "#3a8fa0", "#216e9c",
+        "#16548a", "#0e3d6e", "#0a3052", "#06223a",
+        "#02101e", "#000000",
+    ),
+    extractor=_extract_value_at_level(("tcwv",), level=None),
+)
+
+# Most-unstable CAPE (mucape), J/kg — 0..5000
+MUCAPE_CONFIG = ScalarLayerConfig(
+    layer_key="mucape",
+    bounds=np.array(
+        [50, 100, 250, 500, 750, 1000, 1500, 2000, 2500, 3500, 5000],
+        dtype=np.float32,
+    ),
+    palette=(
+        "#f4f4f4", "#e6e9c8", "#cad6a4", "#9ec280",
+        "#74a85c", "#5a8d3a", "#7a8a26", "#a88a18",
+        "#c66a14", "#a82418", "#82130f", "#3c0404",
+    ),
+    extractor=_extract_value_at_level(("mucape", "cape"), level=None),
+)
+
+
+# Accumulated radiation (J/m²) — split between mostly-non-negative
+# fluxes (SW, downward LW) and diverging fluxes (net LW, OLR). Bins
+# are scaled assuming a 3-hourly accumulation: 3600 J/m²/W × 3h
+# ≈ 11 MJ/m² for 1 kW/m² → upper bin ~3e7 J/m².
+_RAD_SW_BOUNDS = np.linspace(0, 3e7, 11, dtype=np.float32)
+_RAD_SW_PALETTE = (
+    "#0a3a82", "#1a6cbf", "#3b8fc8", "#74b1d3",
+    "#bcd5ea", "#f4f4f4",
+    "#f5db58", "#f9b840", "#f59030", "#ec6c28", "#bb2418", "#3c0404",
+)
+
+def _make_rad_sw_config(key: str, var_names: tuple[str, ...]) -> ScalarLayerConfig:
+    return ScalarLayerConfig(
+        layer_key=key,
+        bounds=_RAD_SW_BOUNDS,
+        palette=_RAD_SW_PALETTE,
+        extractor=_extract_value_at_level(var_names, level=None),
+    )
+
+SSR_CONFIG  = _make_rad_sw_config("ssr",  ("ssr",))
+SSRD_CONFIG = _make_rad_sw_config("ssrd", ("ssrd",))
+STRD_CONFIG = _make_rad_sw_config("strd", ("strd",))
+
+# Diverging radiation (net LW at surface, OLR at top) — symmetric
+# around zero. OLR values are negative (outgoing).
+_RAD_LW_BOUNDS = np.linspace(-2e7, 2e7, 13, dtype=np.float32)
+_RAD_LW_PALETTE = (
+    "#0a3a82", "#1a6cbf", "#3b8fc8", "#74b1d3",
+    "#bcd5ea", "#dfeaf3", "#f4f4f4",
+    "#f5db58", "#f9b840", "#f59030", "#ec6c28", "#bb2418", "#3c0404",
+    "#1f0000",
+)
+
+def _make_rad_lw_config(key: str, var_names: tuple[str, ...]) -> ScalarLayerConfig:
+    return ScalarLayerConfig(
+        layer_key=key,
+        bounds=_RAD_LW_BOUNDS,
+        palette=_RAD_LW_PALETTE,
+        extractor=_extract_value_at_level(var_names, level=None),
+    )
+
+STR_LW_CONFIG = _make_rad_lw_config("str_lw", ("str",))
+TTR_CONFIG    = _make_rad_lw_config("ttr",    ("ttr",))
+
+# Surface stress (N/m²·s accumulated). Small magnitudes; diverging.
+_STRESS_BOUNDS = np.array(
+    [-2e4, -1e4, -5e3, -2e3, -5e2,
+     5e2, 2e3, 5e3, 1e4, 2e4],
+    dtype=np.float32,
+)
+_STRESS_PALETTE = (
+    "#1a0030", "#2c0a4d", "#3a4a9d", "#1b81c4", "#84c0c8",
+    "#f4f4f4",
+    "#f9e088", "#f9b04e", "#c93920", "#82130f", "#3c0404",
+)
+EWSS_CONFIG = ScalarLayerConfig(
+    layer_key="ewss", bounds=_STRESS_BOUNDS, palette=_STRESS_PALETTE,
+    extractor=_extract_value_at_level(("ewss",), level=None),
+)
+NSSS_CONFIG = ScalarLayerConfig(
+    layer_key="nsss", bounds=_STRESS_BOUNDS, palette=_STRESS_PALETTE,
+    extractor=_extract_value_at_level(("nsss",), level=None),
+)
+
+# Wave height (swh) in metres
+SWH_CONFIG = ScalarLayerConfig(
+    layer_key="swh",
+    bounds=np.array(
+        [0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 14],
+        dtype=np.float32,
+    ),
+    palette=(
+        "#f4f4f4", "#e8efe2", "#bcd5ea", "#88b9dd",
+        "#5c9bd0", "#3b7fc3", "#2860a8", "#1a4486",
+        "#0f2a5e", "#a82418", "#82130f", "#3c0404",
+    ),
+    extractor=_extract_value_at_level(("swh",), level=None),
+)
+
+# Wave period (s) — same palette family across mp2 / mwp / pp1d
+_WAVE_T_BOUNDS = np.array(
+    [2, 4, 6, 8, 10, 12, 14, 16, 18, 20],
+    dtype=np.float32,
+)
+_WAVE_T_PALETTE = (
+    "#e8efe2", "#cfe2c8", "#a8d3b1", "#80c1a6",
+    "#5cae9c", "#3a8fa0", "#216e9c", "#16548a",
+    "#0e3d6e", "#0a3052", "#06223a",
+)
+
+def _make_wavet_config(key: str) -> ScalarLayerConfig:
+    return ScalarLayerConfig(
+        layer_key=key,
+        bounds=_WAVE_T_BOUNDS,
+        palette=_WAVE_T_PALETTE,
+        extractor=_extract_value_at_level((key,), level=None),
+    )
+
+MP2_CONFIG = _make_wavet_config("mp2")
+MWP_CONFIG = _make_wavet_config("mwp")
+PP1D_CONFIG = _make_wavet_config("pp1d")
+
+# Sea velocity components (m/s, diverging like uv)
+SVE_CONFIG = ScalarLayerConfig(
+    layer_key="sve", bounds=_UV_BOUNDS, palette=_UV_PALETTE,
+    extractor=_extract_value_at_level(("sve",), level=None),
+)
+SVN_CONFIG = ScalarLayerConfig(
+    layer_key="svn", bounds=_UV_BOUNDS, palette=_UV_PALETTE,
+    extractor=_extract_value_at_level(("svn",), level=None),
+)
+
+# Sea ice thickness (m)
+SITHICK_CONFIG = ScalarLayerConfig(
+    layer_key="sithick",
+    bounds=np.linspace(0.1, 5.0, 11, dtype=np.float32),
+    palette=(
+        "#063052", "#0f3a6e", "#1a548a", "#3b7fc3",
+        "#5c9bd0", "#88b9dd", "#bcd5ea", "#dfeaf3",
+        "#eef0f4", "#fafafa", "#ffffff", "#ffffff",
+    ),
+    extractor=_extract_value_at_level(("sithick",), level=None),
+)
+
+# Sea surface height (m), diverging around 0
+_ZOS_BOUNDS = np.linspace(-2.0, 2.0, 13, dtype=np.float32)
+ZOS_CONFIG = ScalarLayerConfig(
+    layer_key="zos", bounds=_ZOS_BOUNDS, palette=_GH_PALETTE[:13] + (_GH_PALETTE[13],),
+    extractor=_extract_value_at_level(("zos",), level=None),
+)
+
+
+_SURFACE_CONFIGS: list[ScalarLayerConfig] = [
+    SP_CONFIG,
+    U10M_CONFIG, V10M_CONFIG, U100M_CONFIG, V100M_CONFIG,
+    GUST_CONFIG,
+    MN2T3_CONFIG, MX2T3_CONFIG, MN2T6_CONFIG, MX2T6_CONFIG,
+    TPRATE_CONFIG, RO_CONFIG, SF_CONFIG,
+    ASN_CONFIG, RSN_CONFIG, TCWV_CONFIG, MUCAPE_CONFIG,
+    SSR_CONFIG, SSRD_CONFIG, STRD_CONFIG,
+    STR_LW_CONFIG, TTR_CONFIG,
+    EWSS_CONFIG, NSSS_CONFIG,
+    SWH_CONFIG, MP2_CONFIG, MWP_CONFIG, PP1D_CONFIG,
+    SVE_CONFIG, SVN_CONFIG, SITHICK_CONFIG, ZOS_CONFIG,
+]
+
+
+# ── Soil layer configs (sot / vsw at layers 1-4) ────────────────────
+
+
+def _soil_extractor(var_names: tuple[str, ...], layer: int, kelvin: bool):
+    def _fn(ds):
+        for n in var_names:
+            if n in ds.data_vars:
+                da = ds[n]
+                if "depthBelowLandLayer" in da.dims:
+                    da = da.sel(depthBelowLandLayer=layer)
+                elif "soilLayer" in da.dims:
+                    da = da.sel(soilLayer=layer)
+                arr = _squeeze_2d(np.asarray(da.values, dtype=np.float32))
+                return arr - 273.15 if kelvin else arr
+        raise ValueError(
+            f"None of {var_names!r} found in dataset; "
+            f"vars={list(ds.data_vars)}",
+        )
+    return _fn
+
+
+def _build_soil_configs() -> list[ScalarLayerConfig]:
+    from aiseed_weather.products.catalog import SOIL_LAYERS
+
+    out: list[ScalarLayerConfig] = []
+    for layer in SOIL_LAYERS:
+        # sot — soil temperature (K → °C)
+        out.append(ScalarLayerConfig(
+            layer_key=f"sot_{layer}",
+            bounds=_TEMP_BOUNDS,
+            palette=_TEMP_PALETTE,
+            extractor=_soil_extractor(("sot", "stl"), layer, kelvin=True),
+            isoline_value=0.0,
+        ))
+        # vsw — volumetric soil water (m³/m³), 0..0.5
+        out.append(ScalarLayerConfig(
+            layer_key=f"vsw_{layer}",
+            bounds=np.linspace(0.05, 0.5, 11, dtype=np.float32),
+            palette=(
+                "#f4f4f4", "#e8efe2", "#cfe2c8", "#a8d3b1",
+                "#80c1a6", "#5cae9c", "#3a8fa0", "#216e9c",
+                "#16548a", "#0e3d6e", "#0a3052", "#06223a",
+            ),
+            extractor=_soil_extractor(("vsw", "swvl"), layer, kelvin=False),
+        ))
+    return out
+
+
+_SOIL_CONFIGS: list[ScalarLayerConfig] = _build_soil_configs()
+
+
 CONFIGS: dict[str, ScalarLayerConfig] = {
     cfg.layer_key: cfg
     for cfg in (
         D2M_CONFIG, SKT_CONFIG, SD_CONFIG, TCC_CONFIG,
         *_PRESSURE_CONFIGS,
+        *_SURFACE_CONFIGS,
+        *_SOIL_CONFIGS,
     )
 }

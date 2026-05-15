@@ -82,9 +82,18 @@ FRAMES_CACHE_LIMIT = 500
 # Kinds of GRIB the download loop fetches per step. ``sfc`` carries
 # every IMPLEMENTED surface field bundled in one multi-band file;
 # ``pl`` carries every IMPLEMENTED pressure-level field × every level
-# in another. Both are always fetched so layer change never triggers a
+# in another; ``sol`` carries soil-layer fields (sot / vsw × layer 1-4).
+# All are fetched in one Fetch so layer change never triggers a
 # follow-up download — see .agents/skills/data-flow/SKILL.md.
-_ACTIVE_KINDS: tuple[str, ...] = ("sfc", "pl")
+_ACTIVE_KINDS: tuple[str, ...] = ("sfc", "pl", "sol")
+
+# Curated layer chips for the control panel. The catalogue has ~170
+# IMPLEMENTED fields; rendering all of them as chips would crowd the
+# panel. The grid in the layer dialog still exposes everything.
+_PANEL_CHIP_KEYS: tuple[str, ...] = (
+    "msl", "t2m", "d2m", "skt",
+    "wind10m", "tp", "tcc", "sd",
+)
 
 # Windy-style thumbnail gradients for the in-panel layer cards. Color
 # stops sampled from each layer's actual LUT so the chip previews the
@@ -448,19 +457,28 @@ def _valid_time_display(base_time, step_hours: int) -> str:
     return (base_time + timedelta(hours=step_hours)).strftime("%Y-%m-%d %H:%M UTC")
 
 
-# Standard pressure levels we lay out in the matrix picker. Order
-# matches the surface→stratosphere reading of a synoptic chart book.
-_MATRIX_PRESSURE_LEVELS: tuple[int, ...] = (1000, 925, 850, 700, 500, 300, 200)
+# Pressure levels we lay out in the matrix picker. The catalogue is
+# the single source of truth — adding a new level there gets picked up
+# automatically.
+def _matrix_pressure_levels() -> tuple[int, ...]:
+    from aiseed_weather.products.catalog import PRESSURE_LEVELS_HPA
+    # Surface-to-stratosphere order (descending pressure).
+    return tuple(sorted(PRESSURE_LEVELS_HPA, reverse=True))
+
+_MATRIX_PRESSURE_LEVELS: tuple[int, ...] = _matrix_pressure_levels()
 
 # Variable prefix → bilingual short label for the matrix row header.
 _PRESSURE_VAR_LABELS: dict[str, str] = {
-    "gh": "高度 / GH",
-    "t":  "気温 / Temp",
-    "w":  "鉛直流 / ω",
-    "r":  "相対湿度 / RH",
-    "u":  "東西風 / U",
-    "v":  "南北風 / V",
-    "q":  "比湿 / SH",
+    "gh":   "高度 / GH",
+    "t":    "気温 / Temp",
+    "w":    "鉛直流 / ω",
+    "r":    "相対湿度 / RH",
+    "u":    "東西風 / U",
+    "v":    "南北風 / V",
+    "q":    "比湿 / SH",
+    "d":    "発散 / Div",
+    "vo":   "渦度 / Vort",
+    "wind": "風速 / Speed",
 }
 
 
@@ -2995,8 +3013,10 @@ def MapView(settings: UserSettings, fetch=None):
                             is_selected=(f.key == data_field_key),
                             on_pick=set_data_field_key,
                         )
-                        for f in DATA_FIELDS
-                        if f.status == Status.IMPLEMENTED
+                        for f in (
+                            field_by_key(k) for k in _PANEL_CHIP_KEYS
+                            if any(g.key == k for g in DATA_FIELDS)
+                        )
                     ],
                 ),
                 ft.TextButton(

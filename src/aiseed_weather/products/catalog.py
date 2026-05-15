@@ -900,11 +900,22 @@ class DataField:
 
         ``"sfc"`` for surface / single-level fields (msl, 2t, sd, …);
         ``"pl"`` for pressure-level fields (gh / t / u / v / w / r at
-        a specific hPa level). The forecast service downloads one
-        multi-band GRIB per ``(cycle, step, kind)``; layer change
-        within the same kind doesn't trigger a fetch.
+        a specific hPa level);
+        ``"sol"`` for soil-layer fields (sot / vsw at layer 1–4).
+
+        The forecast service downloads one multi-band GRIB per
+        ``(cycle, step, kind)``; layer change within the same kind
+        doesn't trigger a fetch.
         """
+        if self.ecmwf_param in _SOIL_PARAMS:
+            return "sol"
         return "pl" if self.level is not None else "sfc"
+
+
+# ECMWF Open Data soil-layer params live under levtype="sol" with
+# levelist=[1,2,3,4]. Anchor the discriminator here so DataField.kind
+# can detect them before the catalogue itself is built.
+_SOIL_PARAMS: frozenset[str] = frozenset(("sot", "vsw"))
 
 
 FIELDS: tuple[DataField, ...] = (
@@ -993,8 +1004,8 @@ FIELDS: tuple[DataField, ...] = (
         label_en="10-metre wind gust",
         unit="m/s",
         level=None,
-        typical_layer="カラーシェーディング",
-        status=Status.PLANNED,
+        typical_layer="風速シェーディング",
+        status=Status.IMPLEMENTED,
         ecmwf_param="10fg",
     ),
     DataField(
@@ -1015,7 +1026,7 @@ FIELDS: tuple[DataField, ...] = (
         unit="hPa",
         level=None,
         typical_layer="等圧線",
-        status=Status.PLANNED,
+        status=Status.IMPLEMENTED,
         ecmwf_param="sp",
     ),
     # ---- Pressure levels ----
@@ -1109,6 +1120,142 @@ _WIND_SPEED_FIELDS = tuple(
 )
 
 FIELDS = FIELDS + _PRESSURE_FIELDS + _WIND_SPEED_FIELDS
+
+
+# ── Surface catalogue (generated) ──────────────────────────────────
+# Every short_name ECMWF Open Data publishes on the sfc surface
+# product set. The most-used ones (msl, t2m, d2m, skt, sd, tcc,
+# wind10m, tp) are kept as the explicit entries above so the panel
+# chips have a curated short-list to draw from; the rest land here.
+# Variables we don't yet have a sensible palette for stay
+# Status.PLANNED.
+
+# (ecmwf_param, key, ja, en, unit, status, notes)
+_SURFACE_NEW: tuple[tuple[str, str, str, str, str, Status, str], ...] = (
+    # ── Wind components (separate from the combined wind10m) ──
+    ("10u",   "u10m",  "10m東西風成分",   "10m U wind",            "m/s",   Status.IMPLEMENTED, ""),
+    ("10v",   "v10m",  "10m南北風成分",   "10m V wind",            "m/s",   Status.IMPLEMENTED, ""),
+    ("100u",  "u100m", "100m東西風成分",  "100m U wind",           "m/s",   Status.IMPLEMENTED, ""),
+    ("100v",  "v100m", "100m南北風成分",  "100m V wind",           "m/s",   Status.IMPLEMENTED, ""),
+    # ── Temperature statistics ──
+    ("mn2t3", "mn2t3", "3時間最低気温",   "Min 2t (last 3h)",      "°C",    Status.IMPLEMENTED, ""),
+    ("mx2t3", "mx2t3", "3時間最高気温",   "Max 2t (last 3h)",      "°C",    Status.IMPLEMENTED, ""),
+    ("mn2t6", "mn2t6", "6時間最低気温",   "Min 2t (last 6h)",      "°C",    Status.IMPLEMENTED, ""),
+    ("mx2t6", "mx2t6", "6時間最高気温",   "Max 2t (last 6h)",      "°C",    Status.IMPLEMENTED, ""),
+    # ── Pressure (surface, vs MSL) ──
+    # (sp explicit entry above is PLANNED; promote here)
+    # ── Precipitation extras ──
+    ("tprate","tprate","降水率",          "Precipitation rate",    "mm/s",  Status.IMPLEMENTED, ""),
+    ("ptype", "ptype", "降水タイプ",      "Precipitation type",    "—",     Status.PLANNED,     "カテゴリカル: 0=なし,1=雨,3=凍結雨,5=雪,6=霙,7=みぞれ,8=雹"),
+    ("ro",    "ro",    "流出量 (累積)",   "Runoff",                "m",     Status.IMPLEMENTED, ""),
+    # ── Snow extras ──
+    ("sf",    "sf",    "降雪量 (SWE)",    "Snowfall (SWE)",        "m",     Status.IMPLEMENTED, ""),
+    ("asn",   "asn",   "雪面アルベド",    "Snow albedo",           "0..1",  Status.IMPLEMENTED, ""),
+    ("rsn",   "rsn",   "雪密度",          "Snow density",          "kg/m³", Status.IMPLEMENTED, ""),
+    # ── Atmospheric moisture column ──
+    ("tcwv",  "tcwv",  "可降水量",        "TCWV",                  "kg/m²", Status.IMPLEMENTED, ""),
+    # ── CAPE ──
+    ("mucape","mucape","最不安定 CAPE",   "MU-CAPE",               "J/kg",  Status.IMPLEMENTED, ""),
+    # ── Radiation (累積 J/m²; ECMWF Open Data 仕様) ──
+    ("ssr",   "ssr",   "正味短波 (累積)", "Surface net SW",        "J/m²",  Status.IMPLEMENTED, ""),
+    ("ssrd",  "ssrd",  "下向き短波 (累積)", "Surface SW down",     "J/m²",  Status.IMPLEMENTED, ""),
+    ("str",   "str_lw","正味長波 (累積)", "Surface net LW",        "J/m²",  Status.IMPLEMENTED, "ECMWF 'str' but key avoids Python str() collision in dict access"),
+    ("strd",  "strd",  "下向き長波 (累積)", "Surface LW down",     "J/m²",  Status.IMPLEMENTED, ""),
+    ("ttr",   "ttr",   "OLR 上端長波 (累積)", "TOA net LW (OLR)",  "J/m²",  Status.IMPLEMENTED, ""),
+    # ── Turbulent stress (時間積分) ──
+    ("ewss",  "ewss",  "東向き応力 (累積)", "Eastward stress",     "N/m²",  Status.IMPLEMENTED, ""),
+    ("nsss",  "nsss",  "北向き応力 (累積)", "Northward stress",    "N/m²",  Status.IMPLEMENTED, ""),
+    # ── Wave / sea-state ──
+    ("swh",   "swh",   "有義波高",        "Sig. wave height",      "m",     Status.IMPLEMENTED, ""),
+    ("mwp",   "mwp",   "平均波周期",      "Mean wave period",      "s",     Status.IMPLEMENTED, ""),
+    ("mp2",   "mp2",   "ゼロクロス周期",  "Mean zero-crossing T",  "s",     Status.IMPLEMENTED, ""),
+    ("pp1d",  "pp1d",  "ピーク波周期",    "Peak wave period",      "s",     Status.IMPLEMENTED, ""),
+    ("mwd",   "mwd",   "平均波向",        "Mean wave direction",   "deg",   Status.PLANNED,     "円形量 (0..360°) — 専用パレットが必要"),
+    # ── Sea / sea-ice ──
+    ("sve",   "sve",   "東向き海流",      "Eastward sea velocity", "m/s",   Status.IMPLEMENTED, ""),
+    ("svn",   "svn",   "北向き海流",      "Northward sea velocity","m/s",   Status.IMPLEMENTED, ""),
+    ("sithick","sithick","海氷厚",        "Sea ice thickness",     "m",     Status.IMPLEMENTED, ""),
+    ("zos",   "zos",   "海面高度",        "Sea surface height",    "m",     Status.IMPLEMENTED, ""),
+    # ── Static (step=0) — fetch handling differs, keep PLANNED ──
+    ("z",     "z_sfc", "ジオポテンシャル (地表)", "Geopotential (sfc)","m²/s²", Status.PLANNED, "static: step=0 only"),
+    ("lsm",   "lsm",   "海陸マスク",      "Land-sea mask",         "0..1",  Status.PLANNED,     "static"),
+    ("sdor",  "sdor",  "地形標準偏差",    "Sub-grid orog. stddev", "m",     Status.PLANNED,     "static"),
+    ("slor",  "slor",  "地形傾斜",        "Sub-grid orog. slope",  "—",     Status.PLANNED,     "static"),
+    # ── Currently unavailable ──
+    ("t20d",  "t20d",  "20°C 等温面深さ", "Depth of 20°C isotherm","m",     Status.PLANNED,     "currently unavailable (2024-03-11 per ECMWF docs)"),
+    ("sav300","sav300","300m 平均塩分",   "Avg salinity (top 300m)","psu",  Status.PLANNED,     "currently unavailable"),
+)
+
+_SURFACE_FIELDS = tuple(
+    DataField(
+        key=key,
+        label_ja=ja,
+        label_en=en,
+        unit=unit,
+        level=None,
+        typical_layer="カラーシェーディング",
+        status=status,
+        ecmwf_param=ecmwf,
+        notes=notes,
+    )
+    for ecmwf, key, ja, en, unit, status, notes in _SURFACE_NEW
+)
+
+
+# Derived: 100m wind speed from (100u, 100v). Stored alongside the
+# wind10m surface entry so the matrix's wind row covers both 10m and
+# 100m heights.
+_WIND100M_FIELD = DataField(
+    key="wind100m",
+    label_ja="100m風速",
+    label_en="100m wind speed",
+    unit="m/s",
+    level=None,
+    typical_layer="風速シェーディング + 矢印",
+    status=Status.IMPLEMENTED,
+    ecmwf_param="100u/100v",
+    notes="100m 風成分から √(u²+v²) を計算。",
+)
+
+
+# ── Soil-layer catalogue (generated) ───────────────────────────────
+# ECMWF Open Data's soil product set publishes soil temperature (sot)
+# and volumetric soil water (vsw) on 4 standard layers:
+#   1: 0-7 cm, 2: 7-28 cm, 3: 28-100 cm, 4: 100-289 cm
+# Same multi-band-GRIB-per-kind pattern as pressure levels.
+
+SOIL_LAYERS: tuple[int, ...] = (1, 2, 3, 4)
+SOIL_LAYER_DEPTH: dict[int, str] = {
+    1: "0-7 cm", 2: "7-28 cm", 3: "28-100 cm", 4: "100-289 cm",
+}
+
+# (ecmwf_param, ja, en, unit)
+SOIL_VARIABLES: tuple[tuple[str, str, str, str], ...] = (
+    ("sot", "土壌温度", "Soil temperature",      "°C"),
+    ("vsw", "土壌水分", "Volumetric soil water", "m³/m³"),
+)
+
+_SOIL_FIELDS = tuple(
+    DataField(
+        key=f"{var}_{layer}",
+        label_ja=f"{ja} (層{layer}: {SOIL_LAYER_DEPTH[layer]})",
+        label_en=f"{en} (layer {layer}: {SOIL_LAYER_DEPTH[layer]})",
+        unit=unit,
+        # The ECMWF Open Data sol product uses levelist=[1,2,3,4] to
+        # select layers; we mirror that on ``level`` so the existing
+        # multi-band extractor logic (".sel by depthBelowLandLayer")
+        # threads through without a separate axis name.
+        level=layer,
+        typical_layer="カラーシェーディング",
+        status=Status.IMPLEMENTED,
+        ecmwf_param=var,
+    )
+    for var, ja, en, unit in SOIL_VARIABLES
+    for layer in SOIL_LAYERS
+)
+
+
+FIELDS = FIELDS + _SURFACE_FIELDS + (_WIND100M_FIELD,) + _SOIL_FIELDS
 
 
 def field_by_key(k: str) -> DataField:

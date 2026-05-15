@@ -74,19 +74,41 @@ def render_layer(
                 msl_overlay_ds=msl_overlay_ds,
             )
         if layer_key.startswith("wind"):
-            # wind10m → surface 10 m; wind250 / wind500 / ... →
-            # pressure-level wind at that hPa. The wind renderer reads
-            # u and v from the multi-band GRIB and draws speed
-            # shading + direction arrows at any level.
+            # wind10m → surface 10 m; wind100m → surface 100 m;
+            # wind250 / wind500 / ... → pressure-level wind at that
+            # hPa. The wind renderer reads u and v from the multi-
+            # band GRIB and draws speed shading + direction arrows at
+            # any level.
             from aiseed_weather.figures.wind_chart import render_wind
             from aiseed_weather.products.catalog import field_by_key
             try:
                 fld = field_by_key(layer_key)
-                level = fld.level  # None for surface, int for pl
-            except KeyError:
+                level = fld.level
+                # ecmwf_param is "<u>/<v>"; the GRIB short names from
+                # cfgrib can be either ECMWF-style ("10u", "100u") or
+                # xarray-friendly ("u10", "u100"), so we try both.
+                u_p, v_p = fld.ecmwf_param.split("/")
+                _SURFACE_U = {
+                    "10u":  ("10u", "u10"),
+                    "100u": ("100u", "u100"),
+                }
+                _SURFACE_V = {
+                    "10v":  ("10v", "v10"),
+                    "100v": ("100v", "v100"),
+                }
+                if level is None:
+                    u_names = _SURFACE_U.get(u_p, (u_p,))
+                    v_names = _SURFACE_V.get(v_p, (v_p,))
+                else:
+                    u_names = ("u",)
+                    v_names = ("v",)
+            except (KeyError, ValueError):
                 level = None
+                u_names = ("10u", "u10")
+                v_names = ("10v", "v10")
             return render_wind(
                 ds, region=region, run_id=run_id, level=level,
+                u_names=u_names, v_names=v_names, layer_key=layer_key,
                 msl_overlay_ds=msl_overlay_ds,
             )
         # Generic scalar layers (dewpoint, snow depth, total cloud

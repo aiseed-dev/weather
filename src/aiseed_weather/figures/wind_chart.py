@@ -55,25 +55,24 @@ _TARGET_ARROWS_REGION = (24, 16)
 
 
 def _extract_uv(
-    ds: "xr.Dataset", level: int | None,
+    ds: "xr.Dataset",
+    u_names: tuple[str, ...],
+    v_names: tuple[str, ...],
+    level: int | None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Pull the U and V wind components out of the multi-band GRIB.
+    """Pull U and V wind components out of the multi-band GRIB.
 
-    ``level=None`` means surface 10m wind (variables 10u / 10v). An
-    integer level selects upper-air wind via cfgrib's standard
-    ``isobaricInhPa`` axis (variables u / v).
+    Caller passes the candidate variable names (e.g. ``("10u", "u10")``
+    for surface 10 m, ``("100u", "u100")`` for 100 m, ``("u",)`` for
+    pressure-level). When ``level`` is an int we ``.sel`` against
+    cfgrib's standard ``isobaricInhPa`` axis to pick out the right
+    band of the multi-level GRIB.
     """
-    if level is None:
-        u_names = ("u10", "10u")
-        v_names = ("v10", "10v")
-    else:
-        u_names = ("u",)
-        v_names = ("v",)
 
-    def _pick(ds_, names):
+    def _pick(names):
         for n in names:
-            if n in ds_.data_vars:
-                da = ds_[n]
+            if n in ds.data_vars:
+                da = ds[n]
                 if level is not None and "isobaricInhPa" in da.dims:
                     da = da.sel(isobaricInhPa=level)
                 arr = np.asarray(da.values, dtype=np.float32)
@@ -82,12 +81,12 @@ def _extract_uv(
                 return arr
         return None
 
-    u = _pick(ds, u_names)
-    v = _pick(ds, v_names)
+    u = _pick(u_names)
+    v = _pick(v_names)
     if u is None or v is None:
         raise ValueError(
-            f"No wind components for level={level!r}; "
-            f"vars={list(ds.data_vars)}",
+            f"No wind components for u={u_names} v={v_names} "
+            f"level={level!r}; vars={list(ds.data_vars)}",
         )
     return u, v
 
@@ -171,17 +170,20 @@ def render_wind(
     region: "Region" = GLOBAL,
     run_id: str,
     level: int | None = None,
+    u_names: tuple[str, ...] = ("u10", "10u"),
+    v_names: tuple[str, ...] = ("v10", "10v"),
+    layer_key: str = "wind10m",
     msl_overlay_ds: "xr.Dataset | None" = None,
 ) -> bytes:
     """Wind chart: speed shading + direction arrows.
 
-    ``level=None`` renders surface 10 m wind (10u / 10v variables).
-    Any integer level renders the same pipeline for the pressure-
-    level wind (u / v) at that level — the multi-band pl GRIB
-    carries them all in one file, so layer-switching across levels
-    is a re-read, not a re-fetch.
+    Surface paths pass ``level=None`` and the appropriate
+    ``u_names``/``v_names`` tuples (``10u/10v`` for the 10 m chart;
+    ``100u/100v`` for the 100 m chart). Pressure-level paths pass
+    ``level=<hPa>`` with ``u_names=("u",)`` so the extractor reads
+    the right level out of the multi-band pl GRIB.
     """
-    u, v = _extract_uv(ds, level)
+    u, v = _extract_uv(ds, u_names, v_names, level)
     wspd = np.hypot(u, v)
     longitudes = ds["longitude"].values
     latitudes = ds["latitude"].values
@@ -217,6 +219,6 @@ def render_wind(
     info.add_text("Software", "aiseed-weather")
     info.add_text("Source", "ECMWF Open Data (CC-BY-4.0)")
     info.add_text("Run", run_id)
-    info.add_text("Layer", "wind" if level is None else f"wind{level}")
+    info.add_text("Layer", layer_key)
     img.save(buf, format="PNG", pnginfo=info)
     return buf.getvalue()

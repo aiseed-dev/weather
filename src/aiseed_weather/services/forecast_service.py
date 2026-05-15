@@ -141,15 +141,18 @@ def _params_for_kind(kind: str) -> list[str]:
     return sorted(out)
 
 
-def _levels_in_use() -> list[int]:
-    """Distinct pressure levels (hPa) referenced by any IMPLEMENTED
-    pressure-level field. The download fetches them all in one call so
-    layer × level switches stay local."""
+def _levels_in_use(kind: str = "pl") -> list[int]:
+    """Distinct level values referenced by IMPLEMENTED fields of this
+    kind.
+
+    For ``"pl"`` that's pressure levels in hPa; for ``"sol"`` it's the
+    soil layer numbers 1..4. Either way the download fetches them all
+    in one call so layer × level switches stay local."""
     from aiseed_weather.products.catalog import FIELDS, Status
 
     return sorted(
         {f.level for f in FIELDS
-         if f.status == Status.IMPLEMENTED and f.kind == "pl"
+         if f.status == Status.IMPLEMENTED and f.kind == kind
          and f.level is not None}
     )
 
@@ -286,7 +289,10 @@ class ForecastService:
         )
         if r.kind == "pl":
             kwargs["levtype"] = "pl"
-            kwargs["levelist"] = _levels_in_use()
+            kwargs["levelist"] = _levels_in_use("pl")
+        elif r.kind == "sol":
+            kwargs["levtype"] = "sol"
+            kwargs["levelist"] = _levels_in_use("sol")
         self._client.retrieve(**kwargs)
 
     def _decode(self, path: Path) -> xr.Dataset:
