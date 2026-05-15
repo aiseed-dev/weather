@@ -1,51 +1,48 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
-"""Total precipitation chart with non-linear colormap.
+"""Total precipitation chart — numpy + PIL fast pipeline.
 
-Precipitation is highly skewed: most cells get 0 mm, a few get tens
-to hundreds. A linear colormap wastes 90% of the dynamic range. The
-standard meteorological scheme uses discrete bins on a logarithmic-
-ish progression so trace amounts (0.1-1 mm) and extreme events
-(>100 mm) are both readable at a glance.
+Same C-backed pipeline as msl_chart / t2m_chart. Precipitation uses
+a non-linear binned palette so trace amounts and extreme events are
+both readable: bin edges are (0.1, 0.5, 1, 2, 5, 10, 20, 30, 50, 75,
+100, 150, 200) mm; under-range is rendered transparent so dry land
+shows the underlying base.
 
-ECMWF Open Data publishes "tp" as accumulated total precipitation
-from the run start, in metres. We convert to mm here. Per-period
-totals (e.g. 3h or 6h rainfall) need a difference between successive
-steps — that's a follow-up; current rendering shows accumulated since
-T+0h.
+Skipped vs. the matplotlib version (Stage 2 work):
+* MSL overlay (msl_overlay_ds) — argument kept for API compat,
+  ignored on this path.
+* Coastlines / gridlines / colorbar / title / footer — captured in
+  PNG metadata instead of rasterised onto the image.
 """
 
 from __future__ import annotations
 
 import io
+from typing import TYPE_CHECKING
 
-import cartopy.crs as ccrs
-import matplotlib.colors as mcolors
 import numpy as np
-import pandas as pd
-import xarray as xr
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.figure import Figure
+from PIL import Image
 
-from aiseed_weather.figures.footer import apply_footer
-from aiseed_weather.figures.regions import GLOBAL, Region
+from aiseed_weather.figures._fast import (
+    apply_binned_lut, crop_grid, palette_to_lut,
+)
+from aiseed_weather.figures.regions import GLOBAL
+
+if TYPE_CHECKING:
+    import xarray as xr
+
+    from aiseed_weather.figures.regions import Region
 
 
-_PROJECTIONS = {
-    "robinson": ccrs.Robinson,
-    "platecarree": ccrs.PlateCarree,
-    "mercator": ccrs.Mercator,
-    "north_polar": ccrs.NorthPolarStereo,
-}
+# Non-linear bins in mm — JMA / Windy / ECMWF Charts convention.
+TP_BOUNDS_MM: np.ndarray = np.array(
+    [0.1, 0.5, 1, 2, 5, 10, 20, 30, 50, 75, 100, 150, 200], dtype=np.float32,
+)
 
-_FIG_SIZE = (12, 7)
-_DPI = 120
-
-# Non-linear bins in mm — mirrors JMA/Windy/ECMWF charts. Bins are
-# (0.1, 0.5, 1, 2, 5, 10, 20, 30, 50, 75, 100, 150, 200, ∞).
-TP_BOUNDS_MM = [0.1, 0.5, 1, 2, 5, 10, 20, 30, 50, 75, 100, 150, 200]
-TP_COLORS = [
+# 14 entries: under (transparent → background grey here) + 13 bins.
+_TP_PALETTE: list[str] = [
+    "#f4f4f4",  # under: < 0.1 mm (dry; near-white so colored bins pop)
     "#c8e6f5",  # 0.1-0.5  very pale blue
     "#9dd1ee",  # 0.5-1
     "#6cb6e0",  # 1-2
@@ -60,24 +57,12 @@ TP_COLORS = [
     "#a31a3a",  # 150-200  crimson
     "#5e1660",  # >200     purple
 ]
-TP_CMAP = mcolors.ListedColormap(TP_COLORS)
-TP_CMAP.set_under((0, 0, 0, 0))  # transparent below 0.1 mm
-TP_CMAP.set_over(TP_COLORS[-1])
-TP_NORM = mcolors.BoundaryNorm(TP_BOUNDS_MM, TP_CMAP.N, extend="max")
+_TP_LUT: np.ndarray = palette_to_lut(_TP_PALETTE)
 
 
-def _make_projection(name: str) -> ccrs.Projection:
-    try:
-        return _PROJECTIONS[name]()
-    except KeyError as e:
-        raise ValueError(f"Unknown projection '{name}'") from e
-
-
-def _extract_tp_mm(ds: xr.Dataset) -> np.ndarray:
-    """Return total precipitation in mm. ECMWF publishes it in metres
-    of water equivalent under the variable name 'tp'."""
+def _extract_tp_mm(ds: "xr.Dataset") -> np.ndarray:
     if "tp" in ds.data_vars:
-        return ds["tp"].values * 1000.0  # m → mm
+        return np.asarray(ds["tp"].values, dtype=np.float32) * 1000.0
     raise ValueError(
         f"No 'tp' (total precipitation) variable in dataset; "
         f"vars={list(ds.data_vars)}",
@@ -85,67 +70,32 @@ def _extract_tp_mm(ds: xr.Dataset) -> np.ndarray:
 
 
 def render_tp(
-    ds: xr.Dataset,
+    ds: "xr.Dataset",
     *,
-    region: Region = GLOBAL,
+    region: "Region" = GLOBAL,
     run_id: str,
-    dpi: int = _DPI,
-    msl_overlay_ds: xr.Dataset | None = None,
+    msl_overlay_ds: "xr.Dataset | None" = None,
 ) -> bytes:
     tp_mm = _extract_tp_mm(ds)
     longitudes = ds["longitude"].values
     latitudes = ds["latitude"].values
 
-    fig = Figure(figsize=_FIG_SIZE)
-    FigureCanvasAgg(fig)
-    ax = fig.add_subplot(1, 1, 1, projection=_make_projection(region.projection))
-    if region.extent is None:
-        ax.set_global()
-    else:
-        ax.set_extent(region.extent, crs=ccrs.PlateCarree())
-
-    # (Future: ax.add_feature(cartopy.feature.LAND, facecolor="#f0eee8")
-    # so dry land doesn't read as "no data". Skipped for now to keep
-    # this renderer focused on the actual precip layer; the absence of
-    # color is also a valid signal for "no rain".)
-
-    mesh = ax.pcolormesh(
-        longitudes, latitudes, tp_mm,
-        cmap=TP_CMAP, norm=TP_NORM,
-        transform=ccrs.PlateCarree(),
-        shading="auto",
+    tp_mm, longitudes, latitudes = crop_grid(
+        tp_mm, longitudes, latitudes, region,
     )
+    rgb = apply_binned_lut(tp_mm, TP_BOUNDS_MM, _TP_LUT)
+    from aiseed_weather.figures._coastlines import apply_coastlines
+    apply_coastlines(rgb, region.key)
 
-    ax.coastlines(linewidth=0.6, color="#333333")
-    ax.gridlines(draw_labels=False, linewidth=0.3, color="#888888", alpha=0.5)
-
-    # Optional MSL contour overlay — Windy-style "rain + isobars".
-    if msl_overlay_ds is not None:
-        from aiseed_weather.figures.overlays import add_msl_contours
-        add_msl_contours(ax, msl_overlay_ds)
-
-    cbar = fig.colorbar(
-        mesh, ax=ax,
-        orientation="horizontal", pad=0.04, shrink=0.7,
-        extend="max",
-        spacing="uniform",  # equal-width bins regardless of value spread
-    )
-    cbar.set_label(
-        "Total precipitation since run start [mm]",
-    )
-    # Show every label since bins are coarse but meaningful.
-    cbar.set_ticks(TP_BOUNDS_MM)
-    cbar.ax.tick_params(labelsize=8)
-
-    valid_time = pd.Timestamp(ds["valid_time"].values).strftime(
-        "%Y-%m-%d %H:%M UTC",
-    )
-    fig.suptitle(
-        f"Total precipitation [mm, since T+0h] — valid {valid_time}",
-        fontsize=13,
-    )
-    apply_footer(fig, data_source="ECMWF Open Data", run_id=run_id)
+    img = Image.fromarray(rgb, mode="RGB")
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+    from PIL import PngImagePlugin
+
+    info = PngImagePlugin.PngInfo()
+    info.add_text("Software", "aiseed-weather")
+    info.add_text("Source", "ECMWF Open Data (CC-BY-4.0)")
+    info.add_text("Run", run_id)
+    info.add_text("Layer", "tp")
+    img.save(buf, format="PNG", pnginfo=info)
     return buf.getvalue()

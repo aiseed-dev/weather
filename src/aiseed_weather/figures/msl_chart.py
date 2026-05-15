@@ -163,6 +163,13 @@ def render_msl(ds: "xr.Dataset", *, region: "Region", run_id: str) -> bytes:
     indices = (norm * 255.0).astype(np.uint8)
     rgb = _LUT[indices]  # (h, w, 3) uint8
 
+    # Coastlines: precomputed per-region boolean mask, stamped in place
+    # via numpy fancy indexing. No projection, no line drawing — the
+    # rasterisation happened once on the dev machine; runtime cost is
+    # a single boolean assign.
+    from aiseed_weather.figures._coastlines import apply_coastlines
+    apply_coastlines(rgb, region.key)
+
     # ── Isobar overlay ───────────────────────────────────────────────
     # contourpy returns each contour level as a list of (N, 2) float
     # arrays in (x, y) pixel coordinates. We feed it grid-index axes

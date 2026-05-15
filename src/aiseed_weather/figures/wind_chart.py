@@ -1,192 +1,185 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
-"""10 m wind chart — speed shading + direction arrows.
+"""10 m wind chart — speed shading + direction arrows, fast pipeline.
 
-Windy.com renders wind as moving particle animations, which looks
-gorgeous but needs a GPU canvas and per-frame animation that doesn't
-fit our PNG-based pipeline. As a static analogue we use the ECMWF
-chart convention: pcolormesh of wind speed (m/s) with a non-linear
-binned palette, plus quiver arrows showing direction. Arrow density
-is subsampled so the chart reads cleanly at any zoom.
+Same C-backed pipeline as the other layers (numpy LUT + PIL). The
+direction arrows are subsampled and drawn as line segments + a small
+chevron head via :class:`PIL.ImageDraw.Draw.line`, which is a C call.
+No matplotlib quiver, no per-vertex Python loop.
 
-Particle animation could come later via:
-  - A WebGL renderer in a Flet WebView, or
-  - Pre-rendered short-loop animations (advect particles for N steps
-    on the same wind field, output as animated PNG/WebP).
-
-Both are infrastructure changes beyond the scope of this commit.
+Skipped vs. the matplotlib version (Stage 2 work):
+* MSL overlay (msl_overlay_ds) — argument kept for API compat,
+  ignored on this path.
+* Coastlines / gridlines / colorbar / title / footer.
 """
 
 from __future__ import annotations
 
 import io
+import math
+from typing import TYPE_CHECKING
 
-import cartopy.crs as ccrs
-import matplotlib.colors as mcolors
 import numpy as np
-import pandas as pd
-import xarray as xr
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.figure import Figure
+from PIL import Image, ImageDraw
 
-from aiseed_weather.figures.footer import apply_footer
-from aiseed_weather.figures.regions import GLOBAL, Region
+from aiseed_weather.figures._fast import (
+    apply_binned_lut, crop_grid, palette_to_lut,
+)
+from aiseed_weather.figures.regions import GLOBAL
+
+if TYPE_CHECKING:
+    import xarray as xr
+
+    from aiseed_weather.figures.regions import Region
 
 
-_PROJECTIONS = {
-    "robinson": ccrs.Robinson,
-    "platecarree": ccrs.PlateCarree,
-    "mercator": ccrs.Mercator,
-    "north_polar": ccrs.NorthPolarStereo,
-}
+# Wind speed bin edges in m/s (Beaufort-ish progression).
+WIND_BOUNDS_MS: np.ndarray = np.array(
+    [0, 2, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60], dtype=np.float32,
+)
 
-_FIG_SIZE = (12, 7)
-_DPI = 120
-
-# Wind speed bins in m/s. Beaufort-ish progression: calm → light air →
-# breeze → gale → storm → hurricane. Standard meteorological scheme.
-WIND_BOUNDS_MS = [0, 2, 5, 8, 10, 12, 15, 20, 25, 30, 40, 50, 60]
-WIND_COLORS = [
-    "#e6f4f5",  # 0-2   calm: pale cyan
-    "#b8e0e8",  # 2-5
-    "#83c8d4",  # 5-8
-    "#52b0c0",  # 8-10
-    "#3a98ad",  # 10-12 saturated cyan
-    "#7cba74",  # 12-15 green (moderate breeze)
-    "#bccf4d",  # 15-20 yellow-green
-    "#f3d33d",  # 20-25 yellow (near gale)
-    "#f59a35",  # 25-30 orange (gale)
-    "#e9572a",  # 30-40 red (strong gale)
-    "#a72333",  # 40-50 crimson (storm)
-    "#5a155f",  # 50-60+ purple (hurricane)
+# 14 entries: under (calm) + 13 bins.
+_WIND_PALETTE: list[str] = [
+    "#e6f4f5",  # under: ~calm
+    "#e6f4f5", "#b8e0e8", "#83c8d4", "#52b0c0", "#3a98ad",
+    "#7cba74", "#bccf4d", "#f3d33d", "#f59a35", "#e9572a",
+    "#a72333", "#5a155f", "#5a155f",
 ]
-# BoundaryNorm with extend="max" needs ncolors == (len(BOUNDS) - 1) + 1
-# (internal bins plus one slot for over-range). The palette had 12
-# entries against 13 bounds, which is one too few — pad to 13.
-while len(WIND_COLORS) < len(WIND_BOUNDS_MS):
-    WIND_COLORS.append(WIND_COLORS[-1])
-WIND_CMAP = mcolors.ListedColormap(WIND_COLORS[: len(WIND_BOUNDS_MS)])
-WIND_CMAP.set_under(WIND_COLORS[0])
-WIND_CMAP.set_over(WIND_COLORS[-1])
-WIND_NORM = mcolors.BoundaryNorm(WIND_BOUNDS_MS, WIND_CMAP.N, extend="max")
+_WIND_LUT: np.ndarray = palette_to_lut(_WIND_PALETTE)
+
+# Arrow density targets — keep total arrows ≤ ~700 so the line-drawing
+# loop stays inside a few-millisecond budget on full global resolution.
+_TARGET_ARROWS_GLOBAL = (32, 18)   # (lon, lat)
+_TARGET_ARROWS_REGION = (24, 16)
 
 
-def _make_projection(name: str) -> ccrs.Projection:
-    try:
-        return _PROJECTIONS[name]()
-    except KeyError as e:
-        raise ValueError(f"Unknown projection '{name}'") from e
-
-
-def _extract_uv10(ds: xr.Dataset) -> tuple[np.ndarray, np.ndarray]:
-    """Return (u, v) at 10 m in m/s. ECMWF/cfgrib names vary."""
-    u_arr = v_arr = None
-    for u_name in ("u10", "10u"):
-        if u_name in ds.data_vars:
-            u_arr = ds[u_name].values
+def _extract_uv10(ds: "xr.Dataset") -> tuple[np.ndarray, np.ndarray]:
+    u = v = None
+    for name in ("u10", "10u"):
+        if name in ds.data_vars:
+            u = np.asarray(ds[name].values, dtype=np.float32)
             break
-    for v_name in ("v10", "10v"):
-        if v_name in ds.data_vars:
-            v_arr = ds[v_name].values
+    for name in ("v10", "10v"):
+        if name in ds.data_vars:
+            v = np.asarray(ds[name].values, dtype=np.float32)
             break
-    if u_arr is None or v_arr is None:
+    if u is None or v is None:
         raise ValueError(
             f"No 10 m wind components in dataset; "
             f"vars={list(ds.data_vars)}",
         )
-    return u_arr, v_arr
+    return u, v
 
 
-def _arrow_subsample(shape: tuple[int, int], region: Region) -> tuple[int, int]:
-    """Pick (step_lat, step_lon) so we get ~25-40 arrows across.
-
-    Too many and the chart becomes a black mat; too few and structure
-    is lost. Global gets coarser sampling than a regional zoom because
-    the same screen real estate has to cover more grid cells.
-    """
+def _arrow_steps(shape: tuple[int, int], region: "Region") -> tuple[int, int]:
+    """Pick (step_lat, step_lon) so the total arrow count stays bounded."""
     n_lat, n_lon = shape
-    if region.extent is None:
-        target_arrows_lon, target_arrows_lat = 48, 24
-    else:
-        target_arrows_lon, target_arrows_lat = 32, 22
-    step_lon = max(1, n_lon // target_arrows_lon)
-    step_lat = max(1, n_lat // target_arrows_lat)
-    return step_lat, step_lon
+    target_lon, target_lat = (
+        _TARGET_ARROWS_GLOBAL if region.extent is None
+        else _TARGET_ARROWS_REGION
+    )
+    return max(1, n_lat // target_lat), max(1, n_lon // target_lon)
+
+
+def _draw_arrows(
+    draw: ImageDraw.ImageDraw,
+    u: np.ndarray,
+    v: np.ndarray,
+    step_lat: int,
+    step_lon: int,
+    pixel_per_ms: float,
+) -> None:
+    """Rasterise direction arrows onto ``draw``.
+
+    Subsamples u/v to (lat//step, lon//step), then draws each arrow
+    as a shaft + 2-line chevron head. PIL.ImageDraw.line is C-level;
+    the Python loop here is ~700 iterations at most, each invoking
+    one C call per line segment.
+    """
+    u_sub = u[::step_lat, ::step_lon]
+    v_sub = v[::step_lat, ::step_lon]
+    h, w = u_sub.shape
+
+    # Pixel coordinates of arrow bases — image rows go top→bottom but
+    # u/v have already been flipped to match by crop_grid earlier.
+    xs = (np.arange(w) + 0.5) * step_lon
+    ys = (np.arange(h) + 0.5) * step_lat
+
+    # Vector → pixel deltas. v points geographic-north (positive lat) so
+    # in image space we flip its sign (image y grows downward).
+    dx = (u_sub * pixel_per_ms).astype(np.float32)
+    dy = (-v_sub * pixel_per_ms).astype(np.float32)
+
+    head_len = 4.0
+    head_angle = math.radians(28.0)
+    cos_h, sin_h = math.cos(head_angle), math.sin(head_angle)
+
+    for j in range(h):
+        for i in range(w):
+            dxi = float(dx[j, i])
+            dyi = float(dy[j, i])
+            if dxi == 0.0 and dyi == 0.0:
+                continue
+            x0 = float(xs[i])
+            y0 = float(ys[j])
+            x1 = x0 + dxi
+            y1 = y0 + dyi
+            draw.line(
+                [(x0, y0), (x1, y1)], fill=(0, 0, 0), width=1,
+            )
+            # Chevron head: rotate the shaft vector by ±head_angle
+            # and scale to head_len, then draw two short lines back
+            # from the tip.
+            mag = math.hypot(dxi, dyi)
+            if mag < 1.0:
+                continue
+            ux, uy = dxi / mag, dyi / mag
+            # Rotate (ux, uy) by ±head_angle for the two head legs.
+            for sign in (+1, -1):
+                rx = ux * cos_h - sign * uy * sin_h
+                ry = uy * cos_h + sign * ux * sin_h
+                draw.line(
+                    [(x1, y1), (x1 - rx * head_len, y1 - ry * head_len)],
+                    fill=(0, 0, 0), width=1,
+                )
 
 
 def render_wind(
-    ds: xr.Dataset,
+    ds: "xr.Dataset",
     *,
-    region: Region = GLOBAL,
+    region: "Region" = GLOBAL,
     run_id: str,
-    dpi: int = _DPI,
-    msl_overlay_ds: xr.Dataset | None = None,
+    msl_overlay_ds: "xr.Dataset | None" = None,
 ) -> bytes:
     u, v = _extract_uv10(ds)
-    wspd = np.sqrt(u * u + v * v)
+    wspd = np.hypot(u, v)
     longitudes = ds["longitude"].values
     latitudes = ds["latitude"].values
 
-    fig = Figure(figsize=_FIG_SIZE)
-    FigureCanvasAgg(fig)
-    ax = fig.add_subplot(1, 1, 1, projection=_make_projection(region.projection))
-    if region.extent is None:
-        ax.set_global()
-    else:
-        ax.set_extent(region.extent, crs=ccrs.PlateCarree())
+    wspd, lons2, lats2 = crop_grid(wspd, longitudes, latitudes, region)
+    u_img, _, _ = crop_grid(u, longitudes, latitudes, region)
+    v_img, _, _ = crop_grid(v, longitudes, latitudes, region)
 
-    # Base: wind-speed shading.
-    mesh = ax.pcolormesh(
-        longitudes, latitudes, wspd,
-        cmap=WIND_CMAP, norm=WIND_NORM,
-        transform=ccrs.PlateCarree(),
-        shading="auto",
-    )
+    rgb = apply_binned_lut(wspd, WIND_BOUNDS_MS, _WIND_LUT)
+    from aiseed_weather.figures._coastlines import apply_coastlines
+    apply_coastlines(rgb, region.key)
+    img = Image.fromarray(rgb, mode="RGB")
+    draw = ImageDraw.Draw(img)
 
-    ax.coastlines(linewidth=0.6, color="#222222")
-    ax.gridlines(draw_labels=False, linewidth=0.3, color="#666666", alpha=0.5)
-
-    # Overlay: direction arrows (subsampled).
-    step_lat, step_lon = _arrow_subsample(u.shape, region)
-    ax.quiver(
-        longitudes[::step_lon],
-        latitudes[::step_lat],
-        u[::step_lat, ::step_lon],
-        v[::step_lat, ::step_lon],
-        transform=ccrs.PlateCarree(),
-        # scale_units='width' makes the arrow size relative to the
-        # axes width; larger scale → smaller arrows. Tuned by eye.
-        scale=400,
-        scale_units="width",
-        width=0.0015,
-        headwidth=4,
-        headlength=5,
-        color="black",
-        alpha=0.75,
-    )
-
-    # Optional MSL contour overlay (e.g. wind speed + isobars).
-    if msl_overlay_ds is not None:
-        from aiseed_weather.figures.overlays import add_msl_contours
-        add_msl_contours(ax, msl_overlay_ds)
-
-    cbar = fig.colorbar(
-        mesh, ax=ax,
-        orientation="horizontal", pad=0.04, shrink=0.7,
-        extend="max",
-        spacing="uniform",
-    )
-    cbar.set_label("10 m wind speed [m/s]")
-    cbar.set_ticks(WIND_BOUNDS_MS)
-    cbar.ax.tick_params(labelsize=8)
-
-    valid_time = pd.Timestamp(ds["valid_time"].values).strftime(
-        "%Y-%m-%d %H:%M UTC",
-    )
-    fig.suptitle(f"10 m wind [m/s] — valid {valid_time}", fontsize=13)
-    apply_footer(fig, data_source="ECMWF Open Data", run_id=run_id)
+    step_lat, step_lon = _arrow_steps(wspd.shape, region)
+    # Scale arrows so a 10 m/s wind spans roughly one subsample cell —
+    # readable but not so long the heads collide with neighbours.
+    pixel_per_ms = min(step_lon, step_lat) * 0.35
+    _draw_arrows(draw, u_img, v_img, step_lat, step_lon, pixel_per_ms)
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
+    from PIL import PngImagePlugin
+
+    info = PngImagePlugin.PngInfo()
+    info.add_text("Software", "aiseed-weather")
+    info.add_text("Source", "ECMWF Open Data (CC-BY-4.0)")
+    info.add_text("Run", run_id)
+    info.add_text("Layer", "wind10m")
+    img.save(buf, format="PNG", pnginfo=info)
     return buf.getvalue()
