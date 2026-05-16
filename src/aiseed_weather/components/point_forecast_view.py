@@ -410,13 +410,16 @@ def PointForecastView(settings: UserSettings):
             ),
         ])
 
+    # ``ft.Dropdown`` in Flet 0.85 fires ``on_select`` (not ``on_change`` —
+    # that's the NavigationBar / TextField shape). The callback receives
+    # an event whose ``control.value`` is the selected option's key.
     location_picker = ft.Dropdown(
         value=selected_name,
         options=[
             ft.dropdown.Option(key=loc.name, text=loc.name)
             for loc in locations
         ],
-        on_change=on_select_location,
+        on_select=on_select_location,
         width=240,
     )
 
