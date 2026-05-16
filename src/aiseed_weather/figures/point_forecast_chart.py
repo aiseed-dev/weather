@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+import numpy as np
 import polars as pl
 
 logger = logging.getLogger(__name__)
@@ -88,6 +89,16 @@ def _to_pydatetime(series) -> list[datetime]:
     return series.to_list()
 
 
+def _float_array(series) -> np.ndarray:
+    """Polars numeric column → numpy float64 array with ``None``
+    coerced to ``NaN``. Matplotlib's fill_between / plot accept NaN
+    (they break the line / leave a gap), but they crash on
+    ``isfinite`` against object arrays containing None — which is
+    what ``series.to_list()`` returns when the climatology join
+    found no archive data for a given hour."""
+    return np.asarray(series.to_list(), dtype=np.float64)
+
+
 def render_point_forecast(
     *,
     location_name: str,
@@ -134,11 +145,13 @@ def render_point_forecast(
     p25_col = f"{variable}_p25"
     p75_col = f"{variable}_p75"
     if all(c in hres_joined.columns for c in (p25_col, p75_col)):
-        # Drop rows where the band is null (no archive data yet for
-        # that calendar day). fill_between needs aligned arrays so we
-        # use the same index throughout.
-        p25 = hres_joined[p25_col].to_list()
-        p75 = hres_joined[p75_col].to_list()
+        # Climatology values may be ``None`` for calendar days where
+        # the archive has no data yet (e.g. early in the initial 30-y
+        # build). ``_float_array`` converts those to NaN so
+        # fill_between leaves a gap instead of crashing on the
+        # ``isfinite`` check against object-dtype Nones.
+        p25 = _float_array(hres_joined[p25_col])
+        p75 = _float_array(hres_joined[p75_col])
         ax.fill_between(
             ts, p25, p75,
             color=_CLIM_FILL, alpha=0.28,
@@ -146,9 +159,8 @@ def render_point_forecast(
             label="平年 p25..p75",
         )
     if mean_col in hres_joined.columns:
-        mean_vals = hres_joined[mean_col].to_list()
         ax.plot(
-            ts, mean_vals,
+            ts, _float_array(hres_joined[mean_col]),
             color=_CLIM_LINE, linestyle=":", linewidth=1.0,
             label="平年 mean",
         )
@@ -164,8 +176,8 @@ def render_point_forecast(
             ens_ts = _to_pydatetime(ens["timestamp"])
             ax.fill_between(
                 ens_ts,
-                ens["p10"].to_list(),
-                ens["p90"].to_list(),
+                _float_array(ens["p10"]),
+                _float_array(ens["p90"]),
                 color=_ENS_FILL, alpha=0.18,
                 linewidth=0,
                 label="ENS p10..p90",
@@ -174,7 +186,7 @@ def render_point_forecast(
     # ── HRES deterministic line (over everything) ────────────────
     if variable in hres_joined.columns:
         ax.plot(
-            ts, hres_joined[variable].to_list(),
+            ts, _float_array(hres_joined[variable]),
             color=_HRES_LINE, linewidth=1.6,
             label="HRES",
         )
@@ -187,7 +199,7 @@ def render_point_forecast(
     ):
         ax.plot(
             _to_pydatetime(msm_df["timestamp"]),
-            msm_df[variable].to_list(),
+            _float_array(msm_df[variable]),
             color=_MSM_LINE, linewidth=1.0, linestyle="--",
             label="MSM (参考)",
         )

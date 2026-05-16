@@ -84,12 +84,25 @@ def _to_long_dataframe(
         if var not in wanted:
             continue
         member = int(m.group("idx")) if m.group("idx") else 0
-        frames.append(pl.DataFrame({
-            "timestamp": times,
-            "member": [member] * len(times),
-            "variable": [var] * len(times),
-            "value": values,
-        }))
+        # Force value to Float64 at build time. Variables like
+        # weather_code come back as integers, others as floats, and
+        # ``pl.concat`` with how='vertical' refuses to stitch frames
+        # whose dtypes disagree. Casting up-front keeps every
+        # subframe on the same schema so the concat below succeeds.
+        frames.append(pl.DataFrame(
+            {
+                "timestamp": times,
+                "member": [member] * len(times),
+                "variable": [var] * len(times),
+                "value": values,
+            },
+            schema={
+                "timestamp": pl.Utf8,
+                "member": pl.Int16,
+                "variable": pl.Utf8,
+                "value": pl.Float64,
+            },
+        ))
     if not frames:
         return pl.DataFrame(schema=schema)
     return (
