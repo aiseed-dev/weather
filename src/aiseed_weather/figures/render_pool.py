@@ -1,28 +1,32 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
-"""Sync render dispatcher.
+"""Render dispatcher — sync core, async wrapper that offloads to a thread.
 
-The fast-path renderers (``msl_chart.render_msl`` and, as they migrate,
-``t2m_chart``/``tp_chart``/``wind_chart``) keep the per-frame budget
-inside a single UI frame — a few hundred milliseconds at most, all
-inside numpy / contourpy / PIL C code. At that scale a thread pool or
-process pool is pure overhead: workers spend more time on spawn /
-import / IPC than they do rendering.
+The fast-path renderers keep the per-frame budget inside a single UI
+frame — a few hundred milliseconds at most, all inside numpy /
+contourpy / PIL C code. At that scale a process pool is pure
+overhead: workers spend more time on spawn / import / IPC than they
+do rendering. We don't have one.
 
-This module is therefore a thin sync dispatcher. Callers invoke
-``render_layer(...)`` and it blocks until PNG bytes come back. If a
-specific renderer regresses to multi-second wall time, wrap that call
-site in ``asyncio.to_thread`` at the call site — but do NOT add a
-pool back here as the default.
+But we DO offload to a worker thread via ``asyncio.to_thread``. cfgrib
+(eccodes), numpy, and PIL all release the GIL during their native
+sections, so the offload genuinely yields the event loop to the UI
+during a render — keeping the app responsive when an animation
+preload pumps dozens of renders back-to-back.
+
+``render_layer`` is the sync core for callers that already have a
+worker thread of their own (CLI scripts, tests). ``render_layer_async``
+is the async entry point UI code should use.
 
 Naming note: the historical ``render_layer_in_pool`` name is kept as
-an async-shaped alias so existing call sites keep working during the
-migration. It is no longer "in a pool"; it just awaits the sync call.
+an alias that DOES now offload — the previous body was a sync call
+in async clothing, which lied to ``await`` and froze the UI. Fixed.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -139,7 +143,7 @@ def render_layer(
             msl_overlay_ds.close()
 
 
-async def render_layer_in_pool(
+async def render_layer_async(
     grib_path: Path,
     region: "Region",
     run_id: str,
@@ -147,25 +151,37 @@ async def render_layer_in_pool(
     *,
     msl_overlay_path: Path | None = None,
 ) -> bytes:
-    """Async-shaped alias around :func:`render_layer`.
+    """Async entry point that offloads the render to a worker thread.
 
-    Kept because the existing async call sites (``await
-    render_layer_in_pool(...)``) read naturally. The body is sync —
-    no pool, no executor — but exposing it as a coroutine lets the
-    callers stay as they were while the underlying engine swap is
-    transparent.
+    Use from UI code so the event loop stays responsive while a chart
+    renders. The work runs under ``asyncio.to_thread``; cfgrib, numpy
+    and PIL release the GIL during their native sections, so the UI
+    actually gets time to repaint between frames.
+
+    The thread-pool dispatch overhead is ~0.1 ms — negligible next to
+    the render itself (10-50 ms for the fast-path layered renderer,
+    longer for any not-yet-migrated matplotlib path).
     """
-    return render_layer(
+    return await asyncio.to_thread(
+        render_layer,
         grib_path, region, run_id, layer_key,
         msl_overlay_path=msl_overlay_path,
     )
 
 
-# Back-compat alias for any old callers that haven't been switched yet.
+# Back-compat alias. The pre-fix version of this name was async-
+# shaped but ran the heavy work synchronously — see the module
+# docstring for the lie that caused. This alias now does the right
+# thing (offload via to_thread) so call sites keep working.
+render_layer_in_pool = render_layer_async
+
+
 async def render_msl_in_pool(
     grib_path: Path, region: "Region", run_id: str,
 ) -> bytes:
-    return render_layer(grib_path, region, run_id, "msl")
+    return await asyncio.to_thread(
+        render_layer, grib_path, region, run_id, "msl",
+    )
 
 
 def shutdown_pool() -> None:
