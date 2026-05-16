@@ -33,6 +33,9 @@ import flet as ft
 import httpx
 import polars as pl
 
+from aiseed_weather.figures.point_forecast_chart import (
+    render_point_forecast,
+)
 from aiseed_weather.models.point_location import (
     Location,
     load_locations,
@@ -45,6 +48,10 @@ from aiseed_weather.services.open_meteo_archive import (
     run_plan_async,
     has_archive_for_day,
 )
+from aiseed_weather.services.open_meteo_ensemble import (
+    aggregate_to_quantiles,
+    fetch_ensemble,
+)
 from aiseed_weather.services.open_meteo_forecast import (
     HOURLY_VARS,
     ForecastResult,
@@ -55,6 +62,19 @@ from aiseed_weather.services.point_climatology import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# Variable the chart can plot. Keys must match Open-Meteo's hourly
+# variable names (and the corresponding climatology join column
+# prefixes). Display labels come from point_forecast_chart's
+# _VAR_INFO; we keep them aligned here.
+_CHART_VARIABLES: tuple[tuple[str, str], ...] = (
+    ("temperature_2m",     "気温 (°C)"),
+    ("precipitation",      "降水量 (mm/h)"),
+    ("relative_humidity_2m", "相対湿度 (%)"),
+    ("wind_speed_10m",     "風速 (m/s)"),
+    ("cloud_cover",        "雲量 (%)"),
+)
 
 
 # Forecast snapshot held in use_state. ``eq=False`` is critical:
@@ -71,6 +91,8 @@ class _ForecastSnapshot:
     hres_df: pl.DataFrame
     msm_label: str | None
     msm_df: pl.DataFrame | None
+    ensemble_quantiles: pl.DataFrame | None
+    location_name: str
 
 
 # ── Add-location dialog ─────────────────────────────────────────────
@@ -241,11 +263,23 @@ async def _ensure_daily_archive_for(
             pass
 
 
-async def _fetch_forecasts(
+async def _fetch_all(
     location: Location,
-) -> tuple[ForecastResult, ForecastResult | None]:
-    """Fetch the HRES main forecast and, when the location is in Japan,
-    the JMA MSM reference. The two calls run concurrently."""
+) -> tuple[ForecastResult, ForecastResult | None, pl.DataFrame | None]:
+    """Fetch HRES + (MSM if Japan) + ensemble quantiles, all
+    concurrently. Three Open-Meteo endpoints, one shared
+    ``AsyncClient`` so the underlying HTTP/2 connection pool is
+    reused across calls.
+
+    Returns:
+      hres                 — main deterministic forecast (always)
+      msm_or_none          — JMA MSM reference (Japan only)
+      ensemble_quantiles   — per-(timestamp, variable) p10 / p50 /
+                              p90 / mean / std reduction of the
+                              51 member ENS run, or None on failure
+                              (ensemble being optional, the chart
+                              renders without it just fine).
+    """
     async with httpx.AsyncClient() as client:
         hres_task = asyncio.create_task(fetch_forecast(
             latitude=location.latitude,
@@ -256,19 +290,39 @@ async def _fetch_forecasts(
             forecast_days=15,
         ))
         if location.is_japan:
-            msm_task = asyncio.create_task(fetch_forecast(
-                latitude=location.latitude,
-                longitude=location.longitude,
-                client=client,
-                model="jma_msm",
-                past_days=1,
-                forecast_days=4,
-            ))
+            msm_task: asyncio.Task | None = asyncio.create_task(
+                fetch_forecast(
+                    latitude=location.latitude,
+                    longitude=location.longitude,
+                    client=client,
+                    model="jma_msm",
+                    past_days=1,
+                    forecast_days=4,
+                ),
+            )
         else:
             msm_task = None
+
+        ens_task = asyncio.create_task(fetch_ensemble(
+            latitude=location.latitude,
+            longitude=location.longitude,
+            client=client,
+            model="ecmwf_ifs025",
+            forecast_days=15,
+        ))
+
         hres = await hres_task
         msm = await msm_task if msm_task is not None else None
-    return hres, msm
+        try:
+            ens = await ens_task
+            ensemble_quantiles = aggregate_to_quantiles(ens.df)
+        except Exception:
+            # Ensemble is optional decoration — if Open-Meteo's ensemble
+            # endpoint rate-limits or 5xxs, the chart still shows the
+            # HRES line + climatology band.
+            logger.exception("Ensemble fetch failed; chart will skip it")
+            ensemble_quantiles = None
+    return hres, msm, ensemble_quantiles
 
 
 # ── Entry component ────────────────────────────────────────────────
@@ -299,12 +353,37 @@ def PointForecastView(settings: UserSettings):
 
     show_dialog, set_show_dialog = ft.use_state(False)
 
+    # Chart state. ``variable`` drives which value series is plotted;
+    # ``chart_png`` holds the rendered matplotlib bytes for ft.Image.
+    # We re-render the chart whenever the variable or the snapshot
+    # changes (kicked off from the corresponding async handler).
+    variable, set_variable = ft.use_state(_CHART_VARIABLES[0][0])
+    chart_png, set_chart_png = ft.use_state(None)
+
     selected_location = next(
         (loc for loc in locations if loc.name == selected_name),
         None,
     )
 
     # ── async handlers ────────────────────────────────────────────
+
+    async def _render_chart_for(snap: _ForecastSnapshot, var: str) -> None:
+        """Render the chart PNG off-loop and stash it in use_state.
+        Idempotent — safe to call after a variable change or a new
+        snapshot."""
+        try:
+            png = await asyncio.to_thread(
+                render_point_forecast,
+                location_name=snap.location_name,
+                variable=var,
+                hres_joined=snap.hres_df,
+                msm_df=snap.msm_df,
+                ensemble_quantiles=snap.ensemble_quantiles,
+            )
+            set_chart_png(png)
+        except Exception:
+            logger.exception("Chart render failed (variable=%s)", var)
+            set_chart_png(None)
 
     async def load_forecast(loc: Location):
         logger.info("load_forecast: start %s (%.3f, %.3f)",
@@ -314,19 +393,18 @@ def PointForecastView(settings: UserSettings):
         try:
             await _ensure_daily_archive_for(loc, data_dir)
             logger.info("load_forecast: archive ensured")
-            hres, msm = await _fetch_forecasts(loc)
+            hres, msm, ensemble_quantiles = await _fetch_all(loc)
             logger.info(
-                "load_forecast: HRES rows=%d, MSM=%s",
-                hres.df.height, "yes" if msm else "no",
+                "load_forecast: HRES=%d, MSM=%s, ENS=%s",
+                hres.df.height,
+                "yes" if msm else "no",
+                "yes" if ensemble_quantiles is not None else "no",
             )
-            # Polars work runs on the event loop unless we offload —
-            # the climatology join walks ~15 unique calendar days and
-            # opens parquet files, which can spike to 100s of ms.
             joined = await asyncio.to_thread(
                 join_forecast_with_climatology, hres.df, data_dir, loc,
             )
             logger.info("load_forecast: climatology joined")
-            set_forecast_data(_ForecastSnapshot(
+            snap = _ForecastSnapshot(
                 hres_label=f"ECMWF IFS HRES @ {loc.name}",
                 hres_df=joined,
                 msm_label=(
@@ -334,9 +412,17 @@ def PointForecastView(settings: UserSettings):
                     if msm is not None else None
                 ),
                 msm_df=msm.df if msm is not None else None,
-            ))
+                ensemble_quantiles=ensemble_quantiles,
+                location_name=loc.name,
+            )
+            set_forecast_data(snap)
             set_forecast_state("ready")
-            logger.info("load_forecast: state=ready")
+            logger.info("load_forecast: state=ready, rendering chart")
+            # Render the chart for the currently-selected variable. The
+            # render runs on a thread, so the 'ready' state has already
+            # painted the table by the time the chart PNG lands.
+            await _render_chart_for(snap, variable)
+            logger.info("load_forecast: chart rendered")
         except Exception as exc:  # noqa: BLE001 — surface to user
             logger.exception("Forecast fetch failed for %s", loc.name)
             set_error_msg(f"{type(exc).__name__}: {exc}")
@@ -373,6 +459,12 @@ def PointForecastView(settings: UserSettings):
         loc = next((l for l in locations if l.name == name), None)
         if loc is not None:
             ft.context.page.run_task(load_forecast, loc)
+
+    def on_select_variable(e):
+        new_var = e.control.value
+        set_variable(new_var)
+        if forecast_data is not None:
+            ft.context.page.run_task(_render_chart_for, forecast_data, new_var)
 
     # ── dialog (declarative) ─────────────────────────────────────
     dialog = _build_add_location_dialog(
@@ -423,10 +515,21 @@ def PointForecastView(settings: UserSettings):
         width=240,
     )
 
+    variable_picker = ft.Dropdown(
+        value=variable,
+        options=[
+            ft.dropdown.Option(key=k, text=label)
+            for k, label in _CHART_VARIABLES
+        ],
+        on_select=on_select_variable,
+        width=200,
+    )
+
     rows: list[ft.Control] = [
         header,
         ft.Row(controls=[
             location_picker,
+            variable_picker,
             ft.FilledButton(
                 "更新",
                 on_click=lambda _: (
@@ -461,6 +564,23 @@ def PointForecastView(settings: UserSettings):
             color=ft.Colors.RED,
         ))
     elif forecast_state == "ready" and forecast_data is not None:
+        # Chart first — primary visualisation per spec step 10. The
+        # PNG bytes land asynchronously after the data fetch
+        # completes; while it's None the spinner-style placeholder
+        # keeps the table readable so the analyst isn't blocked.
+        if chart_png is not None:
+            rows.append(ft.Container(
+                content=ft.Image(
+                    src=chart_png, fit=ft.BoxFit.CONTAIN,
+                ),
+                padding=ft.Padding.symmetric(vertical=8, horizontal=0),
+            ))
+        else:
+            rows.append(ft.Row(controls=[
+                ft.ProgressRing(width=14, height=14),
+                ft.Text("チャートを描画中…", color=ft.Colors.GREY),
+            ]))
+        rows.append(ft.Divider())
         rows.append(_forecast_table(
             forecast_data.hres_df, forecast_data.hres_label,
         ))
