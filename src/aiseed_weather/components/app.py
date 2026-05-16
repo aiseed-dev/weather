@@ -15,15 +15,19 @@ from aiseed_weather.models.user_settings import LoadResult
 
 
 # Path → tab index mapping used by both the NavigationBar (active tab
-# highlight) and the Route table. "/" is map by convention because it's
-# the highest-traffic view and the natural landing page.
-# The third tab used to be /amedas (JMA AMeDAS observations); the user
-# decided point forecasts are more useful for analyst-level work and
-# AMeDAS belongs alongside the radar nowcast in the second tab. The
+# highlight) and the Route table. "/" is the point-forecast view — the
+# user picked it as the natural landing page once the 地点 tab was
+# wired up, since most sessions start with 'what is the weather here
+# in the next few days vs climatology?' before zooming out to the
+# synoptic map. The map view moves to /map; the radar / nowcast tab
+# stays at /radar.
+#
+# The third entry used to be /amedas (JMA AMeDAS observations); the
+# user decided point forecasts are more useful for analyst-level
+# work and AMeDAS belongs alongside the radar nowcast. The
 # AmedasView component is still imported (will move to RadarView's
-# layout in a follow-up commit) so the existing route doesn't 404
-# while that migration is in flight.
-_NAV_PATHS: tuple[str, ...] = ("/", "/radar", "/points")
+# layout in a follow-up commit) so it stays available.
+_NAV_PATHS: tuple[str, ...] = ("/", "/map", "/radar")
 
 
 @ft.observable
@@ -141,9 +145,12 @@ def App():
                 component=render_shell,
                 outlet=True,
                 children=[
-                    ft.Route(index=True, component=render_map),
+                    # Index = 地点 (point forecast). See _NAV_PATHS
+                    # for why the landing page is point-forecast
+                    # rather than the synoptic map.
+                    ft.Route(index=True, component=render_points),
+                    ft.Route(path="map", component=render_map),
                     ft.Route(path="radar", component=render_radar),
-                    ft.Route(path="points", component=render_points),
                 ],
             ),
         ],
@@ -539,15 +546,17 @@ def AppShell(settings, fetch: FetchController):
         on_change=lambda e: ft.context.page.navigate(
             _NAV_PATHS[e.control.selected_index],
         ),
+        # Destination order matches _NAV_PATHS — 地点 first because it's
+        # the default landing page; モデル + ナウキャスト follow.
         destinations=[
+            ft.NavigationBarDestination(
+                icon=ft.Icons.LOCATION_ON, label="地点 / Points",
+            ),
             ft.NavigationBarDestination(
                 icon=ft.Icons.PUBLIC, label="モデル / Models",
             ),
             ft.NavigationBarDestination(
                 icon=ft.Icons.RADAR, label="ナウキャスト / Nowcast",
-            ),
-            ft.NavigationBarDestination(
-                icon=ft.Icons.LOCATION_ON, label="地点 / Points",
             ),
         ],
     )
