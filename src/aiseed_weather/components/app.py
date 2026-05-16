@@ -8,6 +8,7 @@ import flet as ft
 
 from aiseed_weather.components.amedas_view import AmedasView
 from aiseed_weather.components.map_view import MapView
+from aiseed_weather.components.point_forecast_view import PointForecastView
 from aiseed_weather.components.radar_view import RadarView
 from aiseed_weather.models import user_settings
 from aiseed_weather.models.user_settings import LoadResult
@@ -16,7 +17,13 @@ from aiseed_weather.models.user_settings import LoadResult
 # Path → tab index mapping used by both the NavigationBar (active tab
 # highlight) and the Route table. "/" is map by convention because it's
 # the highest-traffic view and the natural landing page.
-_NAV_PATHS: tuple[str, ...] = ("/", "/radar", "/amedas")
+# The third tab used to be /amedas (JMA AMeDAS observations); the user
+# decided point forecasts are more useful for analyst-level work and
+# AMeDAS belongs alongside the radar nowcast in the second tab. The
+# AmedasView component is still imported (will move to RadarView's
+# layout in a follow-up commit) so the existing route doesn't 404
+# while that migration is in flight.
+_NAV_PATHS: tuple[str, ...] = ("/", "/radar", "/points")
 
 
 @ft.observable
@@ -125,8 +132,8 @@ def App():
     def render_radar():
         return RadarView(settings=settings)
 
-    def render_amedas():
-        return AmedasView(settings=settings)
+    def render_points():
+        return PointForecastView(settings=settings)
 
     return ft.Router(
         routes=[
@@ -136,7 +143,7 @@ def App():
                 children=[
                     ft.Route(index=True, component=render_map),
                     ft.Route(path="radar", component=render_radar),
-                    ft.Route(path="amedas", component=render_amedas),
+                    ft.Route(path="points", component=render_points),
                 ],
             ),
         ],

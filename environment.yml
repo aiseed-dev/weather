@@ -48,6 +48,7 @@ dependencies:
   # Utilities
   - platformdirs
   - httpx
+  - polars  # point-forecast Parquet archive + Polars-driven climatology
 
   # Dev tools
   - pytest
