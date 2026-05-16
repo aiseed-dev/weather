@@ -1371,13 +1371,13 @@ def MapView(settings: UserSettings, fetch=None):
                                 f"· {_step_label(step)}"
                             )
                         try:
-                            # Offload the render so the event loop
-                            # can repaint between background frames.
-                            # The previous direct sync call held the
-                            # loop for 10-50 ms per frame on top of
-                            # whatever foreground work was active.
-                            png = await asyncio.to_thread(
-                                render_layer,
+                            # ``worker`` is already running on a
+                            # background OS thread (see the
+                            # threading.Thread spawn at the bottom
+                            # of _start_bg_precompute), so the
+                            # render is off the event loop without
+                            # needing asyncio.to_thread here.
+                            png = render_layer(
                                 gpath, rg, label, fld.key,
                             )
                         except Exception:
