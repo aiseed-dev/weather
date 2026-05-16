@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
@@ -54,6 +55,22 @@ from aiseed_weather.services.point_climatology import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# Forecast snapshot held in use_state. ``eq=False`` is critical:
+# Polars DataFrames define ``__eq__`` as element-wise comparison
+# (returns a frame of bools, not a single bool), which crashes the
+# default dataclass __eq__ when use_state tries ``prev != new`` to
+# decide whether to re-render. With eq=False each instance compares
+# unequal to every other (identity equality), so every set call
+# triggers a re-render — which is exactly what we want here since
+# we only construct a new _ForecastSnapshot on a completed fetch.
+@dataclass(frozen=True, eq=False)
+class _ForecastSnapshot:
+    hres_label: str
+    hres_df: pl.DataFrame
+    msm_label: str | None
+    msm_df: pl.DataFrame | None
 
 
 # ── Add-location dialog ─────────────────────────────────────────────
@@ -290,24 +307,36 @@ def PointForecastView(settings: UserSettings):
     # ── async handlers ────────────────────────────────────────────
 
     async def load_forecast(loc: Location):
+        logger.info("load_forecast: start %s (%.3f, %.3f)",
+                    loc.name, loc.latitude, loc.longitude)
         set_forecast_state("fetching")
         set_error_msg("")
         try:
             await _ensure_daily_archive_for(loc, data_dir)
+            logger.info("load_forecast: archive ensured")
             hres, msm = await _fetch_forecasts(loc)
-            joined = join_forecast_with_climatology(
-                hres.df, data_dir, loc,
+            logger.info(
+                "load_forecast: HRES rows=%d, MSM=%s",
+                hres.df.height, "yes" if msm else "no",
             )
-            set_forecast_data({
-                "hres_label": f"ECMWF IFS HRES @ {loc.name}",
-                "hres": joined,
-                "msm_label": (
+            # Polars work runs on the event loop unless we offload —
+            # the climatology join walks ~15 unique calendar days and
+            # opens parquet files, which can spike to 100s of ms.
+            joined = await asyncio.to_thread(
+                join_forecast_with_climatology, hres.df, data_dir, loc,
+            )
+            logger.info("load_forecast: climatology joined")
+            set_forecast_data(_ForecastSnapshot(
+                hres_label=f"ECMWF IFS HRES @ {loc.name}",
+                hres_df=joined,
+                msm_label=(
                     f"参考: JMA MSM @ {loc.name}"
                     if msm is not None else None
                 ),
-                "msm": msm.df if msm is not None else None,
-            })
+                msm_df=msm.df if msm is not None else None,
+            ))
             set_forecast_state("ready")
+            logger.info("load_forecast: state=ready")
         except Exception as exc:  # noqa: BLE001 — surface to user
             logger.exception("Forecast fetch failed for %s", loc.name)
             set_error_msg(f"{type(exc).__name__}: {exc}")
@@ -430,12 +459,12 @@ def PointForecastView(settings: UserSettings):
         ))
     elif forecast_state == "ready" and forecast_data is not None:
         rows.append(_forecast_table(
-            forecast_data["hres"], forecast_data["hres_label"],
+            forecast_data.hres_df, forecast_data.hres_label,
         ))
-        if forecast_data.get("msm") is not None:
+        if forecast_data.msm_df is not None and forecast_data.msm_label:
             rows.append(ft.Divider())
             rows.append(_forecast_table(
-                forecast_data["msm"], forecast_data["msm_label"],
+                forecast_data.msm_df, forecast_data.msm_label,
             ))
 
     rows.append(ft.Text(
