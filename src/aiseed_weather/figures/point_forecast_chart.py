@@ -107,9 +107,9 @@ def render_point_forecast(
     msm_df: pl.DataFrame | None,
     ensemble_quantiles: pl.DataFrame | None,
     now_utc: datetime | None = None,
-    width_in: float = 9.5,
-    height_in: float = 3.6,
-    dpi: int = 110,
+    width_in: float = 22.0,
+    height_in: float = 5.0,
+    dpi: int = 100,
 ) -> bytes:
     """Render one variable's time-series chart to PNG bytes.
 
@@ -121,6 +121,12 @@ def render_point_forecast(
     of ``join_forecast_with_climatology``). The function pulls
     ``{variable}_p25 / _p75 / _mean`` columns when present; missing
     columns just skip the climatology band.
+
+    Default canvas is 22 in × 5 in at 100 dpi → 2200 × 500 px. That
+    is intentionally wider than the typical Flet viewport: the UI
+    wraps this in a horizontally-scrollable Row so 18 days × hourly
+    detail (~432 ticks) can be inspected without crushing every day
+    into 6-7 pixels.
     """
     if variable not in _VAR_INFO:
         raise ValueError(f"Unknown variable {variable!r}")

@@ -565,15 +565,27 @@ def PointForecastView(settings: UserSettings):
         ))
     elif forecast_state == "ready" and forecast_data is not None:
         # Chart first — primary visualisation per spec step 10. The
-        # PNG bytes land asynchronously after the data fetch
-        # completes; while it's None the spinner-style placeholder
-        # keeps the table readable so the analyst isn't blocked.
+        # rendered PNG is much wider than the viewport (2200 px at
+        # the renderer's default), so we wrap it in a horizontally-
+        # scrollable Row. The Image is given an explicit width that
+        # matches the renderer canvas so Flet doesn't try to
+        # shrink-to-fit it back into the viewport (which would
+        # defeat the point of rendering wide in the first place).
         if chart_png is not None:
             rows.append(ft.Container(
-                content=ft.Image(
-                    src=chart_png, fit=ft.BoxFit.CONTAIN,
+                content=ft.Row(
+                    controls=[
+                        ft.Image(
+                            src=chart_png,
+                            width=2200,
+                            height=500,
+                            fit=ft.BoxFit.NONE,
+                        ),
+                    ],
+                    scroll=ft.ScrollMode.AUTO,
                 ),
                 padding=ft.Padding.symmetric(vertical=8, horizontal=0),
+                height=520,  # room for the scrollbar at the bottom
             ))
         else:
             rows.append(ft.Row(controls=[
