@@ -457,16 +457,32 @@ def build_point_forecast_canvas(
                 stroke_width=0.9 if is_midnight else 0.5,
             ),
         ))
-        # Midnight → date label. Other ticks → hour only (no minutes).
-        label = (
-            t_cur.strftime("%m-%d")
-            if is_midnight else f"{t_cur.hour}"
-        )
-        shapes.append(cv.Text(
-            x, pad_t + plot_h + 14, label,
-            style=ft.TextStyle(color=_AXIS, size=10),
-            alignment=ft.Alignment.CENTER,
-        ))
+        # Hour labels follow the 1..24 convention familiar from
+        # Japanese weather forecasts: midnight shows '24' (the end
+        # of the previous day) rather than '0', so that a
+        # precipitation reading at the 24-tick — which represents
+        # the 23-24h hour's accumulated rain — visibly belongs to
+        # the day it fell in. Non-midnight ticks keep the natural
+        # 3 / 6 / 9 / … hour numbers. Midnight ticks also carry the
+        # NEW day's date below the hour so the day boundary stays
+        # easy to navigate.
+        if is_midnight:
+            shapes.append(cv.Text(
+                x, pad_t + plot_h + 12, "24",
+                style=ft.TextStyle(color=_AXIS, size=10),
+                alignment=ft.Alignment.CENTER,
+            ))
+            shapes.append(cv.Text(
+                x, pad_t + plot_h + 26, t_cur.strftime("%m-%d"),
+                style=ft.TextStyle(color=_AXIS, size=10),
+                alignment=ft.Alignment.CENTER,
+            ))
+        else:
+            shapes.append(cv.Text(
+                x, pad_t + plot_h + 14, f"{t_cur.hour}",
+                style=ft.TextStyle(color=_AXIS, size=10),
+                alignment=ft.Alignment.CENTER,
+            ))
         t_cur += tick_step
 
     # ── Climatology band (p25..p75) ────────────────────────────

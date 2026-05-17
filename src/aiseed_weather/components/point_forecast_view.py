@@ -437,27 +437,26 @@ def _hourly_forecast_strip(
     today = now_local.date()
     for row in hourly.iter_rows(named=True):
         ts: datetime = row["local_ts"]
-        # End-of-hour convention: a 00:00 cell represents data for
-        # the previous day's 23:00-24:00 window, so display it as
-        # '24' attached to the previous day's run rather than as
-        # the first cell of the new day.
-        if ts.hour == 0:
-            display_date = ts.date() - timedelta(days=1)
-            hour_label = "24"
-        else:
-            display_date = ts.date()
-            hour_label = f"{ts.hour:02d}"
-        if display_date != prev_date:
-            delta = (display_date - today).days
+        # The hour-by-hour strip follows the conventional clock —
+        # 00 / 01 / 02 … 23 — even though the daily totals in the
+        # weekly cards / daily summary apply the end-of-hour shift.
+        # Open-Meteo / JMA mix accumulated and instantaneous
+        # variables in the same row, so a per-cell 24-of-previous-
+        # day relabel would be wrong for temperature anyway. Day
+        # separator is therefore on raw date, not shifted date.
+        d = ts.date()
+        hour_label = f"{ts.hour:02d}"
+        if d != prev_date:
+            delta = (d - today).days
             head_label = (
                 "今日" if delta == 0
                 else "明日" if delta == 1
                 else "明後日" if delta == 2
-                else display_date.strftime("%a")
+                else d.strftime("%a")
             )
             head_color = (
-                "#2c7fb8" if display_date.weekday() == 5
-                else "#c0392b" if display_date.weekday() == 6
+                "#2c7fb8" if d.weekday() == 5
+                else "#c0392b" if d.weekday() == 6
                 else "#2c3e50"
             )
             cells.append(ft.Container(
@@ -468,7 +467,7 @@ def _hourly_forecast_strip(
                             weight=ft.FontWeight.BOLD,
                             color=head_color,
                         ),
-                        ft.Text(display_date.strftime("%m/%d"), size=9,
+                        ft.Text(d.strftime("%m/%d"), size=9,
                                 color=ft.Colors.GREY),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -480,7 +479,7 @@ def _hourly_forecast_strip(
                 width=44,
                 alignment=ft.Alignment.CENTER,
             ))
-            prev_date = display_date
+            prev_date = d
 
         label, icon, color = _weather_descr(row.get("weather_code"))
         temp = row.get("temperature_2m")
