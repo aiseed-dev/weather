@@ -81,7 +81,7 @@ _Y_AXIS_PREFS: dict[str, _YAxisPref] = {
     ),
     "wind_speed_10m":       _YAxisPref(
         grid_step=2.5, label_every=2,
-        fixed_min=0,
+        fixed_min=0, soft_max=25,
     ),
     "cloud_cover":          _YAxisPref(
         grid_step=10, label_every=2,
