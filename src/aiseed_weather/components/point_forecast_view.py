@@ -775,19 +775,23 @@ def PointForecastView(settings: UserSettings):
             visible_window=visible_window,
             width=canvas_width,
         )
+        # Canvas height 700 — matches build_point_forecast_canvas's
+        # new default and gives Y-axis gridlines room when variables
+        # with fine steps (気温 2.5 °C, MSL 4 hPa) put 10-20 of them
+        # on the panel.
         rows.append(ft.Container(
             content=ft.Row(
                 controls=[
                     ft.Container(
                         content=chart_canvas,
                         width=canvas_width,
-                        height=500,
+                        height=700,
                     ),
                 ],
                 scroll=ft.ScrollMode.AUTO,
             ),
             padding=ft.Padding.symmetric(vertical=8, horizontal=0),
-            height=520,
+            height=720,
         ))
         rows.append(ft.Divider())
         rows.append(_forecast_table(

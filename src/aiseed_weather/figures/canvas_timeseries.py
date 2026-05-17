@@ -41,6 +41,29 @@ _VAR_INFO: dict[str, tuple[str, str]] = {
 }
 
 
+# Per-variable Y-axis preferences. Each entry is
+# ``(grid_step, label_every_n)``: a gridline is drawn at every
+# ``grid_step``, but only every Nth gridline gets a number label
+# so the axis text stays readable while the eye still sees the
+# fine resolution. Variables without an entry fall back to the
+# auto 'nice ticks' algorithm.
+#
+# Conventions:
+#   * 気温: 2.5 °C thin / 5 °C labelled (analyst-friendly synoptic step)
+#   * MSL: 4 hPa thin / 20 hPa labelled (WMO convention)
+#   * 降水 / 風速 / 雲量 / 湿度: round operational steps
+_Y_AXIS_PREFS: dict[str, tuple[float, int]] = {
+    "temperature_2m":       (2.5, 2),   # gridline every 2.5 °C, label every 5 °C
+    "precipitation":        (1.0, 5),   # gridline every 1 mm/h, label every 5 mm/h
+    "relative_humidity_2m": (10.0, 1),  # gridline + label every 10 %
+    "wind_speed_10m":       (2.5, 2),   # gridline every 2.5 m/s, label every 5
+    "cloud_cover":          (10.0, 2),  # gridline every 10 %, label every 20 %
+    # MSL isn't a canvas chart variable yet; the entry is here so
+    # adding 海面気圧 to point-forecast just works.
+    "msl":                  (4.0, 5),   # gridline every 4 hPa, label every 20 hPa
+}
+
+
 # Colours (chart-base-design — restrained palette).
 _HRES = "#1c1c20"          # near-black
 _MSM = "#56657a"           # slate
@@ -124,6 +147,28 @@ def _line_elements(
     return elements
 
 
+def _ticks_at_step(
+    v_min: float, v_max: float, step: float,
+) -> tuple[list[float], float, float]:
+    """Generate ticks at every ``step`` covering [v_min, v_max].
+
+    Rounds the bounds outward to multiples of step so the first
+    and last gridlines align with the panel edges. Used when a
+    variable has an explicit ``_Y_AXIS_PREFS`` entry; otherwise
+    the auto 'nice ticks' algorithm picks the step for us.
+    """
+    if step <= 0:
+        return [v_min], v_min, v_max
+    axis_min = math.floor(v_min / step) * step
+    axis_max = math.ceil(v_max / step) * step
+    ticks: list[float] = []
+    cur = axis_min
+    while cur <= axis_max + step * 1e-6:
+        ticks.append(cur)
+        cur += step
+    return ticks, axis_min, axis_max
+
+
 def _nice_y_ticks(
     v_min: float, v_max: float, n_target: int = 6,
 ) -> tuple[list[float], float, float, float]:
@@ -204,7 +249,7 @@ def build_point_forecast_canvas(
     now_utc: datetime | None = None,
     visible_window: tuple[datetime, datetime] | None = None,
     width: float = 2200.0,
-    height: float = 500.0,
+    height: float = 700.0,
 ) -> cv.Canvas:
     """Render the point-forecast time series onto a Flet Canvas.
 
@@ -274,12 +319,22 @@ def build_point_forecast_canvas(
     else:
         raw_min, raw_max = 0.0, 1.0
 
-    # _nice_y_ticks returns axis bounds aligned to the chosen step so
-    # the first / last grid line sit on the panel edges rather than
-    # floating off; the chart's vertical scale uses these rounded
-    # bounds instead of the raw data extent. Labels become 0 / 5 / 10
-    # / 15 instead of 0.6 / 5.8 / 11.0 / 16.2.
-    y_ticks, v_min, v_max, y_step = _nice_y_ticks(raw_min, raw_max, n_target=6)
+    # Y axis: explicit per-variable preference wins (e.g. 気温 = 2.5 °C
+    # gridline / 5 °C label, 海面気圧 = 4 hPa / 20 hPa). Variables
+    # without a pref fall back to the auto 'nice ticks' algorithm
+    # (rounds the step to {1, 2, 2.5, 5} × 10^k). Either way the
+    # axis bounds extend outward to multiples of the step so the
+    # first / last grid line sit on the panel edges rather than
+    # floating off, and labels are integer when the step is whole.
+    pref = _Y_AXIS_PREFS.get(variable)
+    if pref is not None:
+        y_step, label_every = pref
+        y_ticks, v_min, v_max = _ticks_at_step(raw_min, raw_max, y_step)
+    else:
+        y_ticks, v_min, v_max, y_step = _nice_y_ticks(
+            raw_min, raw_max, n_target=6,
+        )
+        label_every = 1
     v_span = v_max - v_min or 1.0
 
     def y_of(v: float) -> float:
@@ -294,17 +349,21 @@ def build_point_forecast_canvas(
     ))
 
     # ── Grid + Y axis labels (nice round numbers) ──────────────
-    for v in y_ticks:
+    # Every tick gets a gridline (fine resolution for the eye); only
+    # every Nth gets a number label (so the axis text doesn't crowd
+    # at fine steps like 気温 2.5 °C).
+    for i, v in enumerate(y_ticks):
         y = y_of(v)
         shapes.append(cv.Line(
             pad_l, y, pad_l + plot_w, y,
             paint=ft.Paint(color=_GRID, stroke_width=0.6),
         ))
-        shapes.append(cv.Text(
-            pad_l - 6, y - 6, _format_y_tick(v, y_step),
-            style=ft.TextStyle(color=_AXIS, size=10),
-            alignment=ft.Alignment.CENTER_RIGHT,
-        ))
+        if i % label_every == 0:
+            shapes.append(cv.Text(
+                pad_l - 6, y - 6, _format_y_tick(v, y_step),
+                style=ft.TextStyle(color=_AXIS, size=10),
+                alignment=ft.Alignment.CENTER_RIGHT,
+            ))
 
     # ── X axis (daily tick at 00:00 UTC of each day in range) ──
     t_cur = t_min.replace(hour=0, minute=0, second=0, microsecond=0)
