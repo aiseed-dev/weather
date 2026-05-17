@@ -86,12 +86,22 @@ my-sensor-viewer/
 
 ### Step 3: Claude Code で実装
 
-ターミナルでリポジトリに入り、Claude Code を起動:
+Claude Code を起動する (使う形態は OS と好みで選べる):
 
-```bash
-cd my-sensor-viewer
-claude
-```
+- **Linux**: ターミナルで `claude`
+- **macOS / Windows**: **デスクトップ版アプリ**を起動 ― 非エンジニア
+  にはこちらが圧倒的に楽。業務 PC で WSL/ターミナルの導入承認が下り
+  ない現場でも使える
+- **どれもインストールしたくない**: ブラウザで
+  [claude.ai/code](https://claude.ai/code) ― GitHub 連携でリポジトリ
+  を直接編集できる
+- **VS Code / JetBrains 派**: IDE 拡張をインストールしてサイドパネル
+  から呼ぶ
+
+どの形態でも中身は同じ Claude Code エンジン。**`.agents/skills/` の
+読み込みも、リポジトリの認識も完全に同じ**なので、チーム内で形態が
+混在していても成果物は互換。VB 6 が「IDE を入れて起動するだけ」だった
+精神が、CLI 時代の不便さを上書きしている。
 
 プロンプトはこれだけ:
 
