@@ -289,11 +289,19 @@ def _forecast_summary_strip(
 
     tz = _location_zoneinfo(location)
     today_local = datetime.now(tz).date()
+    # Open-Meteo / JMA report hourly values as END-of-hour aggregates:
+    # the precipitation at timestamp 14:00 is rain accumulated during
+    # 13:00-14:00, and 00:00 is the previous day's last hour. Shift
+    # the timestamp back 1 h before bucketing into a date so the
+    # daily totals attribute each hour to the day during which it
+    # actually fell — '5/17 の雨量' now means rain during 5/17
+    # 00..24, not 5/16 23..5/17 23.
     daily = (
         forecast_df
         .with_columns(
             pl.col("timestamp")
             .dt.convert_time_zone(str(tz))
+            .dt.offset_by("-1h")
             .dt.date()
             .alias("date")
         )
@@ -429,18 +437,27 @@ def _hourly_forecast_strip(
     today = now_local.date()
     for row in hourly.iter_rows(named=True):
         ts: datetime = row["local_ts"]
-        d = ts.date()
-        if d != prev_date:
-            delta = (d - today).days
+        # End-of-hour convention: a 00:00 cell represents data for
+        # the previous day's 23:00-24:00 window, so display it as
+        # '24' attached to the previous day's run rather than as
+        # the first cell of the new day.
+        if ts.hour == 0:
+            display_date = ts.date() - timedelta(days=1)
+            hour_label = "24"
+        else:
+            display_date = ts.date()
+            hour_label = f"{ts.hour:02d}"
+        if display_date != prev_date:
+            delta = (display_date - today).days
             head_label = (
                 "今日" if delta == 0
                 else "明日" if delta == 1
                 else "明後日" if delta == 2
-                else d.strftime("%a")
+                else display_date.strftime("%a")
             )
             head_color = (
-                "#2c7fb8" if d.weekday() == 5
-                else "#c0392b" if d.weekday() == 6
+                "#2c7fb8" if display_date.weekday() == 5
+                else "#c0392b" if display_date.weekday() == 6
                 else "#2c3e50"
             )
             cells.append(ft.Container(
@@ -451,7 +468,7 @@ def _hourly_forecast_strip(
                             weight=ft.FontWeight.BOLD,
                             color=head_color,
                         ),
-                        ft.Text(d.strftime("%m/%d"), size=9,
+                        ft.Text(display_date.strftime("%m/%d"), size=9,
                                 color=ft.Colors.GREY),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -463,7 +480,7 @@ def _hourly_forecast_strip(
                 width=44,
                 alignment=ft.Alignment.CENTER,
             ))
-            prev_date = d
+            prev_date = display_date
 
         label, icon, color = _weather_descr(row.get("weather_code"))
         temp = row.get("temperature_2m")
@@ -481,7 +498,7 @@ def _hourly_forecast_strip(
         cells.append(ft.Container(
             content=ft.Column(
                 controls=[
-                    ft.Text(f"{ts.hour:02d}", size=10,
+                    ft.Text(hour_label, size=10,
                             color=ft.Colors.GREY),
                     ft.Icon(icon, color=color, size=22),
                     ft.Text(
@@ -763,11 +780,19 @@ def _daily_summary_table(
     # ``sum`` aliased as d_sum; ``max`` aliased as d_max, etc. Keep
     # any op the spec asks for so the row build below can index by
     # f"d_{op}".
+    #
+    # End-of-hour shift: Open-Meteo timestamps are end-of-hour
+    # aggregates (precip at 14:00 = rain during 13-14h, 00:00 = the
+    # previous day's last hour). Subtract 1 h before bucketing so a
+    # day's totals reflect the 00..24 local-clock window the user
+    # actually thinks of as 'that day'.
     daily = (
         forecast_df.with_columns(
-            pl.col("timestamp").dt.date().alias("date"),
-            pl.col("timestamp").dt.month().cast(pl.Int8).alias("d_month"),
-            pl.col("timestamp").dt.day().cast(pl.Int8).alias("d_day"),
+            pl.col("timestamp").dt.offset_by("-1h").dt.date().alias("date"),
+            pl.col("timestamp").dt.offset_by("-1h")
+            .dt.month().cast(pl.Int8).alias("d_month"),
+            pl.col("timestamp").dt.offset_by("-1h")
+            .dt.day().cast(pl.Int8).alias("d_day"),
         )
         .group_by(["date", "d_month", "d_day"])
         .agg(aggs)

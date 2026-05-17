@@ -302,11 +302,38 @@ def daily_records(
     The user wants to see 'the hottest May-17 ever recorded',
     not 'the average peak in the May-17 vicinity'.
     """
+    # End-of-hour convention: archive rows from Open-Meteo are
+    # end-of-hour aggregates (rain at timestamp 14:00 = the hour
+    # 13-14h, 00:00 = previous day's last hour). A "May 17 daily
+    # max" should bundle hours that fell during May 17 00..24 local
+    # — under the raw storage that's timestamp ∈ (May 17 01:00,
+    # ..., May 18 00:00). Pull both raw months in case day=last-of-
+    # month wraps; filter on the shifted (-1 h) date.
     root = archive_dir(data_dir, location)
-    lf = _scan_month(root, month)
-    if lf is None:
+    target = date(2001, month, day) if not (month == 2 and day == 29) \
+        else date(2000, 2, 29)
+    next_day = target + timedelta(days=1)
+    frames: list[pl.LazyFrame] = []
+    for m in {target.month, next_day.month}:
+        lf = _scan_month(root, m)
+        if lf is not None:
+            frames.append(lf)
+    if not frames:
         return {}
-    df = lf.filter(pl.col("day") == day).collect()
+    df = (
+        pl.concat(frames, how="vertical_relaxed")
+        .with_columns(
+            pl.col("timestamp").dt.offset_by("-1h")
+            .dt.month().cast(pl.Int8).alias("_d_month"),
+            pl.col("timestamp").dt.offset_by("-1h")
+            .dt.day().cast(pl.Int8).alias("_d_day"),
+        )
+        .filter(
+            (pl.col("_d_month") == month)
+            & (pl.col("_d_day") == day)
+        )
+        .collect()
+    )
     if df.is_empty():
         return {}
 
