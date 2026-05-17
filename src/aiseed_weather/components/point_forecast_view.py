@@ -28,6 +28,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import flet as ft
 import httpx
@@ -195,6 +196,178 @@ def _hourly_tsv(df: pl.DataFrame) -> str:
         or c.endswith("_estimate")
     )]
     return df.select(keep).write_csv(separator="\t")
+
+
+# WMO weather code → (label, Material icon name, accent colour).
+# Mirrors what a Japanese TV / newspaper forecast shows at a glance.
+# When we collapse a day to a single 'representative' condition we
+# take the max code in the day because the WMO ordering puts the
+# more disruptive phenomena (rain → snow → thunder) above the benign
+# ones (clear → cloud), so 'worst of the day wins' is the right
+# default for a headline impression.
+_WEATHER_BY_CODE: dict[int, tuple[str, str, str]] = {
+    0:  ("快晴",     ft.Icons.WB_SUNNY,     "#f5a623"),
+    1:  ("晴れ",     ft.Icons.WB_SUNNY,     "#f5a623"),
+    2:  ("晴時々曇", ft.Icons.WB_CLOUDY,    "#c8a14e"),
+    3:  ("曇り",     ft.Icons.CLOUD,        "#7c8693"),
+    45: ("霧",       ft.Icons.FOGGY,        "#9aa0a8"),
+    48: ("霧",       ft.Icons.FOGGY,        "#9aa0a8"),
+    51: ("霧雨",     ft.Icons.GRAIN,        "#6aa8d6"),
+    53: ("霧雨",     ft.Icons.GRAIN,        "#6aa8d6"),
+    55: ("霧雨",     ft.Icons.GRAIN,        "#5b95c9"),
+    56: ("着氷雨",   ft.Icons.AC_UNIT,      "#5a6fa5"),
+    57: ("着氷雨",   ft.Icons.AC_UNIT,      "#5a6fa5"),
+    61: ("小雨",     ft.Icons.GRAIN,        "#5b95c9"),
+    63: ("雨",       ft.Icons.UMBRELLA,     "#3a78b3"),
+    65: ("強雨",     ft.Icons.UMBRELLA,     "#234b86"),
+    66: ("着氷雨",   ft.Icons.AC_UNIT,      "#5a6fa5"),
+    67: ("着氷雨",   ft.Icons.AC_UNIT,      "#5a6fa5"),
+    71: ("小雪",     ft.Icons.AC_UNIT,      "#a5c1d8"),
+    73: ("雪",       ft.Icons.AC_UNIT,      "#8aa9c6"),
+    75: ("大雪",     ft.Icons.AC_UNIT,      "#647db0"),
+    77: ("霧雪",     ft.Icons.AC_UNIT,      "#8aa9c6"),
+    80: ("にわか雨", ft.Icons.GRAIN,        "#5b95c9"),
+    81: ("にわか雨", ft.Icons.UMBRELLA,     "#3a78b3"),
+    82: ("豪雨",     ft.Icons.UMBRELLA,     "#234b86"),
+    85: ("にわか雪", ft.Icons.AC_UNIT,      "#8aa9c6"),
+    86: ("大雪",     ft.Icons.AC_UNIT,      "#647db0"),
+    95: ("雷雨",     ft.Icons.THUNDERSTORM, "#8a4a99"),
+    96: ("雷雨雹",   ft.Icons.THUNDERSTORM, "#8a4a99"),
+    99: ("雷雨雹",   ft.Icons.THUNDERSTORM, "#8a4a99"),
+}
+
+
+def _weather_descr(code) -> tuple[str, str, str]:
+    if code is None:
+        return ("—", ft.Icons.HELP_OUTLINE, ft.Colors.GREY)
+    try:
+        c = int(code)
+    except (TypeError, ValueError):
+        return ("—", ft.Icons.HELP_OUTLINE, ft.Colors.GREY)
+    return _WEATHER_BY_CODE.get(
+        c, (f"code {c}", ft.Icons.HELP_OUTLINE, ft.Colors.GREY),
+    )
+
+
+def _location_zoneinfo(location: Location) -> ZoneInfo:
+    """ZoneInfo for the location, falling back to UTC if the saved
+    name is unparseable. The dialog validates input at write time
+    so this fallback only kicks in for legacy / hand-edited entries.
+    """
+    try:
+        return ZoneInfo(location.timezone)
+    except (ZoneInfoNotFoundError, ValueError, TypeError):
+        return ZoneInfo("UTC")
+
+
+def _forecast_summary_strip(
+    forecast_df: pl.DataFrame, location: Location, days: int = 7,
+) -> ft.Control:
+    """Classic horizontal forecast-summary strip: one card per day
+    with weather icon, Japanese condition label, high/low
+    temperatures and daily precipitation. Mirrors the at-a-glance
+    headline a Japanese TV / newspaper forecast presents so the
+    analyst sees the week's overall impression before drilling into
+    the variable-by-variable charts. Day boundaries respect the
+    location's saved timezone (a forecast 'day' is 0–24 h local
+    clock, not 0–24 h UTC).
+    """
+    if forecast_df.is_empty():
+        return ft.Container()
+
+    tz = _location_zoneinfo(location)
+    daily = (
+        forecast_df
+        .with_columns(
+            pl.col("timestamp")
+            .dt.convert_time_zone(str(tz))
+            .dt.date()
+            .alias("date")
+        )
+        .group_by("date")
+        .agg([
+            pl.col("temperature_2m").max().alias("t_high"),
+            pl.col("temperature_2m").min().alias("t_low"),
+            pl.col("precipitation").sum().alias("p_sum"),
+            pl.col("weather_code").max().alias("wcode"),
+        ])
+        .sort("date")
+        .head(days)
+    )
+
+    today = datetime.now(tz).date()
+    weekday_jp = ("月", "火", "水", "木", "金", "土", "日")
+    cards: list[ft.Control] = []
+    for row in daily.iter_rows(named=True):
+        d: date = row["date"]
+        delta = (d - today).days
+        if delta == 0:
+            day_label = "今日"
+        elif delta == 1:
+            day_label = "明日"
+        elif delta == 2:
+            day_label = "明後日"
+        else:
+            day_label = f"({weekday_jp[d.weekday()]})"
+        # Saturday blue / Sunday red — Japanese calendar convention.
+        day_color = (
+            "#2c7fb8" if d.weekday() == 5
+            else "#c0392b" if d.weekday() == 6
+            else None
+        )
+        label, icon, color = _weather_descr(row["wcode"])
+        p_sum = row["p_sum"]
+        precip_text = (
+            f"{p_sum:.1f} mm" if p_sum is not None and p_sum > 0.05
+            else "—"
+        )
+        precip_color = "#3a78b3" if (p_sum or 0) > 0.05 else ft.Colors.GREY
+
+        cards.append(ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        day_label, size=12, weight=ft.FontWeight.BOLD,
+                        color=day_color,
+                    ),
+                    ft.Text(d.strftime("%m/%d"), size=10, color=ft.Colors.GREY),
+                    ft.Icon(icon, color=color, size=40),
+                    ft.Text(label, size=11),
+                    ft.Row(controls=[
+                        ft.Text(
+                            _format_value(row["t_high"], fmt=".0f"),
+                            color="#c0392b", weight=ft.FontWeight.BOLD,
+                            size=14,
+                        ),
+                        ft.Text("/", color=ft.Colors.GREY),
+                        ft.Text(
+                            _format_value(row["t_low"], fmt=".0f"),
+                            color="#2c7fb8", weight=ft.FontWeight.BOLD,
+                            size=14,
+                        ),
+                        ft.Text("°", size=10, color=ft.Colors.GREY),
+                    ], alignment=ft.MainAxisAlignment.CENTER, spacing=2),
+                    ft.Text(precip_text, size=11, color=precip_color),
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=2,
+            ),
+            padding=ft.Padding.all(8),
+            border=ft.Border.all(width=1, color=ft.Colors.BLACK26),
+            border_radius=6,
+            width=92,
+        ))
+
+    return ft.Column(controls=[
+        ft.Text(
+            f"週間天気予報 ({location.timezone})",
+            size=14, weight=ft.FontWeight.BOLD,
+        ),
+        ft.Row(
+            controls=cards, spacing=6, wrap=False,
+            scroll=ft.ScrollMode.AUTO,
+        ),
+    ])
 
 
 def _daily_summary_table(
@@ -876,6 +1049,18 @@ def PointForecastView(settings: UserSettings):
             color=ft.Colors.RED,
         ))
     elif forecast_state == "ready" and forecast_data is not None:
+        # Classic at-a-glance weekly summary strip on top of every
+        # variable view: weather icon + condition + high/low temp +
+        # daily precip, one card per local-time day. The user lands
+        # on the headline before stepping into the per-variable
+        # charts. Days are aggregated in the location's timezone so a
+        # 'day' is 0–24 h local clock, not UTC.
+        if selected_location is not None:
+            rows.append(_forecast_summary_strip(
+                forecast_data.hres_df, selected_location,
+            ))
+            rows.append(ft.Divider())
+
         # Day-range buttons. Active choice = FilledButton (high
         # contrast), inactive = OutlinedButton — Material has no
         # native SegmentedButton in Flet 0.85, so this row-of-
