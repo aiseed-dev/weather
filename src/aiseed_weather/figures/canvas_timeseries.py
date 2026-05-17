@@ -22,6 +22,7 @@ shared with the map renderers.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Iterable
 
@@ -41,26 +42,54 @@ _VAR_INFO: dict[str, tuple[str, str]] = {
 }
 
 
-# Per-variable Y-axis preferences. Each entry is
-# ``(grid_step, label_every_n)``: a gridline is drawn at every
-# ``grid_step``, but only every Nth gridline gets a number label
-# so the axis text stays readable while the eye still sees the
-# fine resolution. Variables without an entry fall back to the
-# auto 'nice ticks' algorithm.
-#
-# Conventions:
-#   * 気温: 2.5 °C thin / 5 °C labelled (analyst-friendly synoptic step)
-#   * MSL: 4 hPa thin / 20 hPa labelled (WMO convention)
-#   * 降水 / 風速 / 雲量 / 湿度: round operational steps
-_Y_AXIS_PREFS: dict[str, tuple[float, int]] = {
-    "temperature_2m":       (2.5, 2),   # gridline every 2.5 °C, label every 5 °C
-    "precipitation":        (1.0, 5),   # gridline every 1 mm/h, label every 5 mm/h
-    "relative_humidity_2m": (10.0, 1),  # gridline + label every 10 %
-    "wind_speed_10m":       (2.5, 2),   # gridline every 2.5 m/s, label every 5
-    "cloud_cover":          (10.0, 2),  # gridline every 10 %, label every 20 %
-    # MSL isn't a canvas chart variable yet; the entry is here so
+# Per-variable Y-axis preferences. Each entry collects:
+#   grid_step       — every Nth value gets a gridline
+#   label_every     — every Nth gridline gets a number label
+#                     (smaller intervals stay un-labelled to keep the
+#                      axis text readable)
+#   fixed_min/max   — HARD bounds. Data outside this range is clipped
+#                     visually (the line / band go off-canvas above /
+#                     below). Used for variables with a known
+#                     physical range (0..100 % for humidity / cloud).
+#   soft_min/max    — bounds the axis MUST include. The axis extends
+#                     past these if the data demands, but never
+#                     contracts below them. Used for precipitation:
+#                     the chart always reaches 25 mm/h so the analyst
+#                     can immediately see whether '3 mm/h' is light
+#                     drizzle (small bar) or 'heavy' (≈ top of axis);
+#                     a real typhoon at 60 mm/h still pushes the
+#                     axis up to fit.
+@dataclass(frozen=True)
+class _YAxisPref:
+    grid_step: float
+    label_every: int = 1
+    fixed_min: float | None = None
+    fixed_max: float | None = None
+    soft_min: float | None = None
+    soft_max: float | None = None
+
+
+_Y_AXIS_PREFS: dict[str, _YAxisPref] = {
+    "temperature_2m":       _YAxisPref(grid_step=2.5, label_every=2),
+    "precipitation":        _YAxisPref(
+        grid_step=5, label_every=1,
+        fixed_min=0, soft_max=25,
+    ),
+    "relative_humidity_2m": _YAxisPref(
+        grid_step=10, label_every=1,
+        fixed_min=0, fixed_max=100,
+    ),
+    "wind_speed_10m":       _YAxisPref(
+        grid_step=2.5, label_every=2,
+        fixed_min=0,
+    ),
+    "cloud_cover":          _YAxisPref(
+        grid_step=10, label_every=2,
+        fixed_min=0, fixed_max=100,
+    ),
+    # MSL isn't a canvas-chart variable yet; the entry is here so
     # adding 海面気圧 to point-forecast just works.
-    "msl":                  (4.0, 5),   # gridline every 4 hPa, label every 20 hPa
+    "msl":                  _YAxisPref(grid_step=4, label_every=5),
 }
 
 
@@ -320,16 +349,37 @@ def build_point_forecast_canvas(
         raw_min, raw_max = 0.0, 1.0
 
     # Y axis: explicit per-variable preference wins (e.g. 気温 = 2.5 °C
-    # gridline / 5 °C label, 海面気圧 = 4 hPa / 20 hPa). Variables
-    # without a pref fall back to the auto 'nice ticks' algorithm
-    # (rounds the step to {1, 2, 2.5, 5} × 10^k). Either way the
-    # axis bounds extend outward to multiples of the step so the
-    # first / last grid line sit on the panel edges rather than
-    # floating off, and labels are integer when the step is whole.
+    # gridline / 5 °C label, 海面気圧 = 4 hPa / 20 hPa, 湿度 = fixed
+    # 0..100). Variables without a pref fall back to the auto 'nice
+    # ticks' algorithm (rounds the step to {1, 2, 2.5, 5} × 10^k).
+    # Either way the axis bounds extend outward to multiples of the
+    # step so the first / last grid line sit on the panel edges.
     pref = _Y_AXIS_PREFS.get(variable)
     if pref is not None:
-        y_step, label_every = pref
-        y_ticks, v_min, v_max = _ticks_at_step(raw_min, raw_max, y_step)
+        # Apply hard / soft bounds before the tick rounding.
+        if pref.fixed_min is not None:
+            target_min = pref.fixed_min
+        elif pref.soft_min is not None:
+            target_min = min(pref.soft_min, raw_min)
+        else:
+            target_min = raw_min
+        if pref.fixed_max is not None:
+            target_max = pref.fixed_max
+        elif pref.soft_max is not None:
+            target_max = max(pref.soft_max, raw_max)
+        else:
+            target_max = raw_max
+        y_ticks, v_min, v_max = _ticks_at_step(
+            target_min, target_max, pref.grid_step,
+        )
+        # Hard bounds: trust them exactly so 'cloud cover 0..100'
+        # never grows to 0..110 from the outward rounding.
+        if pref.fixed_min is not None:
+            v_min = pref.fixed_min
+        if pref.fixed_max is not None:
+            v_max = pref.fixed_max
+        y_step = pref.grid_step
+        label_every = pref.label_every
     else:
         y_ticks, v_min, v_max, y_step = _nice_y_ticks(
             raw_min, raw_max, n_target=6,
@@ -365,22 +415,59 @@ def build_point_forecast_canvas(
                 alignment=ft.Alignment.CENTER_RIGHT,
             ))
 
-    # ── X axis (daily tick at 00:00 UTC of each day in range) ──
-    t_cur = t_min.replace(hour=0, minute=0, second=0, microsecond=0)
-    if t_cur < t_min:
-        t_cur += timedelta(days=1)
+    # ── X axis ──────────────────────────────────────────────────
+    # Tick cadence + label format scale with the visible span so
+    # short windows (1日 / 3日) get hourly resolution while wide
+    # ones (15日) stay clean with one tick per day.
+    #
+    # Time labels never include minutes — the axis is a continuous
+    # time scale and the analyst cares about the hour, not the
+    # minute. Midnight ticks promote to a date label so the day
+    # boundary is visible at a glance.
+    span_hours = span_seconds / 3600.0
+    if span_hours <= 30:           # 1-day view
+        tick_step = timedelta(hours=3)
+    elif span_hours <= 96:         # 2-4 day window
+        tick_step = timedelta(hours=6)
+    else:                          # longer than ~4 days
+        tick_step = timedelta(days=1)
+
+    # Anchor on a tick boundary at or after t_min so the first
+    # tick is exactly on a 3 h / 6 h / midnight mark.
+    t_cur = t_min.replace(minute=0, second=0, microsecond=0)
+    if tick_step >= timedelta(days=1):
+        t_cur = t_cur.replace(hour=0)
+        if t_cur < t_min:
+            t_cur += timedelta(days=1)
+    else:
+        step_hours = int(tick_step.total_seconds() // 3600)
+        t_cur = t_cur.replace(
+            hour=(t_cur.hour // step_hours) * step_hours,
+        )
+        while t_cur < t_min:
+            t_cur += tick_step
+
     while t_cur <= t_max:
         x = x_of(t_cur)
+        is_midnight = t_cur.hour == 0
         shapes.append(cv.Line(
             x, pad_t, x, pad_t + plot_h,
-            paint=ft.Paint(color=_GRID, stroke_width=0.6),
+            paint=ft.Paint(
+                color=_GRID,
+                stroke_width=0.9 if is_midnight else 0.5,
+            ),
         ))
+        # Midnight → date label. Other ticks → hour only (no minutes).
+        label = (
+            t_cur.strftime("%m-%d")
+            if is_midnight else f"{t_cur.hour}"
+        )
         shapes.append(cv.Text(
-            x, pad_t + plot_h + 14, t_cur.strftime("%m-%d"),
+            x, pad_t + plot_h + 14, label,
             style=ft.TextStyle(color=_AXIS, size=10),
             alignment=ft.Alignment.CENTER,
         ))
-        t_cur += timedelta(days=1)
+        t_cur += tick_step
 
     # ── Climatology band (p25..p75) ────────────────────────────
     p25_col = f"{variable}_p25"
