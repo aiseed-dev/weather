@@ -464,6 +464,10 @@ def PointForecastView(settings: UserSettings):
     # to a few days for legibility, or out to the full HRES range
     # for a panoramic look. Default 7 = one week.
     visible_days, set_visible_days = ft.use_state(7)
+    # Horizontal pan offset (in hours). 0 = window centred on 'now'
+    # per the day-range rule (25 % past / 75 % future). Pan buttons
+    # shift the window left/right; resets to 0 on day-range change.
+    pan_offset_h, set_pan_offset_h = ft.use_state(0)
 
     # Download flow: a single async coroutine that opens the
     # save-file picker and writes the matplotlib PNG to the chosen
@@ -837,18 +841,31 @@ def PointForecastView(settings: UserSettings):
         # Day-range buttons. Active choice = FilledButton (high
         # contrast), inactive = OutlinedButton — Material has no
         # native SegmentedButton in Flet 0.85, so this row-of-
-        # buttons pattern fills the role.
+        # buttons pattern fills the role. Day-range change resets
+        # the pan offset so the new range starts centred on 'now'.
+        def _on_day_click(n: int):
+            set_visible_days(n)
+            set_pan_offset_h(0)
+
         def _day_button(n: int) -> ft.Control:
             label = "全期間" if n >= 15 else f"{n}日"
             if visible_days == n:
                 return ft.FilledButton(
                     label,
-                    on_click=lambda _: set_visible_days(n),
+                    on_click=lambda _, days=n: _on_day_click(days),
                 )
             return ft.OutlinedButton(
                 label,
-                on_click=lambda _: set_visible_days(n),
+                on_click=lambda _, days=n: _on_day_click(days),
             )
+
+        # Pan controls — replaces horizontal-scrolling the canvas,
+        # which didn't render a usable scrollbar on Flet 0.85
+        # desktop. One button click shifts the visible window by
+        # half its current span (so '7 日' pans 3.5 days at a time,
+        # '1 日' pans 12 h). The recentre button drops back to
+        # 'now-centred'.
+        pan_step_h = max(6, int(visible_days * 12))
 
         rows.append(ft.Row(controls=[
             ft.Text("表示日数:", size=12, color=ft.Colors.GREY),
@@ -856,14 +873,32 @@ def PointForecastView(settings: UserSettings):
             _day_button(3),
             _day_button(7),
             _day_button(15),
+            ft.Container(width=20),
+            ft.IconButton(
+                icon=ft.Icons.CHEVRON_LEFT,
+                tooltip=f"← {pan_step_h}時間前",
+                on_click=lambda _: set_pan_offset_h(pan_offset_h - pan_step_h),
+            ),
+            ft.IconButton(
+                icon=ft.Icons.MY_LOCATION,
+                tooltip="現在に戻す",
+                on_click=lambda _: set_pan_offset_h(0),
+                disabled=pan_offset_h == 0,
+            ),
+            ft.IconButton(
+                icon=ft.Icons.CHEVRON_RIGHT,
+                tooltip=f"→ {pan_step_h}時間後",
+                on_click=lambda _: set_pan_offset_h(pan_offset_h + pan_step_h),
+            ),
         ]))
 
-        # Visible-window calculation: 'now' sits at 25% from the
-        # left so the analyst sees a slice of the past for context
-        # and most of the chart for the forecast they actually
-        # care about. 全期間 (15日) falls back to the full
-        # hres_joined range so we don't clip the past 3 days
-        # ECMWF returns.
+        # Visible-window calculation. Base: 'now' sits at 25 % from
+        # the left so the analyst sees a slice of the past for
+        # context and most of the chart for the forecast they
+        # actually care about. ``pan_offset_h`` then shifts the
+        # whole window left/right when the user clicks the
+        # pan buttons. 全期間 (15日) ignores both rules and shows
+        # the data's full extent.
         now_utc = datetime.now(timezone.utc).replace(
             minute=0, second=0, microsecond=0,
         )
@@ -871,16 +906,20 @@ def PointForecastView(settings: UserSettings):
             visible_window = None  # full range
         else:
             span = timedelta(days=visible_days)
+            anchor = now_utc + timedelta(hours=pan_offset_h)
             visible_window = (
-                now_utc - span * 0.25,
-                now_utc + span * 0.75,
+                anchor - span * 0.25,
+                anchor + span * 0.75,
             )
 
-        # Canvas width scales with visible days so short windows
-        # actually fit the viewport. 180 px / day is a comfortable
-        # density; the 1100 px floor keeps even '1日' from
-        # collapsing to a useless sliver.
-        canvas_width = max(1100, int(visible_days * 180))
+        # Canvas width fits the typical desktop viewport so we don't
+        # have to rely on horizontal scrolling — pan buttons above
+        # navigate longer ranges instead. 1400 px is a balance
+        # between 'wide enough for 7-day view' and 'fits a 1366-px
+        # laptop screen'; ListView-based scroll didn't render a
+        # usable scrollbar on Flet 0.85 so the canvas now lives
+        # inside the regular column without a wrapper.
+        canvas_width = 1400
 
         chart_canvas = build_point_forecast_canvas(
             location_name=forecast_data.location_name,
@@ -892,29 +931,10 @@ def PointForecastView(settings: UserSettings):
             visible_window=visible_window,
             width=canvas_width,
         )
-        # Canvas height 700 — matches build_point_forecast_canvas's
-        # new default and gives Y-axis gridlines room when variables
-        # with fine steps (気温 2.5 °C, MSL 4 hPa) put 10-20 of them
-        # on the panel.
-        #
-        # Horizontal scroll: ``ft.ListView(horizontal=True)`` rather
-        # than ``ft.Row(scroll=AUTO)``. The Row variant didn't scroll
-        # because the outer Column already has scroll=AUTO (vertical)
-        # and the layout expanded to fit the Row's full content, so
-        # the Row never knew it was overflowing. ListView clips to
-        # its own bounds and exposes its own scrollbar regardless of
-        # parent constraints — the canonical Flet pattern for a
-        # wide-canvas-inside-a-scrollable-column situation.
-        rows.append(ft.ListView(
-            controls=[
-                ft.Container(
-                    content=chart_canvas,
-                    width=canvas_width,
-                    height=700,
-                ),
-            ],
-            horizontal=True,
-            height=720,
+        rows.append(ft.Container(
+            content=chart_canvas,
+            width=canvas_width,
+            height=700,
             padding=ft.Padding.symmetric(vertical=8, horizontal=0),
         ))
         rows.append(ft.Divider())
