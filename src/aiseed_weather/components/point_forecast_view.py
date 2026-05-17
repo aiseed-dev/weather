@@ -859,15 +859,65 @@ def PointForecastView(settings: UserSettings):
                 on_click=lambda _, days=n: _on_day_click(days),
             )
 
-        # Pan controls — replaces horizontal-scrolling the canvas,
-        # which didn't render a usable scrollbar on Flet 0.85
-        # desktop. One button click shifts the visible window by
-        # half its current span (so '7 日' pans 3.5 days at a time,
-        # '1 日' pans 12 h). The recentre button drops back to
-        # 'now-centred'.
+        # 全期間 (15日) shows the entire data range and ignores both
+        # pan offset and date picker — disable those controls so the
+        # UI doesn't pretend they work in that mode.
+        zoomed_in = visible_days < 15
         pan_step_h = max(6, int(visible_days * 12))
 
-        rows.append(ft.Row(controls=[
+        # Date picker: pick a specific calendar day in the forecast
+        # range and recentre the visible window on noon UTC of that
+        # date. Cheap-cost alternative to clicking ◀ / ▶ multiple
+        # times when the analyst wants to jump straight to e.g.
+        # '05-25 の天気を見たい'.
+        now_utc = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0,
+        )
+        date_dropdown: ft.Control | None = None
+        if zoomed_in and not forecast_data.hres_df.is_empty():
+            ts_col = forecast_data.hres_df["timestamp"]
+            d_min = ts_col.min().date()
+            d_max = ts_col.max().date()
+            available_dates: list[date] = []
+            cur_d = d_min
+            while cur_d <= d_max:
+                available_dates.append(cur_d)
+                cur_d += timedelta(days=1)
+            anchor_date = (
+                now_utc + timedelta(hours=pan_offset_h)
+            ).date()
+
+            def _on_date_pick(e):
+                picked = date.fromisoformat(e.control.value)
+                # Noon UTC of the picked date becomes the new anchor
+                # so the visible window is centred on the day.
+                new_anchor = datetime(
+                    picked.year, picked.month, picked.day,
+                    12, 0, tzinfo=timezone.utc,
+                )
+                delta_h = int(
+                    (new_anchor - now_utc).total_seconds() / 3600,
+                )
+                set_pan_offset_h(delta_h)
+
+            today = now_utc.date()
+            date_dropdown = ft.Dropdown(
+                value=anchor_date.isoformat(),
+                options=[
+                    ft.dropdown.Option(
+                        key=d.isoformat(),
+                        text=(
+                            f"{d:%m-%d}"
+                            + (" (今日)" if d == today else "")
+                        ),
+                    )
+                    for d in available_dates
+                ],
+                on_select=_on_date_pick,
+                width=140,
+            )
+
+        toolbar = [
             ft.Text("表示日数:", size=12, color=ft.Colors.GREY),
             _day_button(1),
             _day_button(3),
@@ -878,19 +928,25 @@ def PointForecastView(settings: UserSettings):
                 icon=ft.Icons.CHEVRON_LEFT,
                 tooltip=f"← {pan_step_h}時間前",
                 on_click=lambda _: set_pan_offset_h(pan_offset_h - pan_step_h),
+                disabled=not zoomed_in,
             ),
             ft.IconButton(
                 icon=ft.Icons.MY_LOCATION,
                 tooltip="現在に戻す",
                 on_click=lambda _: set_pan_offset_h(0),
-                disabled=pan_offset_h == 0,
+                disabled=(not zoomed_in) or pan_offset_h == 0,
             ),
             ft.IconButton(
                 icon=ft.Icons.CHEVRON_RIGHT,
                 tooltip=f"→ {pan_step_h}時間後",
                 on_click=lambda _: set_pan_offset_h(pan_offset_h + pan_step_h),
+                disabled=not zoomed_in,
             ),
-        ]))
+        ]
+        if date_dropdown is not None:
+            toolbar.append(ft.Container(width=12))
+            toolbar.append(date_dropdown)
+        rows.append(ft.Row(controls=toolbar))
 
         # Visible-window calculation. Base: 'now' sits at 25 % from
         # the left so the analyst sees a slice of the past for
@@ -899,9 +955,7 @@ def PointForecastView(settings: UserSettings):
         # whole window left/right when the user clicks the
         # pan buttons. 全期間 (15日) ignores both rules and shows
         # the data's full extent.
-        now_utc = datetime.now(timezone.utc).replace(
-            minute=0, second=0, microsecond=0,
-        )
+        # (now_utc was already computed above for the date dropdown.)
         if visible_days >= 15:
             visible_window = None  # full range
         else:
