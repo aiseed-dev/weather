@@ -501,10 +501,60 @@ VB 6 で生産性を支えていたのは「**言語の単純さ × フォーム
 
 ---
 
+## 帳票 / 印刷も実は強い ― Excel テンプレート方式
+
+業務アプリで避けて通れない「帳票出力」 ― これは Flet の弱点ではなく、
+むしろ Python の伝統的な得意領域。日本の現場で de facto となっている
+**Excel 帳票**を、テンプレートに値を流し込む方式で生成できる:
+
+```python
+from openpyxl import load_workbook
+
+wb = load_workbook("template/月次報告.xlsx")
+ws = wb["集計"]
+ws["B3"] = report_date
+ws["D5"] = total_count
+for i, row in enumerate(df.iter_rows(named=True), start=10):
+    ws.cell(i, 1, row["地点"])
+    ws.cell(i, 2, row["最高気温"])
+    ws.cell(i, 3, row["最低気温"])
+wb.save(output_path)
+```
+
+書式・罫線・印刷範囲・ヘッダ/フッタ・社判の画像はテンプレート側で
+作り込んでおけば、Python は値を埋めるだけ。**現場の経理 / 事務担当が
+Excel で直接テンプレートを編集できる**ので、運用に乗せやすい。
+
+選べる出力経路:
+
+| 出力 | ライブラリ | 用途 |
+|---|---|---|
+| Excel (.xlsx) テンプレート差し込み | `openpyxl` | 月次報告、明細、見積書 |
+| Excel + チャート / 条件付き書式 | `xlsxwriter` | グラフ付き集計表 |
+| Word (.docx) テンプレート | `python-docx`, `docxtpl` | 契約書、報告書 |
+| PDF (低レベル) | `reportlab` | レイアウト固定の証憑 |
+| HTML → PDF | `weasyprint` | CSS で組んだレポート |
+| プリンタ直送 | `win32print` (Win), `cups` (Linux) | ラベル発行、レシート |
+
+**Flet コンポーネント側はボタン 1 つで済む**:
+
+```python
+ft.FilledButton(
+    "帳票出力",
+    icon=ft.Icons.PRINT,
+    on_click=lambda _: export_excel(data, settings.template_path),
+)
+```
+
+`aiseed-weather` の「PNG ダウンロード」と同じパターン ― 画面表示と
+出力ファイルで別エンジンを使い、両方とも Python なので 1 つのコード
+ベースに収まる。
+
+---
+
 ## 弱点も正直に
 
 - `DataTable` は 1 万行スクロールには向かない。仮想化は自前
-- 印刷 / 帳票は別ライブラリ (`reportlab`, `weasyprint`)
 - モバイル向けの細かい UX (ジェスチャ等) は Flutter 知識が要る
 - 配布バイナリは Flutter ランタイム同梱で最小 30 MB から
 - まだ進化中 ― 宣言的モードは Flet 0.70 で入った新しい API なので、
