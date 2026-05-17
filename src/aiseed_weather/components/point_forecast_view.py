@@ -62,7 +62,7 @@ from aiseed_weather.services.open_meteo_forecast import (
     fetch_forecast,
 )
 from aiseed_weather.services.jma_amedas_service import (
-    AmedasStation, JmaAmedasService, nearest_stations,
+    AmedasStation, JmaAmedasService, haversine_km, nearest_stations,
 )
 from aiseed_weather.services.jma_forecast_service import (
     JmaForecastService,
@@ -516,6 +516,220 @@ def _hourly_forecast_strip(
     ])
 
 
+# AMeDAS wind directions are reported as a 16-point compass index
+# (1=N, 2=NNE, ..., 16=NNW); 0 means calm. Map to the conventional
+# Japanese labels used on TV / newspaper weather pages.
+_WIND_DIR_JP: tuple[str, ...] = (
+    "静穏", "北", "北北東", "北東", "東北東",
+    "東", "東南東", "南東", "南南東", "南",
+    "南南西", "南西", "西南西", "西",
+    "西北西", "北西", "北北西",
+)
+
+
+def _amedas_card(
+    stations: list[tuple[AmedasStation, dict[str, float]]],
+    snapshot_time: datetime,
+    home_lat: float,
+    home_lon: float,
+) -> ft.Control:
+    """AMeDAS observation card. One row per selected station with
+    temperature / humidity / 1-hour rain / wind speed-direction.
+    Missing values per-station fall back to '—' so the card stays
+    aligned even when one station only publishes rainfall.
+    """
+    rows: list[ft.Control] = []
+    header = ft.Row(controls=[
+        ft.Text("観測所", weight=ft.FontWeight.BOLD, width=140),
+        ft.Text("距離", weight=ft.FontWeight.BOLD, width=60),
+        ft.Text("気温", weight=ft.FontWeight.BOLD, width=70),
+        ft.Text("湿度", weight=ft.FontWeight.BOLD, width=60),
+        ft.Text("1h降水", weight=ft.FontWeight.BOLD, width=70),
+        ft.Text("風", weight=ft.FontWeight.BOLD, width=130),
+    ])
+    rows.append(header)
+    for station, obs in stations:
+        dist = haversine_km(
+            home_lat, home_lon, station.latitude, station.longitude,
+        )
+        temp = obs.get("temp")
+        humidity = obs.get("humidity")
+        rain_1h = obs.get("prcp_1h")
+        wind_spd = obs.get("wind_speed")
+        wind_dir_idx = obs.get("wind_dir")
+        if wind_spd is None:
+            wind_text = "—"
+        else:
+            try:
+                idx = int(wind_dir_idx) if wind_dir_idx is not None else 0
+            except (TypeError, ValueError):
+                idx = 0
+            dir_label = _WIND_DIR_JP[idx] if 0 <= idx < len(_WIND_DIR_JP) else "—"
+            wind_text = f"{wind_spd:.1f} m/s {dir_label}"
+        rows.append(ft.Row(controls=[
+            ft.Text(station.name_kanji or station.station_id, width=140,
+                    size=12),
+            ft.Text(f"{dist:.1f} km", width=60, size=12,
+                    color=ft.Colors.GREY),
+            ft.Text(
+                _format_value(temp, fmt=".1f") + (" °C" if temp is not None else ""),
+                width=70, size=12,
+                color="#c0392b" if (temp or 0) >= 28
+                else "#2c7fb8" if (temp is not None and temp <= 5) else None,
+            ),
+            ft.Text(
+                _format_value(humidity, fmt=".0f") + (" %" if humidity is not None else ""),
+                width=60, size=12,
+            ),
+            ft.Text(
+                _format_value(rain_1h, fmt=".1f") + (" mm" if rain_1h is not None else ""),
+                width=70, size=12,
+                color="#3a78b3" if (rain_1h or 0) > 0.05 else None,
+            ),
+            ft.Text(wind_text, width=130, size=12),
+        ]))
+
+    return ft.Container(
+        content=ft.Column(controls=[
+            ft.Row(controls=[
+                ft.Icon(ft.Icons.SENSORS, color="#2c7fb8", size=18),
+                ft.Text(
+                    f"AMeDAS 観測 ({snapshot_time:%m/%d %H:%M} JST 時点)",
+                    size=14, weight=ft.FontWeight.BOLD,
+                ),
+            ]),
+            *rows,
+            ft.Text(
+                "出典: 気象庁ホームページ (https://www.jma.go.jp/)",
+                size=10, color=ft.Colors.GREY,
+            ),
+        ], spacing=4),
+        padding=ft.Padding.all(10),
+        border=ft.Border.all(width=1, color=ft.Colors.BLACK26),
+        border_radius=6,
+    )
+
+
+def _jma_forecast_card(forecast) -> ft.Control:
+    """JMA 府県天気予報 card: short-term (today / tomorrow /
+    day-after) headline weather + pop %, followed by the week-ahead
+    strip (date / icon / min-max temp / pop / reliability).
+    ``forecast`` is the ForecastBundle dataclass from
+    jma_forecast_service.
+    """
+    short_rows: list[ft.Control] = []
+    today = datetime.now().date()
+    for day in forecast.short_term[:3]:
+        delta = (day.date - today).days
+        day_label = (
+            "今日" if delta == 0
+            else "明日" if delta == 1
+            else "明後日" if delta == 2
+            else day.date.strftime("%m/%d")
+        )
+        text = day.weather_text or "—"
+        pop_text = (
+            f"降水確率 {day.precip_prob_pct} %"
+            if day.precip_prob_pct is not None else ""
+        )
+        short_rows.append(ft.Row(controls=[
+            ft.Text(day_label, weight=ft.FontWeight.BOLD,
+                    size=13, width=70),
+            ft.Text(text, size=12, expand=True),
+            ft.Text(pop_text, size=11, color=ft.Colors.GREY),
+        ]))
+
+    week_cards: list[ft.Control] = []
+    weekday_jp = ("月", "火", "水", "木", "金", "土", "日")
+    for day in forecast.week_ahead:
+        if day.date <= today:
+            continue
+        delta = (day.date - today).days
+        day_label = (
+            "明日" if delta == 1
+            else "明後日" if delta == 2
+            else f"({weekday_jp[day.date.weekday()]})"
+        )
+        day_color = (
+            "#2c7fb8" if day.date.weekday() == 5
+            else "#c0392b" if day.date.weekday() == 6 else None
+        )
+        label, icon, color = _weather_descr(day.weather_code)
+        rel_color = (
+            "#27ae60" if day.reliability == "A"
+            else "#e67e22" if day.reliability == "B"
+            else "#c0392b" if day.reliability == "C" else ft.Colors.GREY
+        )
+        week_cards.append(ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(day_label, size=11, weight=ft.FontWeight.BOLD,
+                            color=day_color),
+                    ft.Text(day.date.strftime("%m/%d"),
+                            size=9, color=ft.Colors.GREY),
+                    ft.Icon(icon, color=color, size=28),
+                    ft.Text(label, size=10),
+                    ft.Row(controls=[
+                        ft.Text(_format_value(day.temp_max, fmt=".0f"),
+                                color="#c0392b",
+                                weight=ft.FontWeight.BOLD, size=12),
+                        ft.Text("/", color=ft.Colors.GREY, size=10),
+                        ft.Text(_format_value(day.temp_min, fmt=".0f"),
+                                color="#2c7fb8",
+                                weight=ft.FontWeight.BOLD, size=12),
+                    ], alignment=ft.MainAxisAlignment.CENTER, spacing=2),
+                    ft.Text(
+                        f"{day.precip_prob_pct} %"
+                        if day.precip_prob_pct is not None else "—",
+                        size=10, color="#3a78b3",
+                    ),
+                    ft.Text(
+                        f"信頼度 {day.reliability}"
+                        if day.reliability else "",
+                        size=9, color=rel_color,
+                    ),
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=1,
+            ),
+            padding=ft.Padding.all(6),
+            border=ft.Border.all(width=1, color=ft.Colors.BLACK12),
+            border_radius=4,
+            width=72,
+        ))
+
+    return ft.Container(
+        content=ft.Column(controls=[
+            ft.Row(controls=[
+                ft.Icon(ft.Icons.CLOUD_QUEUE, color="#34495e", size=18),
+                ft.Text(
+                    "JMA 府県天気予報",
+                    size=14, weight=ft.FontWeight.BOLD,
+                ),
+                ft.Container(expand=True),
+                ft.Text(
+                    f"発表: {forecast.report_datetime:%Y-%m-%d %H:%M} "
+                    f"({forecast.publishing_office})",
+                    size=10, color=ft.Colors.GREY,
+                ),
+            ]),
+            *short_rows,
+            ft.Divider(),
+            ft.Text("週間予報", size=12, weight=ft.FontWeight.BOLD),
+            ft.Row(controls=week_cards, spacing=4, wrap=False,
+                   scroll=ft.ScrollMode.AUTO)
+            if week_cards else ft.Text("週間予報なし", color=ft.Colors.GREY),
+            ft.Text(
+                "出典: 気象庁ホームページ (https://www.jma.go.jp/)",
+                size=10, color=ft.Colors.GREY,
+            ),
+        ], spacing=6),
+        padding=ft.Padding.all(10),
+        border=ft.Border.all(width=1, color=ft.Colors.BLACK26),
+        border_radius=6,
+    )
+
+
 def _daily_summary_table(
     forecast_df: pl.DataFrame,
     variable: str,
@@ -779,6 +993,14 @@ def PointForecastView(settings: UserSettings):
     new_tz, set_new_tz = ft.use_state("")
     new_err, set_new_err = ft.use_state("")
 
+    # JMA overview side-data (AMeDAS observations + JMA forecast).
+    # Populated by load_forecast() for JP locations; value is None
+    # before/after the fetch or for non-JP locations. Errors live in
+    # their own slot so a transient JMA failure doesn't blow away
+    # the cached value from a previous successful fetch.
+    jma_overview_data, set_jma_overview_data = ft.use_state(None)
+    jma_overview_error, set_jma_overview_error = ft.use_state("")
+
     # Per-location JMA / AMeDAS settings dialog state. ``settings_target``
     # holds the location being edited (None = closed); ``settings_data``
     # holds the freshly-loaded option lists (offices + nearest stations)
@@ -903,6 +1125,11 @@ def PointForecastView(settings: UserSettings):
                     loc.name, loc.latitude, loc.longitude)
         set_forecast_state("fetching")
         set_error_msg("")
+        # Drop any JMA overview data from the previous selection
+        # before we start so the overview doesn't briefly show stale
+        # numbers attributed to the new location.
+        set_jma_overview_data(None)
+        set_jma_overview_error("")
         try:
             await _ensure_daily_archive_for(loc, data_dir)
             logger.info("load_forecast: archive ensured")
@@ -938,6 +1165,77 @@ def PointForecastView(settings: UserSettings):
             logger.exception("Forecast fetch failed for %s", loc.name)
             set_error_msg(f"{type(exc).__name__}: {exc}")
             set_forecast_state("error")
+            return
+        # JMA overview side-load. Only fires for JP locations and only
+        # if the main forecast succeeded — keeps the chart usable even
+        # when JMA's endpoint is having a bad day. Failures land in
+        # the overview-page error slot, not the page-level one.
+        if loc.is_japan:
+            try:
+                await _load_jma_overview(loc)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("JMA overview load failed for %s", loc.name)
+                set_jma_overview_error(f"{type(exc).__name__}: {exc}")
+
+    async def _load_jma_overview(loc: Location):
+        """Fetch AMeDAS snapshot + JMA forecast for the location's
+        configured (or auto-resolved) area / stations. Caches in the
+        service layer so a session's repeated overview opens cost a
+        single HTTP round-trip per JMA endpoint."""
+        amedas_svc = JmaAmedasService(data_dir=data_dir)
+        jma_svc = JmaForecastService(data_dir=data_dir)
+        stations_dict = await amedas_svc.stations()
+        snapshot = await amedas_svc.fetch()
+
+        # AMeDAS station list — saved IDs if any, else nearest 3.
+        station_ids = list(loc.amedas_station_ids)
+        if not station_ids:
+            near = nearest_stations(
+                stations_dict, loc.latitude, loc.longitude, limit=3,
+            )
+            station_ids = [s.station_id for s, _ in near]
+        amedas_picked: list[tuple[AmedasStation, dict[str, float]]] = []
+        for sid in station_ids:
+            station = stations_dict.get(sid)
+            if station is None:
+                continue
+            obs = snapshot.observations.get(sid, {})
+            amedas_picked.append((station, obs))
+
+        # Forecast area resolution — saved office code if any, else
+        # auto-derived. ``class10`` is the per-area key inside the
+        # forecast payload; we need it both for the saved-office case
+        # and the auto case.
+        office_code = loc.jma_area_code
+        class10_code = ""
+        if office_code:
+            area_table = await jma_svc.area_table()
+            for code, info in (area_table.get("class10s") or {}).items():
+                if str(info.get("parent")) == office_code:
+                    class10_code = str(code)
+                    break
+        else:
+            resolved = await jma_svc.resolve_area(
+                loc.latitude, loc.longitude, stations_dict,
+            )
+            if resolved is not None:
+                office_code = resolved.office_code
+                class10_code = resolved.class10_code
+
+        forecast = None
+        if office_code and class10_code:
+            try:
+                forecast = await jma_svc.fetch(office_code, class10_code)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "JMA forecast fetch failed for office=%s", office_code,
+                )
+
+        set_jma_overview_data({
+            "snapshot_time": snapshot.timestamp,
+            "stations": amedas_picked,
+            "forecast": forecast,
+        })
 
     async def add_location_flow(loc: Location):
         # Persist + select + kick off initial archive build, all in
@@ -1490,6 +1788,37 @@ def PointForecastView(settings: UserSettings):
                 forecast_data.hres_df, selected_location, hours=48,
             ))
             rows.append(ft.Divider())
+            # JMA / AMeDAS cards — JP locations only. While the side-
+            # fetch is still in flight we show a quiet placeholder so
+            # the user knows more data is coming, rather than a blank
+            # space that looks finished. Errors land here too instead
+            # of replacing the main forecast.
+            if selected_location.is_japan:
+                if jma_overview_data is None and not jma_overview_error:
+                    rows.append(ft.Row(controls=[
+                        ft.ProgressRing(width=14, height=14),
+                        ft.Text(
+                            "JMA / AMeDAS のデータを取得中…",
+                            size=12, color=ft.Colors.GREY,
+                        ),
+                    ]))
+                if jma_overview_error:
+                    rows.append(ft.Text(
+                        f"JMA / AMeDAS の取得に失敗: {jma_overview_error}",
+                        color=ft.Colors.RED, size=12,
+                    ))
+                if jma_overview_data is not None:
+                    if jma_overview_data["stations"]:
+                        rows.append(_amedas_card(
+                            jma_overview_data["stations"],
+                            jma_overview_data["snapshot_time"],
+                            selected_location.latitude,
+                            selected_location.longitude,
+                        ))
+                    if jma_overview_data["forecast"] is not None:
+                        rows.append(_jma_forecast_card(
+                            jma_overview_data["forecast"],
+                        ))
 
     elif forecast_state == "ready" and forecast_data is not None:
         # Day-range buttons. Active choice = FilledButton (high
