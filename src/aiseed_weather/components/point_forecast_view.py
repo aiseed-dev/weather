@@ -61,6 +61,8 @@ from aiseed_weather.services.open_meteo_forecast import (
     fetch_forecast,
 )
 from aiseed_weather.services.point_climatology import (
+    daily_records,
+    hourly_climatology,
     join_forecast_with_climatology,
 )
 
@@ -133,71 +135,164 @@ def _format_value(value, *, fmt: str = ".1f") -> str:
         return "—"
 
 
-def _forecast_table(df: pl.DataFrame, label: str) -> ft.Control:
-    """Render a forecast DataFrame as a Flet DataTable.
+# Per-variable daily aggregation spec. Each variable picks the
+# columns that actually make sense for its daily summary
+# (temperature wants mean/max/min, precipitation wants daily sum
+# and peak hourly, etc.). Variables not listed fall back to
+# (mean, max, min).
+_DailyColSpec = tuple[str, str, str]  # (display_label, polars_op, value_fmt)
 
-    Columns shown: timestamp, temp, precip, wind, RH, cloud. If the
-    DataFrame carries the climatology join columns
-    (``temperature_2m_mean`` / ``_std``), an extra two columns are
-    shown so the analyst can read anomaly + Z-score inline.
-    """
+_DAILY_COLS_BY_VAR: dict[str, tuple[_DailyColSpec, ...]] = {
+    "temperature_2m": (
+        ("平均", "mean", ".1f"),
+        ("最高", "max",  ".1f"),
+        ("最低", "min",  ".1f"),
+    ),
+    "precipitation": (
+        ("日合計 (mm)",        "sum", ".1f"),
+        ("時間最大 (mm/h)",    "max", ".1f"),
+    ),
+    "relative_humidity_2m": (
+        ("平均", "mean", ".0f"),
+        ("最高", "max",  ".0f"),
+        ("最低", "min",  ".0f"),
+    ),
+    "wind_speed_10m": (
+        ("平均", "mean", ".1f"),
+        ("最大", "max",  ".1f"),
+    ),
+    "cloud_cover": (
+        ("平均", "mean", ".0f"),
+    ),
+}
+
+_RECORD_LABEL_BY_VAR: dict[str, tuple[str, str]] = {
+    # (high label, low label)
+    "temperature_2m":       ("過去最高", "過去最低"),
+    "precipitation":        ("過去最大日合計", ""),
+    "relative_humidity_2m": ("過去最高", "過去最低"),
+    "wind_speed_10m":       ("過去最大", ""),
+    "cloud_cover":          ("過去最大", "過去最少"),
+}
+
+
+def _hourly_tsv(df: pl.DataFrame) -> str:
+    """Polars DataFrame → tab-separated string, ready for
+    ``page.set_clipboard`` so the user can paste straight into Excel
+    / a notebook / wherever they actually analyse the numbers."""
     if df.is_empty():
-        return ft.Text(f"{label}: データなし", color=ft.Colors.GREY)
+        return ""
+    # Drop the climatology join columns from the copy — they're
+    # derived, the user only really wants the raw forecast.
+    keep = [c for c in df.columns if not (
+        c.startswith("temperature_2m_") and c not in ("temperature_2m",)
+    ) and c not in ("month", "day", "hour")]
+    keep = [c for c in keep if not (
+        c.endswith("_mean") or c.endswith("_std") or c.endswith("_p25")
+        or c.endswith("_p75") or c.endswith("_median")
+        or c.endswith("_min") or c.endswith("_max")
+    )]
+    return df.select(keep).write_csv(separator="\t")
 
-    has_clim = "temperature_2m_mean" in df.columns
 
-    header_cells = [
-        ft.DataColumn(ft.Text("時刻 UTC")),
-        ft.DataColumn(ft.Text("℃")),
-        ft.DataColumn(ft.Text("mm/h")),
-        ft.DataColumn(ft.Text("RH %")),
-        ft.DataColumn(ft.Text("風 m/s")),
-        ft.DataColumn(ft.Text("雲量 %")),
-    ]
+def _daily_summary_table(
+    forecast_df: pl.DataFrame,
+    variable: str,
+    data_dir: Path,
+    location: Location,
+) -> ft.Control:
+    """Daily aggregation of the forecast + per-day historical records
+    + per-day climatology mean (when the variable has one). Each
+    forecast day is one row.
+
+    Layout chosen so the analyst sees per-day numbers (the unit they
+    actually plan around) without having to scroll through the 432
+    hourly samples we used to render. Records pull from
+    ``daily_records`` in point_climatology.
+    """
+    if forecast_df.is_empty():
+        return ft.Text("日次サマリ: データなし", color=ft.Colors.GREY)
+
+    cols_spec = _DAILY_COLS_BY_VAR.get(
+        variable,
+        (("平均", "mean", ".1f"), ("最大", "max", ".1f"), ("最小", "min", ".1f")),
+    )
+    high_label, low_label = _RECORD_LABEL_BY_VAR.get(
+        variable, ("過去最高", "過去最低"),
+    )
+    has_clim = variable != "precipitation"
+
+    # Daily aggregates from the forecast.
+    aggs = [getattr(pl.col(variable), op)().alias(f"d_{op}")
+            for _, op, _ in cols_spec]
+    # ``sum`` aliased as d_sum; ``max`` aliased as d_max, etc. Keep
+    # any op the spec asks for so the row build below can index by
+    # f"d_{op}".
+    daily = (
+        forecast_df.with_columns(
+            pl.col("timestamp").dt.date().alias("date"),
+            pl.col("timestamp").dt.month().cast(pl.Int8).alias("d_month"),
+            pl.col("timestamp").dt.day().cast(pl.Int8).alias("d_day"),
+        )
+        .group_by(["date", "d_month", "d_day"])
+        .agg(aggs)
+        .sort("date")
+    )
+
+    columns = [ft.DataColumn(ft.Text("日付", weight=ft.FontWeight.BOLD))]
+    for label, _op, _fmt in cols_spec:
+        columns.append(ft.DataColumn(ft.Text(label, weight=ft.FontWeight.BOLD)))
     if has_clim:
-        header_cells.extend([
-            ft.DataColumn(ft.Text("平年℃")),
-            ft.DataColumn(ft.Text("Δ℃ (Z)")),
-        ])
+        columns.append(ft.DataColumn(ft.Text("平年", weight=ft.FontWeight.BOLD)))
+    if high_label:
+        columns.append(ft.DataColumn(ft.Text(high_label, weight=ft.FontWeight.BOLD)))
+    if low_label:
+        columns.append(ft.DataColumn(ft.Text(low_label, weight=ft.FontWeight.BOLD)))
 
     rows: list[ft.DataRow] = []
-    # Cap row count so the page doesn't render hundreds of rows. The
-    # chart view (next iteration) will replace this anyway.
-    for row in df.head(48).iter_rows(named=True):
-        ts: datetime = row["timestamp"]
-        cells = [
-            ft.DataCell(ft.Text(ts.strftime("%m-%d %H:%M"))),
-            ft.DataCell(ft.Text(_format_value(row.get("temperature_2m")))),
-            ft.DataCell(ft.Text(_format_value(row.get("precipitation"), fmt=".1f"))),
-            ft.DataCell(ft.Text(_format_value(row.get("relative_humidity_2m"), fmt=".0f"))),
-            ft.DataCell(ft.Text(_format_value(row.get("wind_speed_10m"), fmt=".1f"))),
-            ft.DataCell(ft.Text(_format_value(row.get("cloud_cover"), fmt=".0f"))),
-        ]
+    for row in daily.iter_rows(named=True):
+        cells = [ft.DataCell(ft.Text(row["date"].strftime("%m-%d")))]
+        for _label, op, fmt in cols_spec:
+            cells.append(ft.DataCell(
+                ft.Text(_format_value(row.get(f"d_{op}"), fmt=fmt)),
+            ))
+        # Climatology daily mean = average of the 24 hourly means
         if has_clim:
-            clim_mean = row.get("temperature_2m_mean")
-            clim_std = row.get("temperature_2m_std")
-            forecast_t = row.get("temperature_2m")
-            if clim_mean is not None and forecast_t is not None:
-                delta = float(forecast_t) - float(clim_mean)
-                z = delta / float(clim_std) if clim_std else None
-                anomaly_text = (
-                    f"{delta:+.1f} ({z:+.1f}σ)"
-                    if z is not None else f"{delta:+.1f}"
-                )
+            clim = hourly_climatology(
+                data_dir, location, int(row["d_month"]), int(row["d_day"]),
+            )
+            clim_col = f"{variable}_mean"
+            if not clim.is_empty() and clim_col in clim.columns:
+                clim_daily = clim[clim_col].mean()
+                cells.append(ft.DataCell(
+                    ft.Text(_format_value(clim_daily, fmt=".1f")),
+                ))
             else:
-                anomaly_text = "—"
-            cells.extend([
-                ft.DataCell(ft.Text(_format_value(clim_mean))),
-                ft.DataCell(ft.Text(anomaly_text)),
-            ])
+                cells.append(ft.DataCell(ft.Text("—")))
+
+        records = daily_records(
+            data_dir, location, int(row["d_month"]), int(row["d_day"]),
+        )
+        if high_label:
+            # For precipitation, the 'high' record is wettest-day total;
+            # for the rest it's the highest single hourly value.
+            key = "_wettest" if variable == "precipitation" else "_high"
+            rec = records.get(f"{variable}{key}")
+            cells.append(ft.DataCell(ft.Text(
+                f"{rec[0]:.1f} ({rec[1]})" if rec else "—",
+            )))
+        if low_label:
+            rec = records.get(f"{variable}_low")
+            cells.append(ft.DataCell(ft.Text(
+                f"{rec[0]:.1f} ({rec[1]})" if rec else "—",
+            )))
         rows.append(ft.DataRow(cells=cells))
 
-    return ft.Column(
-        controls=[
-            ft.Text(label, size=16, weight=ft.FontWeight.BOLD),
-            ft.DataTable(columns=header_cells, rows=rows),
-        ],
-    )
+    return ft.Column(controls=[
+        ft.Text("日次サマリ / Daily summary",
+                size=14, weight=ft.FontWeight.BOLD),
+        ft.DataTable(columns=columns, rows=rows),
+    ])
 
 
 # ── Async work driven by the component ────────────────────────────
@@ -376,6 +471,9 @@ def PointForecastView(settings: UserSettings):
     # (page-level singleton) so no Control instance ever lives in
     # component state.
     download_error, set_download_error = ft.use_state(None)
+    # 'コピー' feedback. Set after a successful clipboard write,
+    # cleared on the next variable / day-range change.
+    copy_msg, set_copy_msg = ft.use_state("")
 
     async def _save_chart_png():
         if forecast_data is None:
@@ -415,6 +513,25 @@ def PointForecastView(settings: UserSettings):
 
     def on_download_click(_e):
         ft.context.page.run_task(_save_chart_png)
+
+    def on_copy_hourly(_e):
+        """Copy the HRES hourly forecast as TSV. The user said the
+        on-screen hourly table can go away as long as the data is
+        copy-able, so this is its replacement — paste into Excel /
+        a notebook / wherever the analysis lives."""
+        if forecast_data is None:
+            return
+        text = _hourly_tsv(forecast_data.hres_df)
+        if not text:
+            return
+        try:
+            ft.context.page.set_clipboard(text)
+            set_copy_msg(
+                f"コピー済 ({forecast_data.hres_df.height} 行)",
+            )
+        except Exception as exc:
+            logger.exception("Clipboard copy failed")
+            set_copy_msg(f"コピーに失敗: {type(exc).__name__}")
 
     selected_location = next(
         (loc for loc in locations if loc.name == selected_name),
@@ -794,13 +911,30 @@ def PointForecastView(settings: UserSettings):
             height=720,
         ))
         rows.append(ft.Divider())
-        rows.append(_forecast_table(
-            forecast_data.hres_df, forecast_data.hres_label,
-        ))
-        if forecast_data.msm_df is not None and forecast_data.msm_label:
-            rows.append(ft.Divider())
-            rows.append(_forecast_table(
-                forecast_data.msm_df, forecast_data.msm_label,
+
+        # Copy button — replaces the on-screen hourly DataTable. The
+        # user explicitly asked to drop the table list in favour of
+        # a 'copy to clipboard' control so they can paste the raw
+        # numbers wherever they actually want to work on them.
+        rows.append(ft.Row(controls=[
+            ft.OutlinedButton(
+                "時間別データをコピー (TSV)",
+                icon=ft.Icons.CONTENT_COPY,
+                on_click=on_copy_hourly,
+            ),
+            ft.Text(copy_msg, color=ft.Colors.GREEN, size=12)
+            if copy_msg else ft.Container(width=0),
+        ]))
+
+        # Daily summary: per-day forecast aggregates + climatology
+        # mean + 30-y records for the same calendar day. Replaces
+        # the previous hourly table.
+        if selected_location is not None:
+            rows.append(_daily_summary_table(
+                forecast_data.hres_df,
+                variable,
+                data_dir,
+                selected_location,
             ))
 
     rows.append(ft.Text(

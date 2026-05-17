@@ -220,6 +220,76 @@ def hourly_records(
     return pl.concat(record_frames, how="vertical").sort("hour")
 
 
+def daily_records(
+    data_dir: Path,
+    location: Location,
+    month: int,
+    day: int,
+) -> dict[str, tuple[float, int]]:
+    """All-time daily extremes on one specific (month, day) across
+    every archive year.
+
+    Returns a dict keyed by ``<variable>_<kind>`` where kind is one
+    of ``high`` / ``low`` / ``wettest`` and the value is a
+    ``(value, year)`` tuple. Empty when the archive has no data
+    for that calendar day yet.
+
+    Records are deliberately NOT smoothed across the ±15-day window —
+    extremes are events tied to a specific date, not averages.
+    The user wants to see 'the hottest May-17 ever recorded',
+    not 'the average peak in the May-17 vicinity'.
+    """
+    root = archive_dir(data_dir, location)
+    lf = _scan_month(root, month)
+    if lf is None:
+        return {}
+    df = lf.filter(pl.col("day") == day).collect()
+    if df.is_empty():
+        return {}
+
+    out: dict[str, tuple[float, int]] = {}
+    record_vars = (
+        "temperature_2m",
+        "precipitation",
+        "relative_humidity_2m",
+        "wind_speed_10m",
+        "cloud_cover",
+    )
+    for var in record_vars:
+        if var not in df.columns:
+            continue
+        per_year = df.group_by("year", maintain_order=True).agg([
+            pl.col(var).max().alias("daily_max"),
+            pl.col(var).min().alias("daily_min"),
+            pl.col(var).sum().alias("daily_sum"),
+        ])
+        if per_year.is_empty():
+            continue
+        years = per_year["year"].to_list()
+        # arg_max / arg_min return None when the column is all-null;
+        # guard against that with a truthiness check rather than a
+        # raw int compare (None != int).
+        i_max = per_year["daily_max"].arg_max()
+        i_min = per_year["daily_min"].arg_min()
+        i_sum = per_year["daily_sum"].arg_max()
+        if i_max is not None:
+            out[f"{var}_high"] = (
+                float(per_year["daily_max"][i_max]),
+                int(years[i_max]),
+            )
+        if i_min is not None:
+            out[f"{var}_low"] = (
+                float(per_year["daily_min"][i_min]),
+                int(years[i_min]),
+            )
+        if i_sum is not None:
+            out[f"{var}_wettest"] = (
+                float(per_year["daily_sum"][i_sum]),
+                int(years[i_sum]),
+            )
+    return out
+
+
 def join_forecast_with_climatology(
     forecast_df: pl.DataFrame,
     data_dir: Path,
