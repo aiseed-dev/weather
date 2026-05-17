@@ -191,6 +191,8 @@ def _hourly_tsv(df: pl.DataFrame) -> str:
         c.endswith("_mean") or c.endswith("_std") or c.endswith("_p25")
         or c.endswith("_p75") or c.endswith("_median")
         or c.endswith("_min") or c.endswith("_max")
+        or c.endswith("_slope") or c.endswith("_intercept")
+        or c.endswith("_estimate")
     )]
     return df.select(keep).write_csv(separator="\t")
 
@@ -244,6 +246,7 @@ def _daily_summary_table(
         columns.append(ft.DataColumn(ft.Text(label, weight=ft.FontWeight.BOLD)))
     if has_clim:
         columns.append(ft.DataColumn(ft.Text("平年", weight=ft.FontWeight.BOLD)))
+        columns.append(ft.DataColumn(ft.Text("推計値", weight=ft.FontWeight.BOLD)))
     if high_label:
         columns.append(ft.DataColumn(ft.Text(high_label, weight=ft.FontWeight.BOLD)))
     if low_label:
@@ -256,16 +259,27 @@ def _daily_summary_table(
             cells.append(ft.DataCell(
                 ft.Text(_format_value(row.get(f"d_{op}"), fmt=fmt)),
             ))
-        # Climatology daily mean = average of the 24 hourly means
+        # Climatology daily mean = average of the 24 hourly means.
+        # 推計値 (estimate) = same average over the per-hour linear-
+        # regression projection onto this forecast day's year, i.e.
+        # what the trend says today's normal should be after climate
+        # shift is accounted for.
         if has_clim:
             clim = hourly_climatology(
                 data_dir, location, int(row["d_month"]), int(row["d_day"]),
+                target_year=row["date"].year,
             )
             clim_col = f"{variable}_mean"
+            est_col = f"{variable}_estimate"
             if not clim.is_empty() and clim_col in clim.columns:
-                clim_daily = clim[clim_col].mean()
                 cells.append(ft.DataCell(
-                    ft.Text(_format_value(clim_daily, fmt=".1f")),
+                    ft.Text(_format_value(clim[clim_col].mean(), fmt=".1f")),
+                ))
+            else:
+                cells.append(ft.DataCell(ft.Text("—")))
+            if not clim.is_empty() and est_col in clim.columns:
+                cells.append(ft.DataCell(
+                    ft.Text(_format_value(clim[est_col].mean(), fmt=".1f")),
                 ))
             else:
                 cells.append(ft.DataCell(ft.Text("—")))
@@ -440,12 +454,17 @@ def PointForecastView(settings: UserSettings):
     new_name, set_new_name = ft.use_state("")
     new_lat, set_new_lat = ft.use_state("")
     new_lon, set_new_lon = ft.use_state("")
+    # IANA timezone for the location's local clock. Blank → derive
+    # from lat/lon (JP bbox → Asia/Tokyo, else UTC). Data fetches
+    # always run in UTC; this only drives the chart's display tz.
+    new_tz, set_new_tz = ft.use_state("")
     new_err, set_new_err = ft.use_state("")
 
     def _reset_dialog() -> None:
         set_new_name("")
         set_new_lat("")
         set_new_lon("")
+        set_new_tz("")
         set_new_err("")
 
     def _cancel_new_location():
@@ -678,8 +697,21 @@ def PointForecastView(settings: UserSettings):
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             set_new_err("緯度 -90..90 / 経度 -180..180 の範囲で入力")
             return
+        # ZoneInfo accepts the IANA name; reject early if malformed
+        # so the user sees the error here, not 8 layers down the
+        # chart pipeline.
+        tz_input = new_tz.strip()
+        if tz_input:
+            try:
+                ZoneInfo(tz_input)
+            except ZoneInfoNotFoundError:
+                set_new_err(f"未知の timezone: {tz_input}")
+                return
         name = new_name.strip() or f"{lat:.2f},{lon:.2f}"
-        loc = Location.new(name=name, latitude=lat, longitude=lon)
+        loc = Location.new(
+            name=name, latitude=lat, longitude=lon,
+            timezone_name=tz_input or None,
+        )
         set_show_dialog(False)
         _reset_dialog()
         ft.context.page.run_task(add_location_flow, loc)
@@ -705,6 +737,12 @@ def PointForecastView(settings: UserSettings):
                 value=new_lon,
                 keyboard_type=ft.KeyboardType.NUMBER,
                 on_change=lambda e: set_new_lon(e.control.value),
+            ),
+            ft.TextField(
+                label="タイムゾーン / Timezone (IANA, 空欄で自動)",
+                value=new_tz,
+                hint_text="Asia/Tokyo, Europe/London, America/New_York …",
+                on_change=lambda e: set_new_tz(e.control.value),
             ),
             ft.Text(new_err, color=ft.Colors.RED, size=12) if new_err
             else ft.Container(height=0),

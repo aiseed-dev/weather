@@ -56,14 +56,20 @@ _NUMERIC_VARS: tuple[str, ...] = (
 )
 
 
-# Default rolling-window half-width for the per-hour climatology. A
-# ±15-day window (=31 days centred) matches the WMO convention noted
-# in the climatology-analysis skill ("centered 31-day rolling mean").
-# Per-day stats are noisy because they sample only ~30 observations
-# per (year, day, hour); the window pools ~930 observations per hour
-# (30 years × 31 days), so a single warm spell or cold snap in one
-# historical year stops dominating the mean.
-_DEFAULT_WINDOW_DAYS = 15
+# Default rolling-window half-width for the per-hour climatology.
+# ±7 days (15-day centred window) is the operational compromise:
+#   * Wider than per-day (~30 samples) so a single warm spell in
+#     one historical year doesn't dominate the mean (the WMO 31-day
+#     window is the textbook gold standard for that).
+#   * Narrower than ±15 days because at 15 days adjacent forecast
+#     days share 30 / 31 ≈ 97 % of their pool and the means round
+#     to identical values across the 18-day forecast — visually
+#     'the climatology line is flat across a month', which is wrong:
+#     the seasonal trend should still be visible.
+# Pools ~450 obs / hour (30 years × 15 days). Still robust against
+# year-to-year outliers; still shows the spring → summer transition
+# in the climatology line.
+_DEFAULT_WINDOW_DAYS = 7
 
 
 def _scan_month(root: Path, month: int) -> pl.LazyFrame | None:
@@ -111,28 +117,73 @@ def _window_month_days(
     return {m: sorted(ds) for m, ds in out.items()}
 
 
+def _trend_exprs(var: str, target_year: int) -> list[pl.Expr]:
+    """Per-variable linear-regression expressions for use inside a
+    ``.group_by(...).agg([...])`` call.
+
+    Fits ``var ~ year`` across the ±15-day window's samples for one
+    hour, giving:
+      ``{var}_slope``     — change in the variable per year (e.g.
+                            +0.04 °C/year for temperature warming)
+      ``{var}_intercept`` — value at year 0 of the regression line
+      ``{var}_estimate``  — slope × target_year + intercept, i.e.
+                            'what the trend says the value should be
+                            NOW' as opposed to the unadjusted 30-y
+                            mean. Useful when climate change has
+                            shifted the operational normal away from
+                            the WMO 1991-2020 baseline.
+
+    Null-safe: rows where either ``year`` or ``var`` is null are
+    filtered out before the regression so a sparsely-populated
+    archive doesn't return NaN coefficients.
+    """
+    x = pl.col("year").cast(pl.Float64)
+    y = pl.col(var).cast(pl.Float64)
+    valid = y.is_not_null() & x.is_not_null()
+    x_f = x.filter(valid)
+    y_f = y.filter(valid)
+    mean_x = x_f.mean()
+    mean_y = y_f.mean()
+    # slope = Σ(x-x̄)(y-ȳ) / Σ(x-x̄)² — classical least-squares
+    slope = (
+        ((x_f - mean_x) * (y_f - mean_y)).sum()
+        / ((x_f - mean_x) ** 2).sum()
+    )
+    intercept = mean_y - slope * mean_x
+    estimate = intercept + slope * float(target_year)
+    return [
+        slope.alias(f"{var}_slope"),
+        intercept.alias(f"{var}_intercept"),
+        estimate.alias(f"{var}_estimate"),
+    ]
+
+
 def hourly_climatology(
     data_dir: Path,
     location: Location,
     month: int,
     day: int,
     window_days: int = _DEFAULT_WINDOW_DAYS,
+    target_year: int | None = None,
 ) -> pl.DataFrame:
     """Per-hour stats for one calendar day, smoothed across a
     ±window_days neighbourhood.
 
     Returns a DataFrame indexed by ``hour`` (0..23) with mean / std /
     median / p25 / p75 / min / max / sample_count for every numeric
-    variable. Each variable's stats live in their own columns named
-    ``<var>_<stat>`` (e.g. ``temperature_2m_mean``).
+    variable, plus the linear-regression triple
+    ``{var}_slope / _intercept / _estimate`` projecting each
+    variable onto ``target_year`` (defaults to the current year).
+    Each variable's stats live in their own columns named
+    ``<var>_<stat>`` (e.g. ``temperature_2m_mean``,
+    ``temperature_2m_estimate``).
 
     The window is centred on (month, day) and pools observations
     from ±``window_days`` calendar days at the same hour, across all
-    archive years. With the default 15-day half-width and a 30-year
-    archive that's ~930 samples per hour (vs. ~30 with the previous
-    per-day approach) — one warm spell in 2018 stops dominating the
-    May-17 13:00 mean. Matches the WMO convention noted in
-    climatology-analysis.
+    archive years. With the default ±7-day half-width and a 30-year
+    archive that's ~450 samples per hour — one warm spell in 2018
+    stops dominating the May-17 13:00 mean while still leaving the
+    seasonal trend visible across adjacent forecast days.
     """
     root = archive_dir(data_dir, location)
     months_to_days = _window_month_days(month, day, window_days)
@@ -147,6 +198,7 @@ def hourly_climatology(
 
     combined = pl.concat(frames, how="vertical_relaxed")
 
+    year_for_trend = target_year if target_year is not None else date.today().year
     aggs: list[pl.Expr] = []
     for var in _NUMERIC_VARS:
         aggs.extend([
@@ -158,6 +210,7 @@ def hourly_climatology(
             pl.col(var).min().alias(f"{var}_min"),
             pl.col(var).max().alias(f"{var}_max"),
         ])
+        aggs.extend(_trend_exprs(var, year_for_trend))
     aggs.append(pl.len().alias("sample_count"))
 
     return (
@@ -319,6 +372,7 @@ def join_forecast_with_climatology(
 
     # Decompose timestamp → month/day/hour so we can join on them.
     enriched = forecast_df.with_columns([
+        pl.col("timestamp").dt.year().cast(pl.Int32).alias("year"),
         pl.col("timestamp").dt.month().cast(pl.Int8).alias("month"),
         pl.col("timestamp").dt.day().cast(pl.Int8).alias("day"),
         pl.col("timestamp").dt.hour().cast(pl.Int8).alias("hour"),
@@ -328,17 +382,20 @@ def join_forecast_with_climatology(
     # climatology query per unique calendar day in the window. Two
     # weeks of forecast = ~15 unique (month, day) combinations.
     unique_days = (
-        enriched.select(["month", "day"]).unique().sort(["month", "day"])
+        enriched.select(["year", "month", "day"]).unique()
+        .sort(["year", "month", "day"])
     )
 
     clim_frames: list[pl.DataFrame] = []
     for row in unique_days.iter_rows(named=True):
         clim = hourly_climatology(
             data_dir, location, int(row["month"]), int(row["day"]),
+            target_year=int(row["year"]),
         )
         if clim.is_empty():
             continue
         clim = clim.with_columns([
+            pl.lit(int(row["year"]), dtype=pl.Int32).alias("year"),
             pl.lit(int(row["month"]), dtype=pl.Int8).alias("month"),
             pl.lit(int(row["day"]), dtype=pl.Int8).alias("day"),
         ])
@@ -349,5 +406,5 @@ def join_forecast_with_climatology(
 
     clim_all = pl.concat(clim_frames, how="vertical_relaxed")
     return enriched.join(
-        clim_all, on=["month", "day", "hour"], how="left",
+        clim_all, on=["year", "month", "day", "hour"], how="left",
     )
