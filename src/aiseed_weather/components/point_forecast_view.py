@@ -74,7 +74,13 @@ logger = logging.getLogger(__name__)
 # variable names (and the corresponding climatology join column
 # prefixes). Display labels come from point_forecast_chart's
 # _VAR_INFO; we keep them aligned here.
+#
+# 'overview' is a synthetic key: it doesn't drive a chart, it
+# switches the view to the weekly + hourly summary cards. Listed
+# first so it's the landing page for a freshly-opened location.
+_OVERVIEW_KEY = "overview"
 _CHART_VARIABLES: tuple[tuple[str, str], ...] = (
+    (_OVERVIEW_KEY,        "概要"),
     ("temperature_2m",     "気温 (°C)"),
     ("precipitation",      "降水量 (mm/h)"),
     ("relative_humidity_2m", "相対湿度 (%)"),
@@ -365,6 +371,135 @@ def _forecast_summary_strip(
         ),
         ft.Row(
             controls=cards, spacing=6, wrap=False,
+            scroll=ft.ScrollMode.AUTO,
+        ),
+    ])
+
+
+def _hourly_forecast_strip(
+    forecast_df: pl.DataFrame, location: Location, hours: int = 48,
+) -> ft.Control:
+    """Hour-by-hour forecast strip for the next ``hours`` hours from
+    'now' in the location's timezone. Mirrors tenki.jp / Yahoo 天気's
+    hourly tables: time, weather icon, temperature, precipitation
+    per cell. Horizontally scrollable so 48 h fits without forcing
+    a wide layout — each cell is intentionally narrow (~52 px) to
+    keep the strip dense enough to read trends along it.
+
+    A vertical separator card marks where each calendar day starts,
+    so the user can still see 'today / tomorrow / day-after' at a
+    glance even when the strip is mid-scroll.
+    """
+    if forecast_df.is_empty():
+        return ft.Container()
+
+    tz = _location_zoneinfo(location)
+    now_local = datetime.now(tz).replace(minute=0, second=0, microsecond=0)
+    end_local = now_local + timedelta(hours=hours)
+
+    hourly = (
+        forecast_df
+        .with_columns(
+            pl.col("timestamp")
+            .dt.convert_time_zone(str(tz))
+            .alias("local_ts")
+        )
+        .filter(
+            (pl.col("local_ts") >= now_local)
+            & (pl.col("local_ts") < end_local)
+        )
+        .sort("local_ts")
+    )
+    if hourly.is_empty():
+        return ft.Container()
+
+    cells: list[ft.Control] = []
+    prev_date: date | None = None
+    today = now_local.date()
+    for row in hourly.iter_rows(named=True):
+        ts: datetime = row["local_ts"]
+        d = ts.date()
+        if d != prev_date:
+            delta = (d - today).days
+            head_label = (
+                "今日" if delta == 0
+                else "明日" if delta == 1
+                else "明後日" if delta == 2
+                else d.strftime("%a")
+            )
+            head_color = (
+                "#2c7fb8" if d.weekday() == 5
+                else "#c0392b" if d.weekday() == 6
+                else "#2c3e50"
+            )
+            cells.append(ft.Container(
+                content=ft.Column(
+                    controls=[
+                        ft.Text(
+                            head_label, size=12,
+                            weight=ft.FontWeight.BOLD,
+                            color=head_color,
+                        ),
+                        ft.Text(d.strftime("%m/%d"), size=9,
+                                color=ft.Colors.GREY),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=0,
+                ),
+                padding=ft.Padding.symmetric(horizontal=6, vertical=8),
+                bgcolor="#eef3f8",
+                border_radius=4,
+                width=44,
+                alignment=ft.Alignment.CENTER,
+            ))
+            prev_date = d
+
+        label, icon, color = _weather_descr(row.get("weather_code"))
+        temp = row.get("temperature_2m")
+        precip = row.get("precipitation")
+        # Warm / cold tinting on the temperature digit — matches the
+        # red-hot / blue-cold convention the weekly card already uses.
+        if temp is None:
+            temp_color = ft.Colors.GREY
+        elif temp >= 28:
+            temp_color = "#c0392b"
+        elif temp <= 5:
+            temp_color = "#2c7fb8"
+        else:
+            temp_color = None
+        cells.append(ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Text(f"{ts.hour:02d}", size=10,
+                            color=ft.Colors.GREY),
+                    ft.Icon(icon, color=color, size=22),
+                    ft.Text(
+                        _format_value(temp, fmt=".0f") + "°",
+                        size=12, weight=ft.FontWeight.BOLD,
+                        color=temp_color,
+                    ),
+                    ft.Text(
+                        f"{precip:.1f}"
+                        if precip is not None and precip > 0.05 else "",
+                        size=9, color="#3a78b3",
+                    ),
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=1,
+            ),
+            padding=ft.Padding.symmetric(horizontal=2, vertical=4),
+            border=ft.Border.all(width=1, color=ft.Colors.BLACK12),
+            border_radius=4,
+            width=50,
+        ))
+
+    return ft.Column(controls=[
+        ft.Text(
+            f"時間別予報 ({hours}時間)",
+            size=14, weight=ft.FontWeight.BOLD,
+        ),
+        ft.Row(
+            controls=cells, spacing=2, wrap=False,
             scroll=ft.ScrollMode.AUTO,
         ),
     ])
@@ -1014,7 +1149,9 @@ def PointForecastView(settings: UserSettings):
                 icon=ft.Icons.DOWNLOAD,
                 tooltip="PNG ダウンロード (matplotlib)",
                 on_click=on_download_click,
-                disabled=forecast_data is None,
+                disabled=(
+                    forecast_data is None or variable == _OVERVIEW_KEY
+                ),
             ),
             updated_caption,
         ]),
@@ -1048,19 +1185,28 @@ def PointForecastView(settings: UserSettings):
             f"予報の取得に失敗しました: {error_msg}",
             color=ft.Colors.RED,
         ))
-    elif forecast_state == "ready" and forecast_data is not None:
-        # Classic at-a-glance weekly summary strip on top of every
-        # variable view: weather icon + condition + high/low temp +
-        # daily precip, one card per local-time day. The user lands
-        # on the headline before stepping into the per-variable
-        # charts. Days are aggregated in the location's timezone so a
-        # 'day' is 0–24 h local clock, not UTC.
+    elif (
+        forecast_state == "ready" and forecast_data is not None
+        and variable == _OVERVIEW_KEY
+    ):
+        # 概要 (overview) view: classic at-a-glance summary cards
+        # only — no chart, no per-variable controls. Top is the
+        # weekly strip (one card per local day for ~7 days), below
+        # is the hour-by-hour strip for the next 48 h so the user
+        # can see how the day actually unfolds. Both pivot off the
+        # location's timezone so day boundaries match the local
+        # clock, not UTC.
         if selected_location is not None:
             rows.append(_forecast_summary_strip(
                 forecast_data.hres_df, selected_location,
             ))
             rows.append(ft.Divider())
+            rows.append(_hourly_forecast_strip(
+                forecast_data.hres_df, selected_location, hours=48,
+            ))
+            rows.append(ft.Divider())
 
+    elif forecast_state == "ready" and forecast_data is not None:
         # Day-range buttons. Active choice = FilledButton (high
         # contrast), inactive = OutlinedButton — Material has no
         # native SegmentedButton in Flet 0.85, so this row-of-
