@@ -33,6 +33,9 @@ import flet as ft
 import httpx
 import polars as pl
 
+from aiseed_weather.figures.canvas_timeseries import (
+    build_point_forecast_canvas,
+)
 from aiseed_weather.figures.point_forecast_chart import (
     render_point_forecast,
 )
@@ -360,26 +363,25 @@ def PointForecastView(settings: UserSettings):
 
     show_dialog, set_show_dialog = ft.use_state(False)
 
-    # Chart state. ``variable`` drives which value series is plotted;
-    # ``chart_png`` holds the rendered matplotlib bytes for ft.Image.
-    # We re-render the chart whenever the variable or the snapshot
-    # changes (kicked off from the corresponding async handler).
+    # Chart state. ``variable`` drives which value series is plotted.
+    # The chart itself is a Flet ``flet.canvas.Canvas`` built every
+    # render — no caching needed, since the shape construction is
+    # pure Python (~1 ms for the 60-ish shapes in a full chart) and
+    # the layout is automatically reactive to forecast_data changes.
+    # matplotlib stays around purely as the publication export path
+    # (PNG ダウンロード button below).
     variable, set_variable = ft.use_state(_CHART_VARIABLES[0][0])
-    chart_png, set_chart_png = ft.use_state(None)
 
-    selected_location = next(
-        (loc for loc in locations if loc.name == selected_name),
-        None,
-    )
+    # FilePicker for the PNG export. Kept in a use_ref because
+    # ``page.services`` is a Page-level list we only want to append
+    # to once per session — re-appending on every re-render would
+    # leak a new picker per repaint.
+    file_picker_ref = ft.use_ref(None)
+    download_error, set_download_error = ft.use_state(None)
 
-    # ── async handlers ────────────────────────────────────────────
-
-    async def _render_chart_for(snap: _ForecastSnapshot, var: str) -> None:
-        """Render the chart PNG off-loop and stash it in use_state.
-        Idempotent — safe to call after a variable change or a new
-        snapshot."""
+    async def _write_png_to(path: str, snap: _ForecastSnapshot, var: str):
         try:
-            png = await asyncio.to_thread(
+            png_bytes = await asyncio.to_thread(
                 render_point_forecast,
                 location_name=snap.location_name,
                 variable=var,
@@ -387,10 +389,55 @@ def PointForecastView(settings: UserSettings):
                 msm_df=snap.msm_df,
                 ensemble_quantiles=snap.ensemble_quantiles,
             )
-            set_chart_png(png)
-        except Exception:
-            logger.exception("Chart render failed (variable=%s)", var)
-            set_chart_png(None)
+            await asyncio.to_thread(Path(path).write_bytes, png_bytes)
+            logger.info(
+                "Chart PNG saved → %s (%.1f KB)",
+                path, len(png_bytes) / 1024,
+            )
+        except Exception as exc:
+            logger.exception("PNG export failed")
+            set_download_error(f"{type(exc).__name__}: {exc}")
+
+    def _on_save_result(e):
+        # ``e.path`` is set when the user picked a save location; left
+        # ``None`` if they cancelled. Generate the matplotlib PNG and
+        # write it on a worker thread so the UI doesn't freeze during
+        # the ~100 ms matplotlib pass.
+        path = getattr(e, "path", None)
+        if not path or forecast_data is None:
+            return
+        ft.context.page.run_task(
+            _write_png_to, path, forecast_data, variable,
+        )
+
+    if file_picker_ref.current is None:
+        fp = ft.FilePicker(on_result=_on_save_result)
+        page = ft.context.page
+        # ``page.services`` may not exist on first run; create the
+        # list lazily so we don't blow up older Flet versions.
+        services = list(getattr(page, "services", None) or [])
+        services.append(fp)
+        page.services = services
+        file_picker_ref.current = fp
+
+    def on_download_click(_e):
+        if forecast_data is None:
+            return
+        set_download_error(None)
+        fp: ft.FilePicker = file_picker_ref.current
+        safe_loc = forecast_data.location_name.replace("/", "_")
+        fp.save_file(
+            dialog_title="チャートを PNG で保存",
+            file_name=f"{safe_loc}_{variable}.png",
+            allowed_extensions=["png"],
+        )
+
+    selected_location = next(
+        (loc for loc in locations if loc.name == selected_name),
+        None,
+    )
+
+    # ── async handlers ────────────────────────────────────────────
 
     async def load_forecast(loc: Location):
         logger.info("load_forecast: start %s (%.3f, %.3f)",
@@ -425,12 +472,9 @@ def PointForecastView(settings: UserSettings):
             set_forecast_data(snap)
             set_forecast_state("ready")
             set_last_fetched_at(datetime.now())
-            logger.info("load_forecast: state=ready, rendering chart")
-            # Render the chart for the currently-selected variable. The
-            # render runs on a thread, so the 'ready' state has already
-            # painted the table by the time the chart PNG lands.
-            await _render_chart_for(snap, variable)
-            logger.info("load_forecast: chart rendered")
+            logger.info(
+                "load_forecast: state=ready (canvas re-renders inline)",
+            )
         except Exception as exc:  # noqa: BLE001 — surface to user
             logger.exception("Forecast fetch failed for %s", loc.name)
             set_error_msg(f"{type(exc).__name__}: {exc}")
@@ -508,10 +552,10 @@ def PointForecastView(settings: UserSettings):
             ft.context.page.run_task(load_forecast, loc)
 
     def on_select_variable(e):
-        new_var = e.control.value
-        set_variable(new_var)
-        if forecast_data is not None:
-            ft.context.page.run_task(_render_chart_for, forecast_data, new_var)
+        # The Canvas is rebuilt every render; just bumping the
+        # variable state is enough to redraw the chart with the new
+        # series.
+        set_variable(e.control.value)
 
     # ── dialog (declarative) ─────────────────────────────────────
     dialog = _build_add_location_dialog(
@@ -597,9 +641,20 @@ def PointForecastView(settings: UserSettings):
                     if selected_location else None
                 ),
             ),
+            ft.IconButton(
+                icon=ft.Icons.DOWNLOAD,
+                tooltip="PNG ダウンロード (matplotlib)",
+                on_click=on_download_click,
+                disabled=forecast_data is None,
+            ),
             updated_caption,
         ]),
     ]
+    if download_error:
+        rows.append(ft.Text(
+            f"保存に失敗しました: {download_error}",
+            color=ft.Colors.RED, size=11,
+        ))
 
     if archive_progress is not None:
         done, total = archive_progress
@@ -625,34 +680,30 @@ def PointForecastView(settings: UserSettings):
             color=ft.Colors.RED,
         ))
     elif forecast_state == "ready" and forecast_data is not None:
-        # Chart first — primary visualisation per spec step 10. The
-        # rendered PNG is much wider than the viewport (2200 px at
-        # the renderer's default), so we wrap it in a horizontally-
-        # scrollable Row. The Image is given an explicit width that
-        # matches the renderer canvas so Flet doesn't try to
-        # shrink-to-fit it back into the viewport (which would
-        # defeat the point of rendering wide in the first place).
-        if chart_png is not None:
-            rows.append(ft.Container(
-                content=ft.Row(
-                    controls=[
-                        ft.Image(
-                            src=chart_png,
-                            width=2200,
-                            height=500,
-                            fit=ft.BoxFit.NONE,
-                        ),
-                    ],
-                    scroll=ft.ScrollMode.AUTO,
-                ),
-                padding=ft.Padding.symmetric(vertical=8, horizontal=0),
-                height=520,  # room for the scrollbar at the bottom
-            ))
-        else:
-            rows.append(ft.Row(controls=[
-                ft.ProgressRing(width=14, height=14),
-                ft.Text("チャートを描画中…", color=ft.Colors.GREY),
-            ]))
+        # Chart first — primary visualisation per spec step 10.
+        # ``build_point_forecast_canvas`` returns a Flet
+        # ``flet.canvas.Canvas`` rendered on the GPU, so it's vector-
+        # crisp, resolution-independent and ready for interaction
+        # (hover / click can be wired later). matplotlib stays
+        # available for the download button above as the
+        # publication-quality raster fallback.
+        chart_canvas = build_point_forecast_canvas(
+            location_name=forecast_data.location_name,
+            variable=variable,
+            hres_joined=forecast_data.hres_df,
+            msm_df=forecast_data.msm_df,
+            ensemble_quantiles=forecast_data.ensemble_quantiles,
+        )
+        rows.append(ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Container(content=chart_canvas, width=2200, height=500),
+                ],
+                scroll=ft.ScrollMode.AUTO,
+            ),
+            padding=ft.Padding.symmetric(vertical=8, horizontal=0),
+            height=520,
+        ))
         rows.append(ft.Divider())
         rows.append(_forecast_table(
             forecast_data.hres_df, forecast_data.hres_label,
