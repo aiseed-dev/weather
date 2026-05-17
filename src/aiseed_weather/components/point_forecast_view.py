@@ -896,19 +896,26 @@ def PointForecastView(settings: UserSettings):
         # new default and gives Y-axis gridlines room when variables
         # with fine steps (気温 2.5 °C, MSL 4 hPa) put 10-20 of them
         # on the panel.
-        rows.append(ft.Container(
-            content=ft.Row(
-                controls=[
-                    ft.Container(
-                        content=chart_canvas,
-                        width=canvas_width,
-                        height=700,
-                    ),
-                ],
-                scroll=ft.ScrollMode.AUTO,
-            ),
-            padding=ft.Padding.symmetric(vertical=8, horizontal=0),
+        #
+        # Horizontal scroll: ``ft.ListView(horizontal=True)`` rather
+        # than ``ft.Row(scroll=AUTO)``. The Row variant didn't scroll
+        # because the outer Column already has scroll=AUTO (vertical)
+        # and the layout expanded to fit the Row's full content, so
+        # the Row never knew it was overflowing. ListView clips to
+        # its own bounds and exposes its own scrollbar regardless of
+        # parent constraints — the canonical Flet pattern for a
+        # wide-canvas-inside-a-scrollable-column situation.
+        rows.append(ft.ListView(
+            controls=[
+                ft.Container(
+                    content=chart_canvas,
+                    width=canvas_width,
+                    height=700,
+                ),
+            ],
+            horizontal=True,
             height=720,
+            padding=ft.Padding.symmetric(vertical=8, horizontal=0),
         ))
         rows.append(ft.Divider())
 
