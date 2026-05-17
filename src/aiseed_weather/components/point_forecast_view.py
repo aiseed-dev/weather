@@ -282,6 +282,7 @@ def _forecast_summary_strip(
         return ft.Container()
 
     tz = _location_zoneinfo(location)
+    today_local = datetime.now(tz).date()
     daily = (
         forecast_df
         .with_columns(
@@ -290,6 +291,10 @@ def _forecast_summary_strip(
             .dt.date()
             .alias("date")
         )
+        # Drop the past_days=3 history slice the forecast fetch
+        # always carries — a 'weekly forecast' headline shouldn't
+        # show days that have already happened.
+        .filter(pl.col("date") >= today_local)
         .group_by("date")
         .agg([
             pl.col("temperature_2m").max().alias("t_high"),
