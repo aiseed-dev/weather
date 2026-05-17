@@ -1846,16 +1846,40 @@ def PointForecastView(settings: UserSettings):
         # pan offset and date picker — disable those controls so the
         # UI doesn't pretend they work in that mode.
         zoomed_in = visible_days < 15
-        pan_step_h = max(6, int(visible_days * 12))
+        # Pan in whole-day steps (one day for 1-day view, half the
+        # span for longer views) so the window stays aligned to local
+        # 00:00 boundaries — panning by 6 h would smear the left edge
+        # off the day-start that the user explicitly anchored on.
+        pan_step_h = 24 if visible_days <= 1 else (visible_days // 2) * 24
 
         # Pre-compute the date set + current anchor so both the
         # toolbar pan buttons and the bottom day-jump strip can
         # reach them.
+        # Anchor everything at today's 00:00 in the location's local
+        # timezone — the user wants the chart to start at the top of
+        # a day, not at the current wall-clock hour. ``pan_offset_h``
+        # then shifts the visible window left/right in hour steps
+        # from that anchor.
         now_utc = datetime.now(timezone.utc).replace(
             minute=0, second=0, microsecond=0,
         )
+        if selected_location is not None:
+            display_tz = _location_zoneinfo(selected_location)
+        else:
+            display_tz = timezone.utc
+        today_local = datetime.now(display_tz).date()
+        today_midnight_local = datetime(
+            today_local.year, today_local.month, today_local.day,
+            tzinfo=display_tz,
+        )
+        # All the existing window-math runs in UTC; convert the local
+        # midnight to its UTC instant so the panning offsets stay in
+        # the same reference frame as the polars timestamps.
+        base_anchor_utc = today_midnight_local.astimezone(timezone.utc)
         available_dates: list[date] = []
-        anchor_date = (now_utc + timedelta(hours=pan_offset_h)).date()
+        anchor_date = (
+            today_local + timedelta(hours=pan_offset_h)
+        ).date() if pan_offset_h else today_local
         if zoomed_in and not forecast_data.hres_df.is_empty():
             ts_col = forecast_data.hres_df["timestamp"]
             cur_d = ts_col.min().date()
@@ -1873,7 +1897,7 @@ def PointForecastView(settings: UserSettings):
             ft.Container(width=20),
             ft.IconButton(
                 icon=ft.Icons.CHEVRON_LEFT,
-                tooltip=f"← {pan_step_h}時間前",
+                tooltip=f"← {pan_step_h // 24}日前",
                 on_click=lambda _: set_pan_offset_h(pan_offset_h - pan_step_h),
                 disabled=not zoomed_in,
             ),
@@ -1885,29 +1909,24 @@ def PointForecastView(settings: UserSettings):
             ),
             ft.IconButton(
                 icon=ft.Icons.CHEVRON_RIGHT,
-                tooltip=f"→ {pan_step_h}時間後",
+                tooltip=f"→ {pan_step_h // 24}日後",
                 on_click=lambda _: set_pan_offset_h(pan_offset_h + pan_step_h),
                 disabled=not zoomed_in,
             ),
         ]))
 
-        # Visible-window calculation. Base: 'now' sits at 25 % from
-        # the left so the analyst sees a slice of the past for
-        # context and most of the chart for the forecast they
-        # actually care about. ``pan_offset_h`` then shifts the
-        # whole window left/right when the user clicks the
-        # pan buttons. 全期間 (15日) ignores both rules and shows
-        # the data's full extent.
-        # (now_utc was already computed above for the date dropdown.)
+        # Visible-window calculation. Base: today 00:00 in the
+        # location's local timezone — the chart starts at the top
+        # of a day, not at the current wall-clock hour. ``pan_offset_h``
+        # then shifts the whole window left/right in hour steps when
+        # the user clicks the pan buttons. 全期間 (15日) ignores both
+        # rules and shows the data's full extent.
         if visible_days >= 15:
             visible_window = None  # full range
         else:
             span = timedelta(days=visible_days)
-            anchor = now_utc + timedelta(hours=pan_offset_h)
-            visible_window = (
-                anchor - span * 0.25,
-                anchor + span * 0.75,
-            )
+            start = base_anchor_utc + timedelta(hours=pan_offset_h)
+            visible_window = (start, start + span)
 
         # Canvas width fits the typical desktop viewport so we don't
         # have to rely on horizontal scrolling — pan buttons above
@@ -1938,19 +1957,19 @@ def PointForecastView(settings: UserSettings):
         # Day-jump strip — one button per calendar day in the
         # forecast range, placed under the chart so the analyst can
         # click straight to a specific date instead of stepping
-        # ◀ / ▶. Active = anchor date (recentred on noon UTC),
-        # today is also distinguished so it's findable at a glance.
-        # Hidden in 全期間 mode because pan/anchor are no-ops there.
+        # ◀ / ▶. Active = anchor date (left edge of the window =
+        # 00:00 of the clicked day in local tz). Today is also
+        # distinguished so it's findable at a glance. Hidden in
+        # 全期間 mode because pan/anchor are no-ops there.
         if zoomed_in and available_dates:
-            today = now_utc.date()
+            today = today_local
 
             def _on_day_jump(d: date):
-                new_anchor = datetime(
-                    d.year, d.month, d.day, 12, 0, tzinfo=timezone.utc,
-                )
-                delta_h = int(
-                    (new_anchor - now_utc).total_seconds() / 3600,
-                )
+                # Snap the window's left edge to 00:00 of d (local).
+                # ``pan_offset_h`` is measured in hours from
+                # today_midnight_local, so the right value is the
+                # number of days between today and d, × 24.
+                delta_h = (d - today_local).days * 24
                 set_pan_offset_h(delta_h)
 
             day_jump_controls: list[ft.Control] = []
