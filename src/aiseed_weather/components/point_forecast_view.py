@@ -375,62 +375,58 @@ def PointForecastView(settings: UserSettings):
     # FilePicker for the PNG export. Kept in a use_ref because
     # ``page.services`` is a Page-level list we only want to append
     # to once per session — re-appending on every re-render would
-    # leak a new picker per repaint.
+    # leak a new picker per repaint. Flet 0.85's FilePicker
+    # doesn't take an on_result callback; ``save_file`` is async and
+    # the chosen path comes back as its return value.
     file_picker_ref = ft.use_ref(None)
     download_error, set_download_error = ft.use_state(None)
 
-    async def _write_png_to(path: str, snap: _ForecastSnapshot, var: str):
-        try:
-            png_bytes = await asyncio.to_thread(
-                render_point_forecast,
-                location_name=snap.location_name,
-                variable=var,
-                hres_joined=snap.hres_df,
-                msm_df=snap.msm_df,
-                ensemble_quantiles=snap.ensemble_quantiles,
-            )
-            await asyncio.to_thread(Path(path).write_bytes, png_bytes)
-            logger.info(
-                "Chart PNG saved → %s (%.1f KB)",
-                path, len(png_bytes) / 1024,
-            )
-        except Exception as exc:
-            logger.exception("PNG export failed")
-            set_download_error(f"{type(exc).__name__}: {exc}")
-
-    def _on_save_result(e):
-        # ``e.path`` is set when the user picked a save location; left
-        # ``None`` if they cancelled. Generate the matplotlib PNG and
-        # write it on a worker thread so the UI doesn't freeze during
-        # the ~100 ms matplotlib pass.
-        path = getattr(e, "path", None)
-        if not path or forecast_data is None:
-            return
-        ft.context.page.run_task(
-            _write_png_to, path, forecast_data, variable,
-        )
-
     if file_picker_ref.current is None:
-        fp = ft.FilePicker(on_result=_on_save_result)
+        fp = ft.FilePicker()
         page = ft.context.page
-        # ``page.services`` may not exist on first run; create the
-        # list lazily so we don't blow up older Flet versions.
         services = list(getattr(page, "services", None) or [])
         services.append(fp)
         page.services = services
         file_picker_ref.current = fp
 
-    def on_download_click(_e):
+    async def _save_chart_png():
         if forecast_data is None:
             return
         set_download_error(None)
         fp: ft.FilePicker = file_picker_ref.current
         safe_loc = forecast_data.location_name.replace("/", "_")
-        fp.save_file(
-            dialog_title="チャートを PNG で保存",
-            file_name=f"{safe_loc}_{variable}.png",
-            allowed_extensions=["png"],
-        )
+        try:
+            chosen = await fp.save_file(
+                dialog_title="チャートを PNG で保存",
+                file_name=f"{safe_loc}_{variable}.png",
+                allowed_extensions=["png"],
+            )
+        except Exception as exc:
+            logger.exception("save_file dialog failed")
+            set_download_error(f"{type(exc).__name__}: {exc}")
+            return
+        if not chosen:
+            return
+        try:
+            png_bytes = await asyncio.to_thread(
+                render_point_forecast,
+                location_name=forecast_data.location_name,
+                variable=variable,
+                hres_joined=forecast_data.hres_df,
+                msm_df=forecast_data.msm_df,
+                ensemble_quantiles=forecast_data.ensemble_quantiles,
+            )
+            await asyncio.to_thread(Path(chosen).write_bytes, png_bytes)
+            logger.info(
+                "Chart PNG saved → %s (%.1f KB)",
+                chosen, len(png_bytes) / 1024,
+            )
+        except Exception as exc:
+            logger.exception("PNG export failed")
+            set_download_error(f"{type(exc).__name__}: {exc}")
+
+    def on_download_click(_e):
+        ft.context.page.run_task(_save_chart_png)
 
     selected_location = next(
         (loc for loc in locations if loc.name == selected_name),
