@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 # Alias to avoid name clash with the ``timezone: str`` Location field
 # below — we still need stdlib ``timezone.utc`` for UTC stamps.
 from datetime import datetime, timezone as _tz
@@ -57,19 +57,30 @@ def default_timezone_for(latitude: float, longitude: float) -> str:
 @dataclass(frozen=True)
 class Location:
     """One user-saved point. Frozen so it's safe to use as a dict key
-    and to pass through the @ft.observable session machinery."""
+    and to pass through the @ft.observable session machinery.
+
+    ``jma_area_code`` / ``amedas_station_ids`` are auto-resolved on
+    first overview render for Japanese locations (and left empty for
+    non-JP points). The settings dialog lets the user override the
+    auto-pick — useful when the nearest AMeDAS station sits the wrong
+    side of a coast / valley from where they actually live.
+    """
 
     name: str
     latitude: float
     longitude: float
     is_japan: bool
     timezone: str           # IANA name; drives the chart's clock
+    jma_area_code: str      # JMA office code (e.g. '130000'); '' if N/A
+    amedas_station_ids: tuple[str, ...]  # up to 3 IDs, '' if N/A
     created_at: datetime
 
     @classmethod
     def new(
         cls, name: str, latitude: float, longitude: float,
         timezone_name: str | None = None,
+        jma_area_code: str = "",
+        amedas_station_ids: tuple[str, ...] = (),
     ) -> "Location":
         """Construct a Location, deriving is_japan and a UTC
         ``created_at``. ``timezone_name`` overrides the
@@ -86,12 +97,47 @@ class Location:
             longitude=float(longitude),
             is_japan=is_in_japan(latitude, longitude),
             timezone=tz,
+            jma_area_code=jma_area_code,
+            amedas_station_ids=tuple(amedas_station_ids),
             created_at=datetime.now(_tz.utc),
+        )
+
+    def with_jma_settings(
+        self, *,
+        jma_area_code: str | None = None,
+        amedas_station_ids: tuple[str, ...] | None = None,
+        timezone_name: str | None = None,
+    ) -> "Location":
+        """Return a copy with the given JMA / tz settings replaced.
+        Helper for the settings dialog so the caller doesn't have to
+        reconstruct every field by hand."""
+        return Location(
+            name=self.name,
+            latitude=self.latitude,
+            longitude=self.longitude,
+            is_japan=self.is_japan,
+            timezone=(
+                timezone_name.strip() if timezone_name
+                else self.timezone
+            ),
+            jma_area_code=(
+                jma_area_code if jma_area_code is not None
+                else self.jma_area_code
+            ),
+            amedas_station_ids=(
+                tuple(amedas_station_ids)
+                if amedas_station_ids is not None
+                else self.amedas_station_ids
+            ),
+            created_at=self.created_at,
         )
 
     def to_json(self) -> dict:
         d = asdict(self)
         d["created_at"] = self.created_at.isoformat()
+        # asdict turns the tuple into a list; that's what JSON wants
+        # anyway. Just make sure we don't serialise a tuple object.
+        d["amedas_station_ids"] = list(self.amedas_station_ids)
         return d
 
     @classmethod
@@ -107,14 +153,21 @@ class Location:
         lat = float(data["latitude"])
         lon = float(data["longitude"])
         # Backward compat: locations.json from before the timezone
-        # field existed defaults to the lat/lon-derived guess.
+        # field existed defaults to the lat/lon-derived guess. The
+        # JMA fields default to empty — they get auto-resolved on
+        # first overview render.
         tz = str(data.get("timezone") or default_timezone_for(lat, lon))
+        stations_raw = data.get("amedas_station_ids") or []
+        if not isinstance(stations_raw, (list, tuple)):
+            stations_raw = []
         return cls(
             name=str(data["name"]),
             latitude=lat,
             longitude=lon,
             is_japan=bool(data.get("is_japan", is_in_japan(lat, lon))),
             timezone=tz,
+            jma_area_code=str(data.get("jma_area_code") or ""),
+            amedas_station_ids=tuple(str(s) for s in stations_raw),
             created_at=created,
         )
 

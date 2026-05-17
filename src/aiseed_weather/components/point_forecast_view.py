@@ -61,6 +61,12 @@ from aiseed_weather.services.open_meteo_forecast import (
     ForecastResult,
     fetch_forecast,
 )
+from aiseed_weather.services.jma_amedas_service import (
+    AmedasStation, JmaAmedasService, nearest_stations,
+)
+from aiseed_weather.services.jma_forecast_service import (
+    JmaForecastService,
+)
 from aiseed_weather.services.point_climatology import (
     daily_records,
     hourly_climatology,
@@ -773,6 +779,22 @@ def PointForecastView(settings: UserSettings):
     new_tz, set_new_tz = ft.use_state("")
     new_err, set_new_err = ft.use_state("")
 
+    # Per-location JMA / AMeDAS settings dialog state. ``settings_target``
+    # holds the location being edited (None = closed); ``settings_data``
+    # holds the freshly-loaded option lists (offices + nearest stations)
+    # and is None while the async loader is running. The form fields
+    # live in their own use_state slots so the dialog stays responsive
+    # without touching the saved Location until the user clicks 保存.
+    settings_target, set_settings_target = ft.use_state(None)
+    settings_loading, set_settings_loading = ft.use_state(False)
+    settings_data, set_settings_data = ft.use_state(None)
+    settings_office, set_settings_office = ft.use_state("")
+    settings_a1, set_settings_a1 = ft.use_state("")
+    settings_a2, set_settings_a2 = ft.use_state("")
+    settings_a3, set_settings_a3 = ft.use_state("")
+    settings_tz, set_settings_tz = ft.use_state("")
+    settings_err, set_settings_err = ft.use_state("")
+
     def _reset_dialog() -> None:
         set_new_name("")
         set_new_lat("")
@@ -994,6 +1016,120 @@ def PointForecastView(settings: UserSettings):
         # series.
         set_variable(e.control.value)
 
+    # ── JMA / AMeDAS settings (per-location) ─────────────────────
+    async def _open_settings(loc: Location):
+        """Populate the per-location settings dialog. Pulls the
+        AMeDAS station table + JMA area table once (both cached on
+        disk for 7-30 days), computes the nearest 30 AMeDAS stations
+        to the location, and auto-resolves the JMA office code. The
+        dialog stays in a 'loading…' state until this completes."""
+        set_settings_target(loc)
+        set_settings_data(None)
+        set_settings_err("")
+        set_settings_loading(True)
+        set_settings_tz(loc.timezone)
+        try:
+            amedas_svc = JmaAmedasService(data_dir=data_dir)
+            jma_svc = JmaForecastService(data_dir=data_dir)
+            stations_dict = await amedas_svc.stations()
+            near = nearest_stations(
+                stations_dict, loc.latitude, loc.longitude, limit=30,
+            )
+            area_table = await jma_svc.area_table()
+            auto_res = await jma_svc.resolve_area(
+                loc.latitude, loc.longitude, stations_dict,
+            )
+            # Office hierarchy: keep entries that have a parent (i.e.
+            # actual prefectural/regional forecast offices), drop
+            # higher-level 'centers' which the forecast endpoint won't
+            # accept.
+            offices_raw = area_table.get("offices") or {}
+            offices = sorted([
+                (str(code), str(info.get("name") or code))
+                for code, info in offices_raw.items()
+                if info.get("parent")
+            ], key=lambda kv: kv[0])
+            data = {
+                "offices": offices,
+                "near_stations": near,
+                "auto_office": (
+                    auto_res.office_code if auto_res else ""
+                ),
+                "auto_office_name": (
+                    auto_res.office_name if auto_res else ""
+                ),
+            }
+            set_settings_data(data)
+            # Form defaults: saved value if any, else auto-pick.
+            set_settings_office(
+                loc.jma_area_code
+                or (auto_res.office_code if auto_res else ""),
+            )
+            saved_ids = list(loc.amedas_station_ids)
+            near_ids = [s.station_id for s, _ in near]
+            set_settings_a1(
+                saved_ids[0] if len(saved_ids) > 0
+                else (near_ids[0] if len(near_ids) > 0 else ""),
+            )
+            set_settings_a2(
+                saved_ids[1] if len(saved_ids) > 1
+                else (near_ids[1] if len(near_ids) > 1 else ""),
+            )
+            set_settings_a3(
+                saved_ids[2] if len(saved_ids) > 2
+                else (near_ids[2] if len(near_ids) > 2 else ""),
+            )
+        except Exception as exc:
+            logger.exception("Settings dialog data load failed")
+            set_settings_err(
+                f"設定データの取得に失敗: {type(exc).__name__}: {exc}",
+            )
+        finally:
+            set_settings_loading(False)
+
+    def _close_settings():
+        set_settings_target(None)
+        set_settings_data(None)
+        set_settings_err("")
+
+    def _save_settings():
+        loc = settings_target
+        if loc is None:
+            return
+        tz_input = settings_tz.strip()
+        if tz_input:
+            try:
+                ZoneInfo(tz_input)
+            except ZoneInfoNotFoundError:
+                set_settings_err(f"未知の timezone: {tz_input}")
+                return
+        ids = tuple(
+            s for s in (settings_a1, settings_a2, settings_a3) if s
+        )
+        # Dedupe while preserving order — picking the same station
+        # twice would just waste a card slot.
+        seen: set[str] = set()
+        ids_dedup: list[str] = []
+        for s in ids:
+            if s in seen:
+                continue
+            seen.add(s)
+            ids_dedup.append(s)
+        updated = loc.with_jma_settings(
+            jma_area_code=settings_office or "",
+            amedas_station_ids=tuple(ids_dedup),
+            timezone_name=tz_input or loc.timezone,
+        )
+        new_list = [
+            updated if l.name == loc.name else l for l in locations
+        ]
+        save_locations(data_dir, new_list)
+        set_locations(new_list)
+        _close_settings()
+
+    def on_settings_click(loc: Location):
+        ft.context.page.run_task(_open_settings, loc)
+
     # ── Add-location dialog ──────────────────────────────────────
     # Built inline in render() per flet-declarative: the AlertDialog
     # is a frozen-diff descendant of state, so reconstructing each
@@ -1072,6 +1208,141 @@ def PointForecastView(settings: UserSettings):
         ],
     ) if show_dialog else None
     ft.use_dialog(add_dialog)
+
+    # ── Per-location JMA / AMeDAS settings dialog ────────────────
+    def _station_label(s: AmedasStation, dist_km: float) -> str:
+        # Append the station-type letter and distance so the user has
+        # something to break ties on when two nearby stations have
+        # the same name. Type 'A' = full instrument; 'B' lacks
+        # temperature; rainfall-only stations show only rain. The
+        # cards in the overview gracefully degrade when a chosen
+        # station doesn't publish a given variable.
+        type_tag = f" [{s.station_type}]" if s.station_type else ""
+        return f"{s.name_kanji}{type_tag} ({dist_km:.1f} km)"
+
+    settings_dialog: ft.Control | None = None
+    if settings_target is not None:
+        if settings_loading or settings_data is None:
+            settings_body: list[ft.Control] = [
+                ft.Row(controls=[
+                    ft.ProgressRing(width=16, height=16),
+                    ft.Text("JMA / AMeDAS の選択肢を読み込み中…"),
+                ]),
+            ]
+            if settings_err:
+                settings_body.append(
+                    ft.Text(settings_err, color=ft.Colors.RED, size=12),
+                )
+        else:
+            near = settings_data["near_stations"]
+            offices = settings_data["offices"]
+            auto_office_code = settings_data.get("auto_office", "")
+            auto_office_name = settings_data.get("auto_office_name", "")
+            station_options = [
+                ft.dropdown.Option(key="", text="（指定なし）")
+            ] + [
+                ft.dropdown.Option(
+                    key=s.station_id,
+                    text=_station_label(s, dist_km),
+                )
+                for s, dist_km in near
+            ]
+            office_options = [
+                ft.dropdown.Option(key="", text="（指定なし）")
+            ] + [
+                ft.dropdown.Option(key=code, text=f"{code} {name}")
+                for code, name in offices
+            ]
+            auto_hint = (
+                f"自動推定: {auto_office_code} {auto_office_name}"
+                if auto_office_code else "自動推定: なし"
+            )
+            settings_body = [
+                ft.Text(
+                    f"{settings_target.name}  "
+                    f"({settings_target.latitude:.3f}, "
+                    f"{settings_target.longitude:.3f})",
+                    size=12, color=ft.Colors.GREY,
+                ),
+                ft.TextField(
+                    label="タイムゾーン (IANA)",
+                    value=settings_tz,
+                    hint_text="Asia/Tokyo, Europe/London …",
+                    on_change=lambda e: set_settings_tz(e.control.value),
+                ),
+                ft.Divider(),
+                ft.Text("JMA 府県天気予報",
+                        weight=ft.FontWeight.BOLD, size=13),
+                ft.Text(auto_hint, size=11, color=ft.Colors.GREY),
+                ft.Dropdown(
+                    label="予報エリア (office code)",
+                    value=settings_office,
+                    options=office_options,
+                    on_select=lambda e: set_settings_office(
+                        e.control.value or "",
+                    ),
+                    width=380,
+                ),
+                ft.Divider(),
+                ft.Text("AMeDAS 観測所 (最大 3 か所、近い順から選択)",
+                        weight=ft.FontWeight.BOLD, size=13),
+                ft.Dropdown(
+                    label="1 番目",
+                    value=settings_a1,
+                    options=station_options,
+                    on_select=lambda e: set_settings_a1(
+                        e.control.value or "",
+                    ),
+                    width=380,
+                ),
+                ft.Dropdown(
+                    label="2 番目",
+                    value=settings_a2,
+                    options=station_options,
+                    on_select=lambda e: set_settings_a2(
+                        e.control.value or "",
+                    ),
+                    width=380,
+                ),
+                ft.Dropdown(
+                    label="3 番目",
+                    value=settings_a3,
+                    options=station_options,
+                    on_select=lambda e: set_settings_a3(
+                        e.control.value or "",
+                    ),
+                    width=380,
+                ),
+            ]
+            if not settings_target.is_japan:
+                settings_body.insert(2, ft.Text(
+                    "※ この地点は日本国外のため JMA / AMeDAS は"
+                    "取得できません。タイムゾーンのみ編集できます。",
+                    size=11, color=ft.Colors.ORANGE,
+                ))
+            if settings_err:
+                settings_body.append(
+                    ft.Text(settings_err, color=ft.Colors.RED, size=12),
+                )
+
+        settings_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text(f"設定: {settings_target.name}"),
+            content=ft.Column(
+                controls=settings_body, tight=True, scroll=ft.ScrollMode.AUTO,
+                height=520, width=420,
+            ),
+            actions=[
+                ft.TextButton(
+                    "キャンセル", on_click=lambda _: _close_settings(),
+                ),
+                ft.FilledButton(
+                    "保存", on_click=lambda _: _save_settings(),
+                    disabled=settings_loading,
+                ),
+            ],
+        )
+    ft.use_dialog(settings_dialog)
 
     # ── render branches ─────────────────────────────────────────
 
@@ -1157,6 +1428,15 @@ def PointForecastView(settings: UserSettings):
                 disabled=(
                     forecast_data is None or variable == _OVERVIEW_KEY
                 ),
+            ),
+            ft.IconButton(
+                icon=ft.Icons.SETTINGS,
+                tooltip="この地点の設定 (タイムゾーン / JMA / AMeDAS)",
+                on_click=lambda _: (
+                    on_settings_click(selected_location)
+                    if selected_location else None
+                ),
+                disabled=selected_location is None,
             ),
             updated_caption,
         ]),
