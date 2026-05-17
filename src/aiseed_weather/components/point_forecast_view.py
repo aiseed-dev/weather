@@ -865,59 +865,23 @@ def PointForecastView(settings: UserSettings):
         zoomed_in = visible_days < 15
         pan_step_h = max(6, int(visible_days * 12))
 
-        # Date picker: pick a specific calendar day in the forecast
-        # range and recentre the visible window on noon UTC of that
-        # date. Cheap-cost alternative to clicking ◀ / ▶ multiple
-        # times when the analyst wants to jump straight to e.g.
-        # '05-25 の天気を見たい'.
+        # Pre-compute the date set + current anchor so both the
+        # toolbar pan buttons and the bottom day-jump strip can
+        # reach them.
         now_utc = datetime.now(timezone.utc).replace(
             minute=0, second=0, microsecond=0,
         )
-        date_dropdown: ft.Control | None = None
+        available_dates: list[date] = []
+        anchor_date = (now_utc + timedelta(hours=pan_offset_h)).date()
         if zoomed_in and not forecast_data.hres_df.is_empty():
             ts_col = forecast_data.hres_df["timestamp"]
-            d_min = ts_col.min().date()
+            cur_d = ts_col.min().date()
             d_max = ts_col.max().date()
-            available_dates: list[date] = []
-            cur_d = d_min
             while cur_d <= d_max:
                 available_dates.append(cur_d)
                 cur_d += timedelta(days=1)
-            anchor_date = (
-                now_utc + timedelta(hours=pan_offset_h)
-            ).date()
 
-            def _on_date_pick(e):
-                picked = date.fromisoformat(e.control.value)
-                # Noon UTC of the picked date becomes the new anchor
-                # so the visible window is centred on the day.
-                new_anchor = datetime(
-                    picked.year, picked.month, picked.day,
-                    12, 0, tzinfo=timezone.utc,
-                )
-                delta_h = int(
-                    (new_anchor - now_utc).total_seconds() / 3600,
-                )
-                set_pan_offset_h(delta_h)
-
-            today = now_utc.date()
-            date_dropdown = ft.Dropdown(
-                value=anchor_date.isoformat(),
-                options=[
-                    ft.dropdown.Option(
-                        key=d.isoformat(),
-                        text=(
-                            f"{d:%m-%d}"
-                            + (" (今日)" if d == today else "")
-                        ),
-                    )
-                    for d in available_dates
-                ],
-                on_select=_on_date_pick,
-                width=140,
-            )
-
-        toolbar = [
+        rows.append(ft.Row(controls=[
             ft.Text("表示日数:", size=12, color=ft.Colors.GREY),
             _day_button(1),
             _day_button(3),
@@ -942,11 +906,7 @@ def PointForecastView(settings: UserSettings):
                 on_click=lambda _: set_pan_offset_h(pan_offset_h + pan_step_h),
                 disabled=not zoomed_in,
             ),
-        ]
-        if date_dropdown is not None:
-            toolbar.append(ft.Container(width=12))
-            toolbar.append(date_dropdown)
-        rows.append(ft.Row(controls=toolbar))
+        ]))
 
         # Visible-window calculation. Base: 'now' sits at 25 % from
         # the left so the analyst sees a slice of the past for
@@ -991,6 +951,48 @@ def PointForecastView(settings: UserSettings):
             height=700,
             padding=ft.Padding.symmetric(vertical=8, horizontal=0),
         ))
+
+        # Day-jump strip — one button per calendar day in the
+        # forecast range, placed under the chart so the analyst can
+        # click straight to a specific date instead of stepping
+        # ◀ / ▶. Active = anchor date (recentred on noon UTC),
+        # today is also distinguished so it's findable at a glance.
+        # Hidden in 全期間 mode because pan/anchor are no-ops there.
+        if zoomed_in and available_dates:
+            today = now_utc.date()
+
+            def _on_day_jump(d: date):
+                new_anchor = datetime(
+                    d.year, d.month, d.day, 12, 0, tzinfo=timezone.utc,
+                )
+                delta_h = int(
+                    (new_anchor - now_utc).total_seconds() / 3600,
+                )
+                set_pan_offset_h(delta_h)
+
+            day_jump_controls: list[ft.Control] = []
+            for d in available_dates:
+                label = (
+                    f"{d:%m-%d}"
+                    + ("\n今日" if d == today else "")
+                )
+                if d == anchor_date:
+                    btn = ft.FilledButton(
+                        label,
+                        on_click=lambda _, dd=d: _on_day_jump(dd),
+                    )
+                else:
+                    btn = ft.OutlinedButton(
+                        label,
+                        on_click=lambda _, dd=d: _on_day_jump(dd),
+                    )
+                day_jump_controls.append(btn)
+            rows.append(ft.Row(
+                controls=day_jump_controls,
+                wrap=True,
+                spacing=4,
+                run_spacing=4,
+            ))
         rows.append(ft.Divider())
 
         # Copy button — replaces the on-screen hourly DataTable. The
