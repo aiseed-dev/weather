@@ -21,6 +21,7 @@ shared with the map renderers.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Iterable
 
@@ -124,14 +125,51 @@ def _line_elements(
 
 
 def _nice_y_ticks(
-    v_min: float, v_max: float, n: int = 6,
-) -> list[float]:
-    """Pick ``n`` evenly-spaced ticks across (v_min, v_max). Simple
-    linear placement; a matplotlib-style 'nice round numbers'
-    rounding can come later if the labels read awkward."""
+    v_min: float, v_max: float, n_target: int = 6,
+) -> tuple[list[float], float, float, float]:
+    """Pick round-number Y-axis ticks the analyst expects to read.
+
+    Returns ``(ticks, axis_min, axis_max, step)`` where ``ticks`` are
+    multiples of a step chosen from {1, 2, 2.5, 5} × 10^k. ``axis_min``
+    / ``axis_max`` are the rounded bounds the chart should actually
+    use — they extend slightly past ``v_min`` / ``v_max`` so the
+    first and last ticks fall ON the axis ends, not floating off the
+    edge. ``step`` lets the caller format labels consistently
+    (integer when step ≥ 1 and the tick is whole, else one decimal).
+
+    Same algorithm matplotlib uses for ``MaxNLocator``.
+    """
     if v_max <= v_min:
-        return [v_min]
-    return [v_min + (v_max - v_min) * i / (n - 1) for i in range(n)]
+        return [v_min], v_min, v_min + 1.0, 1.0
+    raw_step = (v_max - v_min) / max(1, n_target - 1)
+    magnitude = 10.0 ** math.floor(math.log10(raw_step))
+    # Multipliers in increasing order — pick the smallest one whose
+    # step (multiplier × magnitude) is at least the raw step.
+    for mult in (1.0, 2.0, 2.5, 5.0, 10.0):
+        step = mult * magnitude
+        if step >= raw_step:
+            break
+    else:  # pragma: no cover — math.log10 already constrained this
+        step = 10.0 * magnitude
+
+    axis_min = math.floor(v_min / step) * step
+    axis_max = math.ceil(v_max / step) * step
+    ticks: list[float] = []
+    cur = axis_min
+    while cur <= axis_max + step * 1e-6:
+        ticks.append(cur)
+        cur += step
+    return ticks, axis_min, axis_max, step
+
+
+def _format_y_tick(value: float, step: float) -> str:
+    """Integer label when step is whole and value snaps to an integer;
+    otherwise pick a decimal count matching the step's precision."""
+    if step >= 1.0 and abs(value - round(value)) < 1e-6:
+        return str(int(round(value)))
+    if step >= 0.1:
+        return f"{value:.1f}"
+    return f"{value:.2f}"
 
 
 def _collect_all_values(
@@ -227,12 +265,21 @@ def build_point_forecast_canvas(
         hres_joined, msm_df, ensemble_quantiles, variable,
     )
     if vals:
-        v_min, v_max = min(vals), max(vals)
-        pad_v = (v_max - v_min) * 0.05 or 1.0
-        v_min -= pad_v
-        v_max += pad_v
+        raw_min, raw_max = min(vals), max(vals)
+        # Small pad so the data doesn't kiss the axis frame before
+        # nice-rounding pushes the bounds out further.
+        pad_v = (raw_max - raw_min) * 0.05 or 1.0
+        raw_min -= pad_v
+        raw_max += pad_v
     else:
-        v_min, v_max = 0.0, 1.0
+        raw_min, raw_max = 0.0, 1.0
+
+    # _nice_y_ticks returns axis bounds aligned to the chosen step so
+    # the first / last grid line sit on the panel edges rather than
+    # floating off; the chart's vertical scale uses these rounded
+    # bounds instead of the raw data extent. Labels become 0 / 5 / 10
+    # / 15 instead of 0.6 / 5.8 / 11.0 / 16.2.
+    y_ticks, v_min, v_max, y_step = _nice_y_ticks(raw_min, raw_max, n_target=6)
     v_span = v_max - v_min or 1.0
 
     def y_of(v: float) -> float:
@@ -246,15 +293,15 @@ def build_point_forecast_canvas(
         paint=ft.Paint(color=_BG, style=ft.PaintingStyle.FILL),
     ))
 
-    # ── Grid + Y axis labels ────────────────────────────────────
-    for v in _nice_y_ticks(v_min, v_max, n=6):
+    # ── Grid + Y axis labels (nice round numbers) ──────────────
+    for v in y_ticks:
         y = y_of(v)
         shapes.append(cv.Line(
             pad_l, y, pad_l + plot_w, y,
             paint=ft.Paint(color=_GRID, stroke_width=0.6),
         ))
         shapes.append(cv.Text(
-            pad_l - 6, y - 6, f"{v:.1f}",
+            pad_l - 6, y - 6, _format_y_tick(v, y_step),
             style=ft.TextStyle(color=_AXIS, size=10),
             alignment=ft.Alignment.CENTER_RIGHT,
         ))
