@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import flet as ft
@@ -365,6 +365,10 @@ def PointForecastView(settings: UserSettings):
     # matplotlib stays around purely as the publication export path
     # (PNG ダウンロード button below).
     variable, set_variable = ft.use_state(_CHART_VARIABLES[0][0])
+    # Chart visible window in days. Buttons let the analyst zoom in
+    # to a few days for legibility, or out to the full HRES range
+    # for a panoramic look. Default 7 = one week.
+    visible_days, set_visible_days = ft.use_state(7)
 
     # Download flow: a single async coroutine that opens the
     # save-file picker and writes the matplotlib PNG to the chosen
@@ -713,24 +717,72 @@ def PointForecastView(settings: UserSettings):
             color=ft.Colors.RED,
         ))
     elif forecast_state == "ready" and forecast_data is not None:
-        # Chart first — primary visualisation per spec step 10.
-        # ``build_point_forecast_canvas`` returns a Flet
-        # ``flet.canvas.Canvas`` rendered on the GPU, so it's vector-
-        # crisp, resolution-independent and ready for interaction
-        # (hover / click can be wired later). matplotlib stays
-        # available for the download button above as the
-        # publication-quality raster fallback.
+        # Day-range buttons. Active choice = FilledButton (high
+        # contrast), inactive = OutlinedButton — Material has no
+        # native SegmentedButton in Flet 0.85, so this row-of-
+        # buttons pattern fills the role.
+        def _day_button(n: int) -> ft.Control:
+            label = "全期間" if n >= 15 else f"{n}日"
+            if visible_days == n:
+                return ft.FilledButton(
+                    label,
+                    on_click=lambda _: set_visible_days(n),
+                )
+            return ft.OutlinedButton(
+                label,
+                on_click=lambda _: set_visible_days(n),
+            )
+
+        rows.append(ft.Row(controls=[
+            ft.Text("表示日数:", size=12, color=ft.Colors.GREY),
+            _day_button(1),
+            _day_button(3),
+            _day_button(7),
+            _day_button(15),
+        ]))
+
+        # Visible-window calculation: 'now' sits at 25% from the
+        # left so the analyst sees a slice of the past for context
+        # and most of the chart for the forecast they actually
+        # care about. 全期間 (15日) falls back to the full
+        # hres_joined range so we don't clip the past 3 days
+        # ECMWF returns.
+        now_utc = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0,
+        )
+        if visible_days >= 15:
+            visible_window = None  # full range
+        else:
+            span = timedelta(days=visible_days)
+            visible_window = (
+                now_utc - span * 0.25,
+                now_utc + span * 0.75,
+            )
+
+        # Canvas width scales with visible days so short windows
+        # actually fit the viewport. 180 px / day is a comfortable
+        # density; the 1100 px floor keeps even '1日' from
+        # collapsing to a useless sliver.
+        canvas_width = max(1100, int(visible_days * 180))
+
         chart_canvas = build_point_forecast_canvas(
             location_name=forecast_data.location_name,
             variable=variable,
             hres_joined=forecast_data.hres_df,
             msm_df=forecast_data.msm_df,
             ensemble_quantiles=forecast_data.ensemble_quantiles,
+            now_utc=now_utc,
+            visible_window=visible_window,
+            width=canvas_width,
         )
         rows.append(ft.Container(
             content=ft.Row(
                 controls=[
-                    ft.Container(content=chart_canvas, width=2200, height=500),
+                    ft.Container(
+                        content=chart_canvas,
+                        width=canvas_width,
+                        height=500,
+                    ),
                 ],
                 scroll=ft.ScrollMode.AUTO,
             ),

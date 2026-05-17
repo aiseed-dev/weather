@@ -164,15 +164,21 @@ def build_point_forecast_canvas(
     msm_df: pl.DataFrame | None,
     ensemble_quantiles: pl.DataFrame | None,
     now_utc: datetime | None = None,
+    visible_window: tuple[datetime, datetime] | None = None,
     width: float = 2200.0,
     height: float = 500.0,
 ) -> cv.Canvas:
     """Render the point-forecast time series onto a Flet Canvas.
 
+    ``visible_window`` (t_start, t_end) restricts the x-axis to a
+    sub-range of the forecast — callers use this to implement a
+    'zoom to N days' control. When ``None`` the chart spans the
+    full hres_joined timestamp range.
+
     Returns a single ``flet.canvas.Canvas`` whose ``shapes`` list
     contains the background, axes, bands, lines, legend, and 'now'
     marker. The widget is intended to be wrapped in a horizontally-
-    scrollable Row at the call site so the wide canvas stays readable.
+    scrollable Row at the call site so wide views stay readable.
 
     Sync — fast (no I/O, just shape construction). Calling from the
     event loop is fine.
@@ -198,11 +204,24 @@ def build_point_forecast_canvas(
         )
 
     ts: list[datetime] = hres_joined["timestamp"].to_list()
-    t_min, t_max = ts[0], ts[-1]
+    # X-axis bounds: caller-provided visible window if given, else
+    # the full data range. Out-of-window samples still get rendered
+    # — the axes clip them visually, and the surrounding context
+    # outside the visible band is rarely a perf issue at our sizes.
+    if visible_window is not None:
+        t_min, t_max = visible_window
+    else:
+        t_min, t_max = ts[0], ts[-1]
     span_seconds = (t_max - t_min).total_seconds() or 1.0
 
     def x_of(t: datetime) -> float:
         return pad_l + (t - t_min).total_seconds() / span_seconds * plot_w
+
+    # Helper to skip samples entirely outside the visible window.
+    # Drops both the line continuity (start a new sub-path on
+    # re-entry) and the cost of computing x_of on far-away points.
+    def _in_window(t: datetime) -> bool:
+        return t_min <= t <= t_max
 
     vals = _collect_all_values(
         hres_joined, msm_df, ensemble_quantiles, variable,
