@@ -456,6 +456,116 @@ numba は手軽だが、関数ローカルの最適化に限られる (型推論
 
 ---
 
+## 10. AI コーディングと相性が良い ― Skill 化が効く
+
+ここまでの内容で 1 つ強調しておきたいのは、**Flet の宣言的モードは
+AI による自動コーディングと極めて相性が良い**こと。`aiseed-weather`
+の開発は Claude Code (Anthropic の CLI コーディングエージェント) を
+常用しているが、その経験から言える観察:
+
+### Flet が AI フレンドリーな理由
+
+1. **Python = LLM が最も得意な言語**
+2. **API 面が小さく、命名が一貫している** (`ft.Column` / `ft.Row` /
+   `ft.Container` / `ft.Text` …)
+3. **宣言的なので「状態 → UI」の一方向データフロー** ― LLM が混乱
+   しやすい「いつ何を更新するか」の手続き的判断が要らない
+4. **`@ft.component` + `use_state` の繰り返しパターンが構造的** ―
+   テンプレートで生成しやすい
+5. **HTML/CSS/JS が出てこない** ― クロスドメインの整合性 (CSS の
+   セレクタ衝突、Tailwind のクラス名、React のキー指定…) を AI が
+   一括で扱う必要がない
+
+結果として、**「データクラスを 1 つ書いて、それを表示するコンポーネ
+ントを作って」と頼むだけで、ほぼ修正なしで動く Flet コードが返って
+くる**。Web フロントだと "TypeScript の型を書き直して" "Tailwind が
+効かない" "useMemo が必要" など複数の往復が要るところを、Flet なら
+1 ターンで決まる。
+
+### Skill 化で再現性を上げる ― `aiseed-weather` の実例
+
+このプロジェクトは Claude Code の **Skill 機能** (`.agents/skills/`)
+を使って、AI に渡すコーディング規約をリポジトリに同梱している。
+現状 13 個:
+
+```
+.agents/skills/
+├── flet-component-basics/    ← Flet 0.85+ 宣言的モードの基本
+├── flet-declarative/         ← 本プロジェクト固有の Flet 規約
+├── chart-base-design/        ← matplotlib / canvas のパレット規約
+├── data-flow/                ← 状態と取得層の境界
+├── user-action-fetch/        ← 「ユーザ操作時のみ fetch」原則
+├── figure-export/            ← PNG/PDF 出力の attribution 規約
+├── ecmwf-data-access/        ← ECMWF S3 アクセスの作法
+├── era5-climatology/
+├── jma-data-access/
+├── open-meteo-access/
+├── weather-rendering/
+├── aiseed-conventions/       ← 命名・i18n・ライセンス表記
+└── first-run-setup/
+```
+
+各 Skill は `SKILL.md` 1 ファイルで、フロントマター (`name`,
+`description`, `trigger`) + 本文 (規約・コード例) の構造。AI は
+タスク開始時に該当する Skill を自動ロードする:
+
+```yaml
+---
+name: flet-declarative
+description: How to write Flet UI code in this project. Components mode
+  only, no imperative page.update(). Targets Flet 0.85+ APIs
+  (ft.Router, ft.use_dialog).
+---
+
+## Core rule
+
+UI is **derived from state**. Mutate state, let Flet re-render.
+Never write imperative chains like `control.value = x; page.update()`.
+
+## Required patterns
+
+### Components
+```python
+@ft.component
+def MapView(layer: str, on_layer_change):
+    return ft.Column(controls=[...])
+```
+…
+```
+
+**この Skill 1 つ書いておくだけで、AI が生成する Flet コードが
+すべてプロジェクト規約に揃う**。「`page.update()` を使わないで」と
+毎回プロンプトに書く必要がない ― トリガが当たれば AI 側が自分で読む。
+
+### 業務 SI の文脈での意味
+
+「Skill = チーム規約を AI に読ませる仕組み」と捉えると、業務 SI で
+直接効く:
+
+- **新メンバー教育の半分が Skill 化できる** ― 「うちはこう書く」を
+  ファイル化、AI もメンバーも同じものを読む
+- **コードレビューの定型指摘がゼロになる** ― AI が最初から規約準拠の
+  コードを出す
+- **負債が溜まりにくい** ― 規約を更新したら、その日から AI も新規約
+  で書き始める
+- **特定ライブラリ (例: 社内認証基盤) の使い方を Skill 化**して、
+  AI に間違わせない
+
+VB 時代は「ベテランの暗黙知」だった部分が、Skill ファイルとして
+リポジトリにコミットされ、AI が常時参照する ― という開発体制が
+普通に組める。**Flet の宣言的モードが「規約として書き下ろしやすい」
+ことと、AI のコード生成性能が良いこととが、ここで相乗効果を出す**。
+
+### 実感
+
+`aiseed-weather` の UI コード (6,800 行) は、ほぼすべて Claude Code
+との対話で書かれた。人間側がやったのは「何を作るか」「どう見せたいか」
+「データの意味は何か」を伝えることと、出てきたコードのレビューだけ。
+**Flet + Skill + LLM の三点セット**が、業務 GUI 開発の生産性曲線を
+もう一段押し上げているのは間違いない。
+
+---
+
 ## Visual Basic との対比 ― 何が継承され、何が現代化されたか
 
 | | VB 6 | Flet + Python (+ 任意で Rust) |
@@ -471,6 +581,7 @@ numba は手軽だが、関数ローカルの最適化に限られる (型推論
 | 配布 | EXE | EXE / Web / iOS / Android / 組み込み端末 |
 | 動作環境 | Windows only | Win / Mac / Linux / Web / Mobile / Raspberry Pi |
 | エコシステム | 業務 ActiveX | Python パッケージ全部 + Rust crate |
+| AI コーディング | 想定外 | **宣言的 API + Skill 化で AI が規約準拠コードを生成** |
 
 VB 6 で生産性を支えていたのは「**言語の単純さ × フォームの即時性 ×
 配布の単純さ**」だった。**Flet はこの三拍子を、Python という強力な裏方
