@@ -68,13 +68,23 @@ _DEFAULT_WINDOW_DAYS = 15
 
 def _scan_month(root: Path, month: int) -> pl.LazyFrame | None:
     """Lazy-scan every Parquet file for the given month-of-year across
-    all years in the archive. Returns ``None`` if no file exists yet
-    (e.g. before the initial archive build has completed)."""
-    pattern = str(root / f"*-{month:02d}.parquet")
-    try:
-        return pl.scan_parquet(pattern)
-    except FileNotFoundError:
+    all years in the archive. Returns ``None`` when no file exists
+    yet for that month.
+
+    Pre-check with ``Path.glob`` is necessary because
+    ``pl.scan_parquet(pattern)`` accepts a glob string but only
+    discovers it has zero matches at ``.collect()`` time — and then
+    raises ``ComputeError`` ('expanded paths were empty'), not
+    ``FileNotFoundError``, so a try/except around the scan call
+    itself catches nothing useful. Resolving the glob ourselves and
+    passing an explicit file list to scan_parquet makes the empty
+    case deterministic: we return None here and the caller skips
+    that month.
+    """
+    files = sorted(root.glob(f"*-{month:02d}.parquet"))
+    if not files:
         return None
+    return pl.scan_parquet([str(f) for f in files])
 
 
 def _window_month_days(
