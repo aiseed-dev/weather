@@ -348,6 +348,13 @@ def PointForecastView(settings: UserSettings):
     forecast_data, set_forecast_data = ft.use_state(None)
     error_msg, set_error_msg = ft.use_state("")
 
+    # Last successful fetch wall-clock time. Drives the '最終更新'
+    # header text so the analyst can tell whether the on-screen
+    # values are from the most recent ECMWF run (6h cadence,
+    # processed ~3h after run time) or stale from a previous
+    # session.
+    last_fetched_at, set_last_fetched_at = ft.use_state(None)
+
     archive_progress, set_archive_progress = ft.use_state(None)
     # ``None`` when no archive build is running; otherwise (done, total)
 
@@ -417,6 +424,7 @@ def PointForecastView(settings: UserSettings):
             )
             set_forecast_data(snap)
             set_forecast_state("ready")
+            set_last_fetched_at(datetime.now())
             logger.info("load_forecast: state=ready, rendering chart")
             # Render the chart for the currently-selected variable. The
             # render runs on a thread, so the 'ready' state has already
@@ -451,6 +459,45 @@ def PointForecastView(settings: UserSettings):
         set_archive_progress(None)
         # Now do the forecast fetch — climatology will be available.
         await load_forecast(loc)
+
+    # Auto-fetch on tab mount: if a location is already selected and
+    # we haven't fetched yet, trigger the load. forecast_state moves
+    # to 'fetching' on first call so subsequent re-renders skip this
+    # branch. Avoids the user having to click 更新 every time they
+    # open the app.
+    if (
+        forecast_state == "idle"
+        and selected_location is not None
+        and archive_progress is None
+    ):
+        logger.info("PointForecastView: auto-fetch on mount")
+        ft.context.page.run_task(load_forecast, selected_location)
+
+    # Periodic background refresh. ECMWF runs every 6 h, Open-Meteo
+    # has the new data ~3 h after the run time, so checking every 3 h
+    # is enough to catch all four daily runs without spamming the
+    # endpoint. The task is held in a use_ref so the spawn runs once
+    # per session (we don't restart it on every re-render).
+    refresh_task_ref = ft.use_ref(None)
+
+    async def _periodic_refresh_loop():
+        while True:
+            await asyncio.sleep(3 * 3600)  # 3 hours
+            loc = next(
+                (l for l in locations if l.name == selected_name), None,
+            )
+            if loc is None:
+                continue
+            logger.info("PointForecastView: periodic auto-refresh")
+            try:
+                await load_forecast(loc)
+            except Exception:
+                logger.exception("Periodic refresh raised; will retry")
+
+    if refresh_task_ref.current is None:
+        refresh_task_ref.current = ft.context.page.run_task(
+            _periodic_refresh_loop,
+        )
 
     # Auto-fetch when selection changes
     def on_select_location(e):
@@ -525,18 +572,32 @@ def PointForecastView(settings: UserSettings):
         width=200,
     )
 
+    # 'Last updated' caption — auto-refresh runs every 3 h so the
+    # analyst usually doesn't touch the manual refresh button. We
+    # still expose it as a small icon button rather than a primary
+    # FilledButton so it doesn't dominate the toolbar.
+    if last_fetched_at is not None:
+        updated_caption = ft.Text(
+            f"最終更新: {last_fetched_at:%H:%M}",
+            size=11, color=ft.Colors.GREY,
+        )
+    else:
+        updated_caption = ft.Text("", size=11)
+
     rows: list[ft.Control] = [
         header,
         ft.Row(controls=[
             location_picker,
             variable_picker,
-            ft.FilledButton(
-                "更新",
+            ft.IconButton(
+                icon=ft.Icons.REFRESH,
+                tooltip="再取得 / Refresh now",
                 on_click=lambda _: (
                     ft.context.page.run_task(load_forecast, selected_location)
                     if selected_location else None
                 ),
             ),
+            updated_caption,
         ]),
     ]
 
