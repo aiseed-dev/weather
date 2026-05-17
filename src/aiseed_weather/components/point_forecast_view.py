@@ -98,52 +98,27 @@ class _ForecastSnapshot:
     location_name: str
 
 
-# ── Add-location dialog ─────────────────────────────────────────────
+# ── Page-level singleton service lookup ─────────────────────────────
 
 
-def _build_add_location_dialog(
-    on_submit, on_cancel,
-) -> ft.AlertDialog:
-    """Modal that takes a name + lat + lon and calls ``on_submit(loc)``.
+def _get_file_picker() -> ft.FilePicker:
+    """Find the FilePicker already attached to page.services, or
+    register a new one. Idempotent — calling on every render returns
+    the same instance.
 
-    Kept as a plain factory rather than a @ft.component because
-    ``ft.use_dialog`` wants an AlertDialog directly, and the form
-    state is small enough not to justify its own component.
+    Storing the picker in ``use_ref`` would violate flet-declarative
+    (no Control instances in refs); a page-level singleton sidesteps
+    that without leaking a picker per re-render.
     """
-    name_field = ft.TextField(label="場所の名前 / Name", autofocus=True)
-    lat_field = ft.TextField(
-        label="緯度 / Latitude (-90..90)", keyboard_type=ft.KeyboardType.NUMBER,
-    )
-    lon_field = ft.TextField(
-        label="経度 / Longitude (-180..180)", keyboard_type=ft.KeyboardType.NUMBER,
-    )
-    error_text = ft.Text("", color=ft.Colors.RED, size=12)
-
-    def _submit(_e=None):
-        try:
-            lat = float(lat_field.value or "")
-            lon = float(lon_field.value or "")
-        except ValueError:
-            error_text.value = "緯度・経度は数値で入力してください"
-            return
-        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
-            error_text.value = "緯度 -90..90 / 経度 -180..180 の範囲で入力"
-            return
-        name = (name_field.value or "").strip() or f"{lat:.2f},{lon:.2f}"
-        on_submit(Location.new(name=name, latitude=lat, longitude=lon))
-
-    return ft.AlertDialog(
-        modal=True,
-        title=ft.Text("地点を追加"),
-        content=ft.Column(
-            tight=True,
-            controls=[name_field, lat_field, lon_field, error_text],
-        ),
-        actions=[
-            ft.TextButton("キャンセル", on_click=lambda _: on_cancel()),
-            ft.FilledButton("追加", on_click=_submit),
-        ],
-    )
+    page = ft.context.page
+    services = list(getattr(page, "services", None) or [])
+    for s in services:
+        if isinstance(s, ft.FilePicker):
+            return s
+    fp = ft.FilePicker()
+    services.append(fp)
+    page.services = services
+    return fp
 
 
 # ── Forecast-table renderer ────────────────────────────────────────
@@ -361,7 +336,26 @@ def PointForecastView(settings: UserSettings):
     archive_progress, set_archive_progress = ft.use_state(None)
     # ``None`` when no archive build is running; otherwise (done, total)
 
+    # Add-location dialog state. Per flet-declarative the inputs
+    # live in use_state (not in Control.value) so re-renders don't
+    # drop the user's typing and the submit handler reads the
+    # latest values from the closure capture, not from a stale
+    # control reference.
     show_dialog, set_show_dialog = ft.use_state(False)
+    new_name, set_new_name = ft.use_state("")
+    new_lat, set_new_lat = ft.use_state("")
+    new_lon, set_new_lon = ft.use_state("")
+    new_err, set_new_err = ft.use_state("")
+
+    def _reset_dialog() -> None:
+        set_new_name("")
+        set_new_lat("")
+        set_new_lon("")
+        set_new_err("")
+
+    def _cancel_new_location():
+        set_show_dialog(False)
+        _reset_dialog()
 
     # Chart state. ``variable`` drives which value series is plotted.
     # The chart itself is a Flet ``flet.canvas.Canvas`` built every
@@ -372,28 +366,18 @@ def PointForecastView(settings: UserSettings):
     # (PNG ダウンロード button below).
     variable, set_variable = ft.use_state(_CHART_VARIABLES[0][0])
 
-    # FilePicker for the PNG export. Kept in a use_ref because
-    # ``page.services`` is a Page-level list we only want to append
-    # to once per session — re-appending on every re-render would
-    # leak a new picker per repaint. Flet 0.85's FilePicker
-    # doesn't take an on_result callback; ``save_file`` is async and
-    # the chosen path comes back as its return value.
-    file_picker_ref = ft.use_ref(None)
+    # Download flow: a single async coroutine that opens the
+    # save-file picker and writes the matplotlib PNG to the chosen
+    # path. The FilePicker itself is fetched via _get_file_picker
+    # (page-level singleton) so no Control instance ever lives in
+    # component state.
     download_error, set_download_error = ft.use_state(None)
-
-    if file_picker_ref.current is None:
-        fp = ft.FilePicker()
-        page = ft.context.page
-        services = list(getattr(page, "services", None) or [])
-        services.append(fp)
-        page.services = services
-        file_picker_ref.current = fp
 
     async def _save_chart_png():
         if forecast_data is None:
             return
         set_download_error(None)
-        fp: ft.FilePicker = file_picker_ref.current
+        fp = _get_file_picker()
         safe_loc = forecast_data.location_name.replace("/", "_")
         try:
             chosen = await fp.save_file(
@@ -553,12 +537,65 @@ def PointForecastView(settings: UserSettings):
         # series.
         set_variable(e.control.value)
 
-    # ── dialog (declarative) ─────────────────────────────────────
-    dialog = _build_add_location_dialog(
-        on_submit=lambda loc: ft.context.page.run_task(add_location_flow, loc),
-        on_cancel=lambda: set_show_dialog(False),
+    # ── Add-location dialog ──────────────────────────────────────
+    # Built inline in render() per flet-declarative: the AlertDialog
+    # is a frozen-diff descendant of state, so reconstructing each
+    # render is the idiomatic pattern (the framework keeps cursor
+    # state in the TextFields across re-renders via the use_dialog
+    # hook).
+    def _submit_new_location():
+        try:
+            lat = float(new_lat)
+            lon = float(new_lon)
+        except ValueError:
+            set_new_err("緯度・経度は数値で入力してください")
+            return
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            set_new_err("緯度 -90..90 / 経度 -180..180 の範囲で入力")
+            return
+        name = new_name.strip() or f"{lat:.2f},{lon:.2f}"
+        loc = Location.new(name=name, latitude=lat, longitude=lon)
+        set_show_dialog(False)
+        _reset_dialog()
+        ft.context.page.run_task(add_location_flow, loc)
+
+    add_dialog = ft.AlertDialog(
+        modal=True,
+        title=ft.Text("地点を追加"),
+        content=ft.Column(tight=True, controls=[
+            ft.TextField(
+                label="場所の名前 / Name",
+                value=new_name,
+                autofocus=True,
+                on_change=lambda e: set_new_name(e.control.value),
+            ),
+            ft.TextField(
+                label="緯度 / Latitude (-90..90)",
+                value=new_lat,
+                keyboard_type=ft.KeyboardType.NUMBER,
+                on_change=lambda e: set_new_lat(e.control.value),
+            ),
+            ft.TextField(
+                label="経度 / Longitude (-180..180)",
+                value=new_lon,
+                keyboard_type=ft.KeyboardType.NUMBER,
+                on_change=lambda e: set_new_lon(e.control.value),
+            ),
+            ft.Text(new_err, color=ft.Colors.RED, size=12) if new_err
+            else ft.Container(height=0),
+        ]),
+        actions=[
+            ft.TextButton(
+                "キャンセル",
+                on_click=lambda _: _cancel_new_location(),
+            ),
+            ft.FilledButton(
+                "追加",
+                on_click=lambda _: _submit_new_location(),
+            ),
+        ],
     ) if show_dialog else None
-    ft.use_dialog(dialog)
+    ft.use_dialog(add_dialog)
 
     # ── render branches ─────────────────────────────────────────
 
