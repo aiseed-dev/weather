@@ -67,9 +67,10 @@ def _hourly_to_polars(hourly: dict, hourly_vars: Iterable[str]) -> pl.DataFrame:
     variable name) into a single Polars DataFrame indexed by
     ``timestamp`` in UTC microseconds.
 
-    Open-Meteo returns ISO timestamps as strings; we cast to
-    Datetime up-front so downstream Polars ops (filter, group_by,
-    join) get a real temporal type.
+    All fetches use ``timezone=UTC`` so storage and climatology join
+    keys are in one canonical reference. The display layer converts
+    each timestamp to the location's local clock when drawing the
+    chart and the daily-summary table.
     """
     if not hourly or "time" not in hourly:
         return pl.DataFrame(schema={"timestamp": pl.Datetime("us", time_zone="UTC")})
@@ -97,17 +98,9 @@ async def fetch_forecast(
     forecast_days: int = 15,
     hourly_vars: Iterable[str] = HOURLY_VARS,
 ) -> ForecastResult:
-    """Single Forecast API call.
-
-    Open-Meteo's ``/v1/forecast`` accepts a ``models`` parameter so the
-    same endpoint serves both the main ECMWF run and the JMA MSM
-    reference run. The caller picks which by passing ``model``.
-    Returns parsed hourly data as a Polars DataFrame.
-
-    Errors are not caught here — Open-Meteo's HTTP-level failures and
-    network errors bubble to the caller, which is closer to the UI
-    state and can decide whether to retry, show an error banner, or
-    fall back to last-known values.
+    """Single Forecast API call. Always requests UTC so the stored
+    DataFrame is in one canonical timezone; the display layer
+    converts to the location's local tz when rendering.
     """
     params: dict[str, str | float | int] = {
         "latitude": latitude,

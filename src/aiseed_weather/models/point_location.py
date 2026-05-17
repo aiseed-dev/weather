@@ -18,7 +18,9 @@ import json
 import logging
 import re
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+# Alias to avoid name clash with the ``timezone: str`` Location field
+# below — we still need stdlib ``timezone.utc`` for UTC stamps.
+from datetime import datetime, timezone as _tz
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,18 @@ def is_in_japan(latitude: float, longitude: float) -> bool:
     )
 
 
+def default_timezone_for(latitude: float, longitude: float) -> str:
+    """Default IANA timezone name for a (lat, lon).
+
+    Stays simple: JP bounding box → 'Asia/Tokyo', otherwise 'UTC'.
+    The user can override at location-add time via the dialog. A
+    real lat/lon → tz resolver (e.g. timezonefinder) would be more
+    accurate but adds a heavy dependency the project doesn't need
+    when the user is happy to type a timezone themselves.
+    """
+    return "Asia/Tokyo" if is_in_japan(latitude, longitude) else "UTC"
+
+
 @dataclass(frozen=True)
 class Location:
     """One user-saved point. Frozen so it's safe to use as a dict key
@@ -49,17 +63,30 @@ class Location:
     latitude: float
     longitude: float
     is_japan: bool
+    timezone: str           # IANA name; drives the chart's clock
     created_at: datetime
 
     @classmethod
-    def new(cls, name: str, latitude: float, longitude: float) -> "Location":
-        """Construct a Location, deriving is_japan and a UTC created_at."""
+    def new(
+        cls, name: str, latitude: float, longitude: float,
+        timezone_name: str | None = None,
+    ) -> "Location":
+        """Construct a Location, deriving is_japan and a UTC
+        ``created_at``. ``timezone_name`` overrides the
+        lat/lon-derived default — passed when the user explicitly
+        picks a tz in the add-location dialog."""
+        tz = (
+            timezone_name.strip()
+            if timezone_name and timezone_name.strip()
+            else default_timezone_for(latitude, longitude)
+        )
         return cls(
             name=name.strip(),
             latitude=float(latitude),
             longitude=float(longitude),
             is_japan=is_in_japan(latitude, longitude),
-            created_at=datetime.now(timezone.utc),
+            timezone=tz,
+            created_at=datetime.now(_tz.utc),
         )
 
     def to_json(self) -> dict:
@@ -74,17 +101,20 @@ class Location:
             try:
                 created = datetime.fromisoformat(created)
             except ValueError:
-                created = datetime.now(timezone.utc)
+                created = datetime.now(_tz.utc)
         elif created is None:
-            created = datetime.now(timezone.utc)
+            created = datetime.now(_tz.utc)
+        lat = float(data["latitude"])
+        lon = float(data["longitude"])
+        # Backward compat: locations.json from before the timezone
+        # field existed defaults to the lat/lon-derived guess.
+        tz = str(data.get("timezone") or default_timezone_for(lat, lon))
         return cls(
             name=str(data["name"]),
-            latitude=float(data["latitude"]),
-            longitude=float(data["longitude"]),
-            is_japan=bool(data.get(
-                "is_japan",
-                is_in_japan(float(data["latitude"]), float(data["longitude"])),
-            )),
+            latitude=lat,
+            longitude=lon,
+            is_japan=bool(data.get("is_japan", is_in_japan(lat, lon))),
+            timezone=tz,
             created_at=created,
         )
 
