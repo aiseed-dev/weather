@@ -84,14 +84,28 @@ def _persist_on_window_event(page: ft.Page):
     page.window.on_event = handler
 
 
-def main(page: ft.Page):
+def _configure(page: ft.Page) -> None:
+    """One-time page setup before the App component is rendered.
+
+    Sits in ``before_main`` so the page is fully configured (theme,
+    window geometry, event handlers) by the time the declarative
+    App tree first paints. Doing this work inside the App component
+    itself would re-run on every re-render, which would either be
+    wasteful (theme assign) or wrong (resetting saved window state).
+    """
     page.title = "AIseed Weather"
     page.theme_mode = ft.ThemeMode.SYSTEM
     page.padding = 0
     _restore_window(page)
     _persist_on_window_event(page)
-    page.render(App)
 
 
 if __name__ == "__main__":
-    ft.run(main)
+    # Flet 0.85+ declarative style: ``page.render(App)`` mounts the
+    # root component; ``before_main`` runs once for page-level
+    # configuration. The old ``ft.run(main)`` callback was equivalent
+    # but conflated those two responsibilities into one function.
+    ft.run(
+        lambda page: page.render(App),
+        before_main=_configure,
+    )

@@ -35,6 +35,16 @@ AMEDAS_POINT_SERIES = (
     "https://www.jma.go.jp/bosai/amedas/data/point/{station_id}/{yyyymmdd}_{hh}.json"
 )
 
+# Forecast (府県天気予報)
+# AREA_TABLE: nation-wide area hierarchy (centers → offices → class10 →
+# class15 → class20). The forecast endpoint is keyed by 'office' code
+# (6-digit, e.g. '130000' Tokyo). The class10 layer (e.g. '130010'
+# 東京地方) is what the forecast JSON's per-area arrays index on.
+AREA_TABLE = "https://www.jma.go.jp/bosai/common/const/area.json"
+FORECAST_OFFICE = (
+    "https://www.jma.go.jp/bosai/forecast/data/forecast/{office_code}.json"
+)
+
 # Attribution text required for any output using JMA data.
 ATTRIBUTION = "出典: 気象庁ホームページ (https://www.jma.go.jp/)"
 ATTRIBUTION_PROCESSED = (
