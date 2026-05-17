@@ -56,20 +56,20 @@ _NUMERIC_VARS: tuple[str, ...] = (
 )
 
 
-# Default rolling-window half-width for the per-hour climatology.
-# ±7 days (15-day centred window) is the operational compromise:
-#   * Wider than per-day (~30 samples) so a single warm spell in
-#     one historical year doesn't dominate the mean (the WMO 31-day
-#     window is the textbook gold standard for that).
-#   * Narrower than ±15 days because at 15 days adjacent forecast
-#     days share 30 / 31 ≈ 97 % of their pool and the means round
-#     to identical values across the 18-day forecast — visually
-#     'the climatology line is flat across a month', which is wrong:
-#     the seasonal trend should still be visible.
-# Pools ~450 obs / hour (30 years × 15 days). Still robust against
-# year-to-year outliers; still shows the spring → summer transition
-# in the climatology line.
-_DEFAULT_WINDOW_DAYS = 7
+# Default rolling-window half-width for the per-hour climatology. A
+# ±15-day window (31 days centred) matches the WMO convention noted
+# in the climatology-analysis skill ("centered 31-day rolling mean")
+# and pools ~930 obs / hour over a 30-year archive — robust against
+# single-event outliers.
+#
+# The downside (adjacent forecast days share ~97 % of the pool, so
+# the raw mean barely moves across the 15-day forecast and looks
+# 'flat') is handled by the ``{var}_estimate`` column: each
+# (month, day) is regressed independently against year, and the
+# per-day slope variation makes the trend-projected estimate move
+# day-to-day even when the unadjusted mean does not. The chart and
+# daily summary display the estimate as the operational normal.
+_DEFAULT_WINDOW_DAYS = 15
 
 
 def _scan_month(root: Path, month: int) -> pl.LazyFrame | None:

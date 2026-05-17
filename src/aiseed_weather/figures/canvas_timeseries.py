@@ -480,11 +480,19 @@ def build_point_forecast_canvas(
         if len(pairs) >= 2:
             shapes.append(_band_path(pairs, x_of, y_of, _CLIM_FILL, 0.28))
 
-    # ── Climatology mean (dotted) ──────────────────────────────
-    mean_col = f"{variable}_mean"
-    if mean_col in hres_joined.columns:
+    # ── Climatology estimate (dotted) ──────────────────────────
+    # Use the per-(month, day) trend projection rather than the raw
+    # 30-year mean: with a ±15-day window the means of adjacent
+    # forecast days overlap ~97 % of their pool and the line is
+    # visually flat across the forecast. The estimate column is
+    # regressed independently per (month, day), so its day-to-day
+    # variation reflects both the seasonal cycle and per-day climate
+    # drift — what an analyst actually wants as the 'operational
+    # normal' overlay.
+    est_col = f"{variable}_estimate"
+    if est_col in hres_joined.columns:
         elems = _line_elements(
-            ts, hres_joined[mean_col].to_list(), x_of, y_of,
+            ts, hres_joined[est_col].to_list(), x_of, y_of,
         )
         if elems:
             shapes.append(cv.Path(
