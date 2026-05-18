@@ -164,10 +164,18 @@ def _polar_lookup(
     co_lat = r * _POLAR_BOUNDARY_COLAT_DEG  # 0..60 from the pole
     if is_north:
         lat = 90.0 - co_lat
-        # 0° lon at the top of the image, increasing clockwise (east
-        # to the right). atan2(dx, -dy) gives that orientation because
-        # image y grows downward.
-        lon_rad = np.arctan2(dx, -dy)
+        # Standard NH polar convention (looking DOWN at the North
+        # Pole from above space): 0° lon at the top of the image,
+        # 90°E to the LEFT, 180° at the bottom, 90°W to the RIGHT.
+        # Earth rotates W→E, which appears counter-clockwise from
+        # above the NP — so on the chart, going east from 0° at top
+        # means going CCW, which puts east on the left. ECMWF / JMA
+        # / NOAA all draw NH polar this way; the older 'east to the
+        # right' layout that the renderer produced before this fix
+        # was effectively a view from below the SP looking up, which
+        # is the wrong handedness for a NH chart.
+        # arctan2(-dx, -dy): top→0°, left→+90°E, bottom→±180°, right→-90°.
+        lon_rad = np.arctan2(-dx, -dy)
     else:
         lat = -90.0 + co_lat
         # Mirror so 0° lon is still at top of image but +90° E lies to
@@ -217,7 +225,10 @@ def _polar_project_polylines(
             in_disc = co_lat <= _POLAR_BOUNDARY_COLAT_DEG
             lon_rad = np.deg2rad(lons)
             r_norm = co_lat / _POLAR_BOUNDARY_COLAT_DEG
-            x = cx + r_norm * radius * np.sin(lon_rad)
+            # Standard NH polar (top-down): 0° top, 90°E LEFT, 180°
+            # bottom, 90°W RIGHT. Inverse of `_polar_lookup`'s
+            # arctan2(-dx, -dy): x = -sin(lon), y = -cos(lon).
+            x = cx - r_norm * radius * np.sin(lon_rad)
             y = cy - r_norm * radius * np.cos(lon_rad)
         else:
             co_lat = lats - (-90.0)
@@ -322,7 +333,10 @@ def _polar_project_polygons(
             co_lat = 90.0 - lats
             lon_rad = np.deg2rad(lons)
             r_norm = co_lat / _POLAR_BOUNDARY_COLAT_DEG
-            x = cx + r_norm * radius * np.sin(lon_rad)
+            # Standard NH polar: see _polar_project_polylines for the
+            # full derivation; x has a negative sign on sin to put
+            # east on the LEFT of the chart.
+            x = cx - r_norm * radius * np.sin(lon_rad)
             y = cy - r_norm * radius * np.cos(lon_rad)
             in_disc = co_lat <= _POLAR_BOUNDARY_COLAT_DEG
         else:

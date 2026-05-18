@@ -55,6 +55,13 @@ dependencies:
   - pytest-asyncio
   - ruff
 
+  # Interactive analysis — JupyterLab for the notebooks/ samples.
+  # Opens with `jupyter lab notebooks/` from the activated env.
+  # ipympl gives interactive matplotlib in notebooks (%matplotlib widget).
+  - jupyterlab
+  - ipykernel
+  - ipympl
+
   # Flet via pip — beta with frequent releases, manage directly.
   # `flet[all]` pulls flet-cli (the `flet run` / `flet pack` commands),
   # flet-desktop (Flutter-based native window runtime), and flet-web
