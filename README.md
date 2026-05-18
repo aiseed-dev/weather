@@ -1,72 +1,75 @@
 # AIseed Weather
 
-**A weather chart studio for enthusiasts and analysts.**
-Build publication-ready figures from ECMWF, ERA5, JMA, and Open-Meteo, then
-share them with the people who need to see them.
+**愛好家とアナリストのための天気図スタジオ。**
+ECMWF・ERA5・気象庁・Open-Meteo のデータから出版品質の図を作り、
+必要な人と共有するためのツールです。
 
-> "Bring Your Own Data" — this tool visualizes published meteorological data.
-> It does not produce or distribute forecasts of its own.
+> 「Bring Your Own Data」 ― このツールは公開されている気象データを
+> 可視化するためのもので、独自の予報を生成・配信するものではありません。
 
-## Who this is for
+> **English**: see [README.en.md](README.en.md)
 
-This is **not** a general-purpose weather app. It is for people who:
+## 想定する利用者
 
-- Read pressure charts, jet stream maps, and 500 hPa geopotential plots
-- Want to compare current conditions against ERA5 climatology (1940-present)
-- Need to check Japan's current radar and AMeDAS observations
-- Need to produce annotated figures to explain weather events to others
-- Find existing public charts too limited in variables or styling
+これは汎用の天気アプリではありません。次のような人のためのツールです:
 
-If you do not know what MSL, geopotential height, or anomaly means, this tool
-will not be friendlier than any other. That is by design — we optimize for
-expert workflow, not onboarding.
+- 気圧図、ジェット気流図、500 hPa 等高度図を読み解く
+- 現況を ERA5 気候値 (1940 年〜現在) と比較したい
+- 日本のレーダーと AMeDAS 観測の現況を確認する必要がある
+- 注釈付きの図を作って気象現象を他者に説明する必要がある
+- 既存の公開チャートでは変数や見た目が物足りない
 
-## What it does
+MSL、ジオポテンシャル高度、アノマリが何を意味するかご存じなければ、
+このツールは他の天気アプリより親切ではありません。**専門ワークフロー
+最適化が設計方針**で、入門のしやすさは目指していません。
 
-- **Global forecast maps** from ECMWF Open Data (IFS and AIFS)
-- **Climatology / anomaly maps** from ERA5 (1940-present)
-- **Japan rainfall nowcast** from JMA radar tiles
-- **Japan ground observations** from JMA AMeDAS (~1,300 stations)
-- **Multi-layer composition**: pressure isobars, temperature fields, wind,
-  precipitation, geopotential at any pressure level
-- **Annotation**: text labels, arrows, region highlights for explanation
-- **Export**: PNG and PDF with embedded attribution and provenance metadata
-- **Animation**: across forecast steps or historical date ranges
-- **Point forecasts** from Open-Meteo as a supporting view
+## できること
 
-## Two principles you should know about
+- **全球予報図** ― ECMWF Open Data (IFS / AIFS)
+- **気候値・アノマリ図** ― ERA5 (1940 年〜現在)
+- **日本の雨量ナウキャスト** ― 気象庁レーダータイル
+- **日本の地上観測** ― 気象庁 AMeDAS (約 1,300 地点)
+- **多層合成** ― 等圧線、気温場、風、降水、任意の気圧面のジオポ
+  テンシャル
+- **注釈** ― テキストラベル、矢印、領域ハイライトによる説明補助
+- **エクスポート** ― 帰属情報と起源メタデータを埋め込んだ PNG / PDF
+- **アニメーション** ― 予報ステップ、または過去の日付範囲の連続表示
+- **地点予報** ― Open-Meteo を補助ビューとして利用
 
-**1. The user chooses data sources.** Source selection lives in
-`~/.config/aiseed-weather/config.toml`. The first launch writes a commented
-template there for you to edit. Pick which ECMWF mirror, which ERA5 access
-path, and whether to enable Open-Meteo, then restart. The app never
-preselects and never shows a setup UI. JMA is per-feature (no config key
-needed; JMA endpoints are public and free).
+## 知っておくべき 2 つの設計原則
 
-**2. Data fetches only on user actions.** Opening a view, pressing Refresh, or
-changing a parameter triggers a fetch. The app never polls in the background,
-never auto-updates a displayed value, never pre-fetches. If the cache is
-fresh enough (per the source's update cadence), it is used; otherwise the
-view shows a progress indicator and fetches.
+**1. データソースはユーザが選ぶ。** ソース選択は
+`~/.config/aiseed-weather/config.toml` で管理されます。初回起動時に
+コメント付きテンプレートが自動生成されるので、それを編集して
+「どの ECMWF ミラーを使うか」「ERA5 へのアクセス経路」「Open-Meteo
+を有効にするか」を決め、再起動します。アプリ側で勝手に選ぶことも、
+設定 UI を出すこともありません。気象庁は機能ごとに有効 (設定キー
+不要 ― 公開・無料の API のため)。
 
-## Status
+**2. データ取得はユーザの操作時のみ。** ビューを開く・更新ボタンを
+押す・パラメータを変更する、これらの操作でフェッチが走ります。
+**バックグラウンドポーリングなし、自動更新なし、先読みなし**。
+キャッシュが鮮度を保っていれば (各ソースの更新頻度に応じて) それを
+使い、そうでなければ進捗インジケータを出してフェッチします。
 
-Early development. Skeleton, services, conventions, and navigation are in
-place. Next milestone: render a single MSL chart from a live ECMWF run.
+## ステータス
 
-## Stack
+初期開発段階。スケルトン、サービス層、規約、ナビゲーションが整備済み。
+次のマイルストーン: 実 ECMWF ラン 1 本から MSL 図を 1 枚描画する。
 
-- [Flet](https://flet.dev/) — declarative Python UI
-- [ECMWF Open Data](https://www.ecmwf.int/en/forecasts/datasets/open-data)
-  via AWS S3 mirror (`s3://ecmwf-forecasts`) — primary data source
-- [ERA5](https://registry.opendata.aws/ecmwf-era5/) via AWS (`s3://ecmwf-era5`)
-  — climatology and historical reference
-- [JMA](https://www.jma.go.jp/) public endpoints — Japan radar and AMeDAS
-- [Open-Meteo](https://open-meteo.com/) — supporting point forecasts
-- xarray + cfgrib for GRIB2 decoding
-- matplotlib + cartopy for map rendering
+## 技術スタック
 
-## Setup (Miniforge — required)
+- [Flet](https://flet.dev/) ― 宣言的 Python UI
+- [ECMWF Open Data](https://www.ecmwf.int/en/forecasts/datasets/open-data) ―
+  AWS S3 ミラー (`s3://ecmwf-forecasts`) 経由、主要データソース
+- [ERA5](https://registry.opendata.aws/ecmwf-era5/) ― AWS (`s3://ecmwf-era5`)
+  経由、気候値・過去参照
+- [気象庁](https://www.jma.go.jp/) 公開エンドポイント ― 日本のレーダーと AMeDAS
+- [Open-Meteo](https://open-meteo.com/) ― 地点予報の補助
+- xarray + cfgrib ― GRIB2 デコード
+- matplotlib + cartopy ― 地図描画
+
+## セットアップ (Miniforge 必須)
 
 Cartopy、cfgrib、eccodes は C ライブラリ (PROJ, GEOS, eccodes) に依存します。
 これらは pip で入れるとプラットフォームごとに苦労するため、conda-forge から
@@ -156,6 +159,18 @@ flet run -r
 `pyproject.toml` の `[tool.flet.app] path` 設定により、`flet run` はプロジェクト
 ルートから `src/aiseed_weather/main.py` を自動的に見つけます。
 
+### JupyterLab で解析する
+
+サンプルノートブックが `notebooks/` に同梱されています ― ECMWF GRIB2 の
+直接読み込み、Open-Meteo の並列取得、AMeDAS スナップショット、プロジェクト
+パレットを使った独自チャートまで。`./.venv` をアクティブにした状態で:
+
+```bash
+jupyter lab notebooks/
+```
+
+詳細は [`notebooks/README.md`](notebooks/README.md) 参照。
+
 ### 環境の更新と削除
 
 `environment.yml` を変更した後は、
@@ -176,18 +191,18 @@ mamba env create --prefix ./.venv -f environment.yml
 
 `.venv` ディレクトリは数百MB〜数GBになるので、`.gitignore` で除外されています。
 
-### Why Python 3.13?
+### なぜ Python 3.13?
 
 Flet のモバイル対応が Python 3.13 で公式サポートされた PEP 730 (iOS) と
 PEP 738 (Android) を前提としているため、3.13 を採用しています。
 
-### Why Flet via pip instead of conda?
+### なぜ Flet は conda ではなく pip 経由?
 
 Flet はベータ段階で頻繁にリリースされるため、conda-forge が追いつかない
 場合があります。最新版を直接管理するため pip 経由でインストールします。
 conda が Flet を知らない状態にすることで、conda + pip の競合を回避します。
 
-### Why `--prefix ./.venv` instead of named environments?
+### なぜ `--prefix ./.venv` 方式 (名前付き環境を使わない理由)?
 
 通常の `mamba env create -n my-env` は、conda のグローバル管理ディレクトリ
 (`~/miniforge3/envs/`)に環境を作ります。これに対し `--prefix ./.venv` は
@@ -219,40 +234,39 @@ WSL (Windows Subsystem for Linux) は本アプリには推奨しません。WSL 
 サーバプロセス向けで、デスクトップ GUI アプリでは描画の遅延、ファイル
 ダイアログの不整合、日本語入力の不安定さなどの問題があります。
 
-## License
+## ライセンス
 
-- Code: **AGPL-3.0-or-later**
-- ECMWF data: CC-BY-4.0
-- Open-Meteo data: CC-BY-4.0
-- JMA data: 出典: 気象庁ホームページ — processed-data notice appears on
-  composited figures (radar overlays, AMeDAS station maps)
+- コード: **AGPL-3.0-or-later**
+- ECMWF データ: CC-BY-4.0
+- Open-Meteo データ: CC-BY-4.0
+- 気象庁データ: 出典: 気象庁ホームページ ― 合成データ (レーダー重ね描き、
+  AMeDAS 地点マップ等) には「処理データ」表記を併記
 
-The export feature automatically embeds attribution and the data run
-identifier in every output, so figures shared from this tool carry their
-provenance.
+エクスポート機能は帰属とデータラン識別子を自動で埋め込みます。本ツールから
+共有された図は、起源情報を必ず持って出ていきます。
 
-## Project layout
+## プロジェクト構成
 
 ```
 src/aiseed_weather/
 ├── main.py
-├── components/                       # Flet components (UI only)
-│   ├── app.py                        # nav between map / radar / amedas
-│   ├── map_view.py                   # ECMWF/ERA5 synoptic charts
-│   ├── radar_view.py                 # JMA rainfall nowcast
-│   └── amedas_view.py                # JMA ground observations
-├── services/                         # data fetching, decoding (no Flet imports)
+├── components/                       # Flet コンポーネント (UI のみ)
+│   ├── app.py                        # 地図 / レーダー / AMeDAS のナビ
+│   ├── map_view.py                   # ECMWF/ERA5 総観チャート
+│   ├── radar_view.py                 # 気象庁レーダー雨量ナウキャスト
+│   └── amedas_view.py                # 気象庁 AMeDAS 地上観測
+├── services/                         # データ取得・デコード (Flet 非依存)
 │   ├── forecast_service.py           # ECMWF Open Data
 │   ├── point_forecast_service.py     # Open-Meteo
-│   ├── jma_radar_service.py          # JMA radar tiles
-│   ├── jma_amedas_service.py         # JMA AMeDAS
-│   └── jma_endpoints.py              # URL registry
-└── models/                           # dataclasses, observable models
+│   ├── jma_radar_service.py          # 気象庁レーダータイル
+│   ├── jma_amedas_service.py         # 気象庁 AMeDAS
+│   └── jma_endpoints.py              # URL レジストリ
+└── models/                           # データクラス、リアクティブモデル
     └── user_settings.py
 ```
 
-## For contributors and AI agents
+## コントリビュータと AI エージェント向け
 
-Read `CLAUDE.md` first, then `AGENTS.md`, then the relevant skills under
-`.agents/skills/`. The skills encode this project's conventions and the
-prioritization between data sources.
+まず `CLAUDE.md`、続いて `AGENTS.md` を読んでください。その上で、該当する
+Skill を `.agents/skills/` 配下から参照します。Skill 群にはプロジェクト規約と、
+データソース間の優先度ルールがエンコードされています。
