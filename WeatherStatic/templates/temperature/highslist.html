@@ -1,0 +1,122 @@
+{#
+  今日の最高気温 - 各地。Views/Temperature/HighsList.cshtml を移植。
+  コンテキスト: now / hour0 / summer / season / counts / period_start / period_end /
+                days_diff / groups（都道府県ごと）/ regions（アンカー）
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    h4 { margin-bottom: 5px; }
+    .pager { text-align: left; margin-left: 10px; }
+    form.form-horizontal { margin-top: 15px; margin-left: 10px; }
+    .weathertable { border-collapse: collapse; border: solid #aaa 1px; empty-cells: show; padding: 5px; margin-left: 10px; margin-right: 10px; margin-top: 10px; }
+    .weathertable th { border-collapse: collapse; border: solid #aaa 1px; padding: 5px; text-align: center; font-size: 90%; }
+    .weathertable td { border-collapse: collapse; border: solid #aaa 1px; padding: 2px 5px; font-size: 90%; white-space: nowrap; }
+    .stations { min-width: 6em; }
+    .wright { text-align: right; }
+    .wcenter { text-align: center; }
+    .red { color: red; }
+    .bottonsection { margin: 8px 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% with submenu_active = 'highslist' %}{% include "temperature/_submenu.html" %}{% endwith %}
+
+<div class="hidden-xs">
+  <table class="weathertable">
+    {% if season == 1 %}
+        <tr><th>{{ "昨日" if hour0 else "今日" }}、猛暑日（最高気温35℃以上）となった地点数</th><td class="wright"><a href="/Temperature/TodayHighsDec">{{ counts['moushobi'] }} 地点</a></td><td>{{ now | jikan }}現在</td></tr>
+    {% else %}
+        <tr><th>{{ "昨日、真冬日（最高気温0℃未満）となった" if hour0 else "今日、現在最高気温0℃未満となっている" }}地点数</th><td><a href="/Winter/Mahuyubi">{{ counts['mafuyubi'] }} 地点</a></td><td>{{ now | jikan }}現在</td></tr>
+    {% endif %}
+    <tr><th>{{ "昨日" if hour0 else "今日" }}、真夏日（最高気温30℃以上）となった地点数</th><td class="wright"><a href="/Temperature/TodayHighsDec">{{ counts['manatsubi'] }} 地点</a></td><td> 〃</td></tr>
+  </table>
+</div>
+
+<h2>{{ page_header }}</h2>
+<p>日本の各地の最高気温等を表示しています。</p>
+<div class="bottonsection region-chips" id="region-chips">
+    <a href="javascript:void(0)" data-region="all" class="rchip active">全国</a>
+    {% for key, name in region_filters %}
+    <a href="javascript:void(0)" data-region="{{ key }}" class="rchip">{{ name }}</a>
+    {% endfor %}
+</div>
+{% if hour0 %}<p><span class="red">10時頃までは、昨日のデータを表示しています。</span></p>{% endif %}
+<h4>※データは、{{ now | jikan }}現在のものです。</h4>
+
+{% for g in groups %}
+<div class="pref-group" data-region="{{ g.region }}">
+<a name="a{{ g.prec_no }}"></a>
+<h4>{{ g.pref }}　　<span style="font-size: 13px;"><a href="#top">ページのトップ</a></span></h4>
+<div class="table-responsive">
+<table class="weathertable">
+    {% if summer %}
+    <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日の" if hour0 else "今日の" }}<br/>最高気温</th><th rowspan="2">最高気温の<br/>平年値</th><th colspan="5">{{ period_start.year }} 年の{{ "一昨日" if days_diff >= 2 else "昨日" }}（{{ period_end.day }} 日）までの記録</th></tr>
+    <tr><th>最高気温</th><th>起日</th><th>猛暑日<br/>の日数</th><th>真夏日<br/>の日数</th><th>夏日<br/>の日数</th></tr>
+    {% else %}
+    <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日の" if hour0 else "今日の" }}<br/>最高気温</th><th rowspan="2">最高気温の<br/>平年値</th><th colspan="3">今季の{{ "一昨日" if days_diff >= 2 else "昨日" }}（{{ period_end.day }} 日）までの記録</th></tr>
+    <tr><th>日最高気温<br/>の最低</th><th>起日</th><th>真冬日<br/>の日数</th></tr>
+    {% endif %}
+    {% for s in g.stations %}
+    <tr>
+        <td class="stations"><a href="/Stations/JP/{{ s.place }}">{{ s.name }}</a></td>
+        <td class="wright" style="background-color: {{ s.tmax_bg }}">{{ s.tmax | ondo }}</td>
+        <td class="wright">{{ s.normal_tmax | ondo }}</td>
+        <td class="wright">{{ s.hs_val | ondo }}</td>
+        <td class="wright">{{ s.hs_date | jdate }}</td>
+        {% if summer %}
+        <td class="wright">{{ (s.counts.moushobi ~ "日") if s.counts.moushobi else "" }}</td>
+        <td class="wright">{{ (s.counts.manatsubi ~ "日") if s.counts.manatsubi else "" }}</td>
+        <td class="wright">{{ (s.counts.natsubi ~ "日") if s.counts.natsubi else "" }}</td>
+        {% else %}
+        <td class="wright">{{ (s.counts.mafuyubi ~ "日") if s.counts.mafuyubi else "" }}</td>
+        {% endif %}
+    </tr>
+    {% endfor %}
+</table>
+</div>
+</div>
+{% endfor %}
+
+{% if summer %}
+<p>猛暑日：1日の最高気温が35℃以上の日<br />真夏日：1日の最高気温が30℃以上の日<br />夏日：1日の最高気温が25℃以上の日<br />
+    本日の最高気温の詳細は、<a href="http://www.data.jma.go.jp/obd/stats/data/mdrr/tem_rct/index_mxtem.html" target="_blank">気象庁のページ</a>で確認できます。</p>
+{% else %}
+<p>今季：冬期の季節現象は年をまたぐため、寒候年（{{ period_start.year }}年8月1日から{{ period_start.year + 1 }}年7月31日まで）で表し、8月1日からのデータを集計しています。<br />真冬日：1日の最高気温が0℃未満の日<br />
+    本日の最高気温の詳細は、<a href="http://www.data.jma.go.jp/obd/stats/data/mdrr/tem_rct/index_mxtem.html" target="_blank">気象庁のページ</a>で確認できます。</p>
+{% endif %}
+{% endblock %}
+
+{% block add_script %}
+<script>
+    function changeItem(a) {
+        var url = a.options[a.selectedIndex].value;
+        a.selectedIndex = 1;
+        window.location = url;
+    }
+</script>
+<script>
+    // 地方別フィルタ: チップで選んだ地方の都道府県グループだけ表示（#r=キー で状態保持）
+    (function () {
+        function apply(region) {
+            document.querySelectorAll('.pref-group').forEach(function (g) {
+                g.style.display = (region === 'all' || g.dataset.region === region) ? '' : 'none';
+            });
+            document.querySelectorAll('#region-chips .rchip').forEach(function (c) {
+                c.classList.toggle('active', c.dataset.region === region);
+            });
+            if (history.replaceState)
+                history.replaceState(null, '', region === 'all' ? location.pathname : '#r=' + region);
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('#region-chips .rchip').forEach(function (c) {
+                c.addEventListener('click', function () { apply(c.dataset.region); });
+            });
+            var m = location.hash.match(/^#r=([a-z]+)/);
+            if (m) apply(m[1]);
+        });
+    })();
+</script>
+{% endblock %}

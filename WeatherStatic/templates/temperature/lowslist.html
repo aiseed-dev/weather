@@ -1,0 +1,116 @@
+{#
+  今朝の最低気温 - 各地。Views/Temperature/LowsList.cshtml を移植。
+  コンテキストは highslist.html と共通（groups の tmin 系フィールドを使う）。
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    h4 { margin-bottom: 5px; }
+    .pager { text-align: left; margin-left: 10px; }
+    form.form-horizontal { margin-top: 15px; margin-left: 10px; }
+    .weathertable { border-collapse: collapse; border: solid #aaa 1px; empty-cells: show; padding: 5px; margin-left: 10px; margin-right: 10px; margin-top: 10px; }
+    .weathertable th { border-collapse: collapse; border: solid #aaa 1px; padding: 5px; text-align: center; font-size: 90%; }
+    .weathertable td { border-collapse: collapse; border: solid #aaa 1px; padding: 2px 5px; font-size: 90%; white-space: nowrap; }
+    .stations { min-width: 6em; }
+    .wright { text-align: right; }
+    .wcenter { text-align: center; }
+    .red { color: red; }
+    .bottonsection { margin: 8px 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% with submenu_active = 'lowslist' %}{% include "temperature/_submenu.html" %}{% endwith %}
+
+<div class="hidden-xs">
+  <table class="weathertable">
+    {% if season == 1 %}
+        <tr><th>{{ "昨日、最低気温が25℃以上となった" if hour0 else "今朝、最低気温が25℃以上となっている" }}地点数</th><td class="wright"><a href="/Temperature/TodayLowsDec">{{ counts['nettaiya'] }} 地点</a></td><td>{{ now | jikan }}現在</td></tr>
+        <tr><th>{{ "昨日" if hour0 else "今朝" }}、冬日（最低気温零度未満）となった地点数</th><td class="wright"><a href="/Temperature/TodayLowsAsc">{{ counts['fuyubi'] }} 地点</a></td><td> 〃</td></tr>
+    {% else %}
+        <tr><th>{{ "昨日" if hour0 else "今朝" }}、冬日（最低気温零度未満）となった地点数</th><td class="wright"><a href="/Temperature/TodayLowsAsc">{{ counts['fuyubi'] }} 地点</a></td><td>{{ now | jikan }}現在</td></tr>
+        <tr><th>{{ "昨日、最低気温が25℃以上となった" if hour0 else "今朝、最低気温が25℃以上となっている" }}地点数</th><td class="wright"><a href="/Temperature/TodayLowsDec">{{ counts['nettaiya'] }} 地点</a></td><td> 〃</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<h2>{{ page_header }}</h2>
+<p>日本の各地の最低気温等を表示しています。</p>
+<div class="bottonsection region-chips" id="region-chips">
+    <a href="javascript:void(0)" data-region="all" class="rchip active">全国</a>
+    {% for key, name in region_filters %}
+    <a href="javascript:void(0)" data-region="{{ key }}" class="rchip">{{ name }}</a>
+    {% endfor %}
+</div>
+<h4>※データは、{{ now | jikan }}現在のものです。</h4>
+
+{% for g in groups %}
+<div class="pref-group" data-region="{{ g.region }}">
+<a name="a{{ g.prec_no }}"></a>
+<h4>{{ g.pref }}　　<span style="font-size: 13px;"><a href="#top">ページのトップ</a></span></h4>
+<div class="table-responsive">
+<table class="weathertable">
+    {% if summer %}
+    <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日の" if hour0 else "今朝の" }}<br/>最低気温</th><th rowspan="2">最低気温の<br/>平年値</th><th colspan="3">{{ period_start.year }} 年の{{ "一昨日" if days_diff >= 2 else "昨日" }}（{{ period_end.day }} 日）までの記録</th></tr>
+    <tr><th>最低気温<br/>の最高</th><th>起日</th><th>最低気温25℃<br/>以上の日数</th></tr>
+    {% else %}
+    <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日の" if hour0 else "今朝の" }}<br/>最低気温</th><th rowspan="2">最低気温の<br/>平年値</th><th colspan="3">今季の{{ "一昨日" if days_diff >= 2 else "昨日" }}（{{ period_end.day }} 日）までの記録</th></tr>
+    <tr><th>最低気温</th><th>起日</th><th>冬日の日数</th></tr>
+    {% endif %}
+    {% for s in g.stations %}
+    <tr>
+        <td class="stations"><a href="/Stations/JP/{{ s.place }}">{{ s.name }}</a></td>
+        <td class="wright" style="background-color: {{ s.tmin_bg }}">{{ s.tmin | ondo }}</td>
+        <td class="wright">{{ s.normal_tmin | ondo }}</td>
+        <td class="wright">{{ s.ls_val | ondo }}</td>
+        <td class="wright">{{ s.ls_date | jdate }}</td>
+        {% if summer %}
+        <td class="wright">{{ (s.counts.nettaiya ~ "日") if s.counts.nettaiya else "" }}</td>
+        {% else %}
+        <td class="wright">{{ (s.counts.fuyubi ~ "日") if s.counts.fuyubi else "" }}</td>
+        {% endif %}
+    </tr>
+    {% endfor %}
+</table>
+</div>
+</div>
+{% endfor %}
+
+{% if not summer %}
+<p>今季：冬期の季節現象は年をまたぐため、寒候年（{{ period_start.year }}年8月1日から{{ period_start.year + 1 }}年7月31日まで）で表し、8月1日からのデータを集計しています。<br />冬日：最低気温が0℃未満の日</p>
+{% endif %}
+<p>本日の最低気温の詳細は、<a href="http://www.data.jma.go.jp/obd/stats/data/mdrr/tem_rct/index_mntem.html" target="_blank">気象庁のページ</a>で確認できます。</p>
+{% endblock %}
+
+{% block add_script %}
+<script>
+    function changeItem(a) {
+        var url = a.options[a.selectedIndex].value;
+        a.selectedIndex = 5;
+        window.location = url;
+    }
+</script>
+<script>
+    // 地方別フィルタ: チップで選んだ地方の都道府県グループだけ表示（#r=キー で状態保持）
+    (function () {
+        function apply(region) {
+            document.querySelectorAll('.pref-group').forEach(function (g) {
+                g.style.display = (region === 'all' || g.dataset.region === region) ? '' : 'none';
+            });
+            document.querySelectorAll('#region-chips .rchip').forEach(function (c) {
+                c.classList.toggle('active', c.dataset.region === region);
+            });
+            if (history.replaceState)
+                history.replaceState(null, '', region === 'all' ? location.pathname : '#r=' + region);
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('#region-chips .rchip').forEach(function (c) {
+                c.addEventListener('click', function () { apply(c.dataset.region); });
+            });
+            var m = location.hash.match(/^#r=([a-z]+)/);
+            if (m) apply(m[1]);
+        });
+    })();
+</script>
+{% endblock %}

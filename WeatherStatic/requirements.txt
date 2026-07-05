@@ -1,0 +1,7 @@
+# 気温と雨量の統計（静的サイトジェネレータ）の依存
+# セットアップ: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+jinja2>=3.1
+netCDF4>=1.7
+numpy>=2.0
+pillow>=10        # 推計気象分布タイルのピクセル判定
+openpyxl>=3.1     # 公式コード表（xlsx）との突合

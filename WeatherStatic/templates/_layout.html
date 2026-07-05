@@ -1,0 +1,104 @@
+{#
+  共有レイアウト。
+  ASP.NET の Views/Shared/_LayoutBootstrap.cshtml + _LayoutBootstrapA.cshtml を統合して移植したもの。
+  ページ側テンプレートは `{% extends "_layout.html" %}` して各ブロックを埋める。
+
+  ブロック:
+    title       … <title> と ViewBag.Header 相当（page_title で渡す）
+    head_extra  … 旧 @section HeaderContent（ページ固有の <style> 等）
+    content     … 旧 @RenderBody
+    add_script  … 旧 @section AddScript
+#}<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8"/>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page_title }}</title>
+    <link rel="shortcut icon" href="/favicon.ico"/>
+    <link href="/css/bootstrap-pc.min.css" rel="stylesheet"/>
+    <link href="/css/style03pc.min.css" rel="stylesheet"/>
+    {% block head_extra %}{% endblock %}
+    {# モダンテーマ（ページ固有スタイルの後に読み込んで上書きする） #}
+    <link href="/css/site.css?v={{ css_version }}" rel="stylesheet"/>
+</head>
+<body>
+<div class="maincontainer">
+    <nav class="navbar navbar-inverse navbar-static-top">
+        <div class="container-outside">
+            <div class="navbar-header">
+                <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+                    <span class="sr-only">Toggle navigation</span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </button>
+                <a class="navbar-brand" href="/"><img src="/Images/weatherblue.png" width="36" height="36" alt="気温と雨量の統計" style="display: inline;" /><span class="nav-title">気温と雨量の統計</span></a>
+            </div>
+            <div id="navbar" class="collapse navbar-collapse">
+                {% include "partials/_navbar.html" %}
+                <form action="//www.google.co.jp/cse" id="cse-search-box">
+                    <div>
+                        <input type="hidden" name="cx" value="partner-pub-1546885182692889:8411568461" />
+                        <input type="hidden" name="ie" value="UTF-8" />
+                        <input type="text" name="q" size="13" />
+                    </div>
+                </form>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container centerpage">
+        <div class="main-section">
+            {% block content %}{% endblock %}
+        </div>
+    </div>
+
+    <div class="sidebar">
+        {# 旧 @section rightside の広告枠。静的移行では広告タグはそのまま残す。 #}
+    </div>
+    <div class="clearfix"></div>
+
+    <div id="footer" class="container-outside">
+        <div class="row">
+            <div class="col-xs-3">
+                <h6>サイトメニュー</h6>
+                <ul>
+                    <li><a href="/">気温と雨量の統計ホーム</a></li>
+                    <li><a href="/Temperature/HighsMain">今日の気温</a></li>
+                    <li><a href="/Summer/Ranking">暑さランキング</a></li>
+                    <li><a href="/Winter/LowestList">寒さランキング</a></li>
+                    <li><a href="/Climate">雨温図</a></li>
+                </ul>
+            </div>
+            <div class="col-xs-3">
+                <h6>関連サイト</h6>
+                <ul>
+                    <li><a href="//www.time-j.net">世界の時間と時差</a></li>
+                    <li><a href="//www.time-j.net/Metar/">空港の天気 METAR、TAF</a></li>
+                    <li><a href="//ecitizen.jp/">統計メモ帳</a></li>
+                </ul>
+            </div>
+            <div class="col-xs-3">
+                <h6>このサイトについて</h6>
+                <ul>
+                    <li><a href="//www.time-j.net/about/">このサイトについて</a></li>
+                    <li><a href="//www.time-j.net/privacypolicy/">免責事項・プライバシーポリシー</a></li>
+                </ul>
+            </div>
+            <div class="col-xs-3">
+                <h6>お問い合わせ</h6>
+                <ul>
+                    <li><a href="//www.time-j.net/contacts/">お問い合わせ</a></li>
+                </ul>
+            </div>
+        </div>
+        <p>Copyright &copy; 2011 - {{ build_year }} time-j.net All Rights Reserved.</p>
+    </div>
+</div>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.2/jquery.min.js"></script>
+<script src="/javascripts/bootstrap.min.js"></script>
+{% block add_script %}{% endblock %}
+</body>
+</html>

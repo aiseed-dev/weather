@@ -1,0 +1,145 @@
+{#
+  今日の最高気温 - 主要都市。
+  Views/Temperature/HighsMain.cshtml を移植（DATA_CONTRACT v2.1 のコンテキスト）。
+
+  コンテキスト（generate.py build_highsmain が組み立て）:
+    now / hour0 / summer / season / counts / target_tomorrow
+    period_start / period_end / days_diff
+    cities … [{name, place, tmax, tmax_bg, fc_tmax, fc_bg, fc_weather, fc_wcode,
+               normal, season_val, season_date, counts:{moushobi,manatsubi,natsubi,mafuyubi}}]
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    h4 { margin-bottom: 5px; }
+    .pager { text-align: left; margin-left: 10px; }
+    form.form-horizontal { margin-top: 15px; margin-left: 10px; }
+    .weathertable { border-collapse: collapse; border: solid #aaa 1px; empty-cells: show; padding: 5px; margin-left: 10px; margin-right: 10px; margin-top: 10px; }
+    .weathertable th { border-collapse: collapse; border: solid #aaa 1px; padding: 5px; text-align: center; font-size: 90%; }
+    .weathertable td { border-collapse: collapse; border: solid #aaa 1px; padding: 2px 5px; font-size: 90%; white-space: nowrap; }
+    .weathertable td span { white-space: nowrap; }
+    .weathernowrap { white-space: nowrap; }
+    .wright { text-align: right; }
+    .wcenter { text-align: center; }
+    .red { color: red; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="submenunav hidden-xs">
+    <ul class="pager">
+        <li>今日の最高気温: <a href="/Temperature/HighsMain" style="background-color: #d3d3d3">主要都市</a></li>
+        <li><a href="/Temperature/HighsList">各地</a></li>
+        <li><a href="/Temperature/TodayHighsDec">高い順</a></li>
+        <li><a href="/Temperature/TodayHighsAsc">低い順</a></li>
+        <li><a href="/Temperature/SummerMonth/">日毎の真夏日等の地点数</a></li>
+    </ul>
+    <ul class="pager">
+        <li>今朝の最低気温: <a href="/Temperature/LowsMain">主要都市</a></li>
+        <li><a href="/Temperature/LowsList">各地</a></li>
+        <li><a href="/Temperature/TodayLowsDec">高い順</a></li>
+        <li><a href="/Temperature/TodayLowsAsc">低い順</a></li>
+        <li><a href="/Temperature/WinterMonth/">日毎の真冬日等の地点数</a></li>
+    </ul>
+</div>
+
+<div class="submenunav visible-xs">
+    <form class="form-horizontal">
+        <div class="form-group">
+            <label class="control-label">今日の気温 <span class="glyphicon glyphicon-arrow-right" aria-hidden="true"></span> </label>
+            <select class="form-horizontal" onchange="changeItem(this);">
+                <option value="/Temperature/HighsMain" selected>今日の最高気温 - 主要都市</option>
+                <option value="/Temperature/HighsList">今日の最高気温 - 各地</option>
+                <option value="/Temperature/TodayHighsDec">今日の最高気温 - 高い順</option>
+                <option value="/Temperature/TodayHighsAsc">今日の最高気温 - 低い順</option>
+                <option value="/Temperature/LowsMain">今朝の最低気温 - 主要都市</option>
+                <option value="/Temperature/LowsList">今朝の最低気温 - 各地</option>
+                <option value="/Temperature/TodayLowsDec">今朝の最低気温 - 高い順</option>
+                <option value="/Temperature/TodayLowsAsc">今朝の最低気温 - 低い順</option>
+                <option value="/Temperature/SummerMonth/">日毎の真夏日等の地点数</option>
+                <option value="/Temperature/WinterMonth/">日毎の真冬日等の地点数</option>
+            </select>
+        </div>
+    </form>
+</div>
+
+<div class="hidden-xs">
+  <table class="weathertable">
+    {% if season == 1 %}
+        <tr><th>{{ "昨日" if hour0 else "今日" }}、猛暑日（最高気温35℃以上）となった地点数</th><td class="wright"><a href="/Temperature/TodayHighsDec">{{ counts['moushobi'] }} 地点</a></td><td>{{ now | jikan }}現在</td></tr>
+    {% else %}
+        <tr><th>{{ "昨日、真冬日（最高気温0℃未満）となった" if hour0 else "今日、現在最高気温0℃未満となっている" }}地点数</th><td><a href="/Winter/Mahuyubi">{{ counts['mafuyubi'] }} 地点</a></td><td>{{ now | jikan }}現在</td></tr>
+    {% endif %}
+    <tr><th>{{ "昨日" if hour0 else "今日" }}、真夏日（最高気温30℃以上）となった地点数</th><td class="wright"><a href="/Temperature/TodayHighsDec">{{ counts['manatsubi'] }} 地点</a></td><td> 〃</td></tr>
+  </table>
+</div>
+
+<h2>{{ page_header }}</h2>
+<p>
+    日本の主要な都市（気象台のある場所）の今日の最高気温等を表示しています。
+    {% if hour0 %}<br /><span class="red">10時頃までは、昨日のデータを表示しています。</span>{% endif %}
+</p>
+<h4>※データは、{{ now | jikan }}現在のものです。</h4>
+
+<div class="table-responsive">
+<table class="weathertable">
+    <tr>
+        <th rowspan="2">都市名</th>
+        <th rowspan="2">{{ "昨日の" if hour0 else "今日の" }}<br/>最高気温</th>
+        <th rowspan="2">{{ "明日" if (target_tomorrow and not hour0) else "今日" }}の<br/>最高気温<br/>(予報)</th>
+        <th rowspan="2">{{ "明日" if (target_tomorrow and not hour0) else "今日" }}の<br/>天気<br/>(予報)</th>
+        <th rowspan="2">最高気温の<br/>平年値</th>
+        {% if summer %}
+            <th colspan="5">{{ period_start.year }} 年の{{ "一昨日" if days_diff >= 2 else "昨日" }}（{{ period_end.day }} 日）までの記録</th>
+        {% else %}
+            <th colspan="3">今季の{{ "一昨日" if days_diff >= 2 else "昨日" }}（{{ period_end.day }} 日）までの記録</th>
+        {% endif %}
+    </tr>
+    <tr>
+        {% if summer %}
+            <th>最高気温</th><th>起日</th><th>猛暑日<br/>の日数</th><th>真夏日<br/>の日数</th><th>夏日<br/>の日数</th>
+        {% else %}
+            <th>日最高気温<br/>の最低</th><th>起日</th><th>真冬日<br/>の日数</th>
+        {% endif %}
+    </tr>
+    {% for c in cities %}
+        <tr>
+            <td><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>
+            <td class="wright" style="background-color: {{ c.tmax_bg }}">{{ c.tmax | ondo }}</td>
+            <td class="wright" style="background-color: {{ c.fc_bg }}">{{ (c.fc_tmax ~ "℃") if c.fc_tmax is not none else "-" }}</td>
+            <td class="wcenter"><img src="/Images/Forecast/{{ c.fc_wcode | weather_img }}.png" alt="{{ c.fc_weather }}" title="{{ c.fc_weather }}" width="40" height="18"/></td>
+            <td class="wright">{{ c.normal | ondo }}</td>
+            <td class="wright">{{ c.season_val | ondo }}</td>
+            <td class="wright">{{ c.season_date | jdate }}</td>
+            {% if summer %}
+                <td class="wright">{{ (c.counts.moushobi ~ "日") if c.counts.moushobi else "" }}</td>
+                <td class="wright">{{ (c.counts.manatsubi ~ "日") if c.counts.manatsubi else "" }}</td>
+                <td class="wright">{{ (c.counts.natsubi ~ "日") if c.counts.natsubi else "" }}</td>
+            {% else %}
+                <td class="wright">{{ (c.counts.mafuyubi ~ "日") if c.counts.mafuyubi else "" }}</td>
+            {% endif %}
+        </tr>
+    {% endfor %}
+</table>
+</div>
+
+<p>予報については、基本的に気象庁午前5時発表のものを表示しているため、最新のものでない場合があります。午前5時以前は、前日の17時発表のものを表示しています。</p>
+{% if summer %}
+    <p>猛暑日：1日の最高気温が35℃以上の日<br />真夏日：1日の最高気温が30℃以上の日<br />夏日：1日の最高気温が25℃以上の日</p>
+{% else %}
+    <p>今季：冬期の季節現象は年をまたぐため、寒候年（{{ period_start.year }}年8月1日から{{ period_start.year + 1 }}年7月31日まで）で表し、8月1日からのデータを集計しています。<br />
+        真冬日：1日の最高気温が0℃未満の日</p>
+{% endif %}
+<p>本日の最高気温の詳細は、<a href="http://www.data.jma.go.jp/obd/stats/data/mdrr/tem_rct/index_mxtem.html" target="_blank">気象庁のページ</a>で確認できます。</p>
+{% endblock %}
+
+{% block add_script %}
+<script>
+    function changeItem(a) {
+        var url = a.options[a.selectedIndex].value;
+        a.selectedIndex = 0;
+        window.location = url;
+    }
+</script>
+{% endblock %}

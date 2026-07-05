@@ -1,0 +1,284 @@
+/*
+ * 気温と雨量の統計 — モダンテーマ (2026 リニューアル)
+ * 旧 Bootstrap 3 レイアウトの上に重ねる後読みテーマ。
+ * データ列の色分け（bcolor のインラインスタイル）はそのまま活かす。
+ */
+
+:root {
+    --accent: #1976d2;
+    --accent-dark: #0d47a1;
+    --accent-light: #e3f0fb;
+    --sky-from: #1565c0;
+    --sky-to: #4fa3e3;
+    --bg: #eef2f7;
+    --card: #ffffff;
+    --border: #dbe4ee;
+    --text: #26313b;
+    --muted: #64748b;
+    --radius: 12px;
+}
+
+/* ---------- 基礎 ---------- */
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN",
+                 "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover, a:focus { color: var(--accent-dark); text-decoration: underline; }
+
+/* ---------- ヘッダー ---------- */
+.navbar-inverse {
+    background: linear-gradient(120deg, var(--sky-from), var(--sky-to));
+    border: none;
+    border-radius: 0;
+    box-shadow: 0 2px 10px rgba(21, 101, 192, .25);
+    margin-bottom: 0;
+}
+.navbar-inverse .navbar-brand { color: #fff; font-weight: 700; }
+.navbar-inverse .navbar-brand .nav-title { color: #fff; letter-spacing: .02em; }
+.navbar-inverse .navbar-nav > li > a {
+    color: rgba(255, 255, 255, .92);
+    font-weight: 500;
+    transition: background-color .15s;
+}
+.navbar-inverse .navbar-nav > li > a:hover,
+.navbar-inverse .navbar-nav > li > a:focus {
+    color: #fff;
+    background: rgba(255, 255, 255, .14);
+    border-radius: 8px;
+}
+.navbar-inverse .navbar-toggle { border-color: rgba(255,255,255,.5); }
+#cse-search-box input[type="text"] {
+    border: none;
+    border-radius: 999px;
+    padding: 5px 14px;
+    margin-top: 8px;
+    background: rgba(255, 255, 255, .92);
+    outline: none;
+}
+
+/* ---------- コンテンツカード ---------- */
+.centerpage { padding-top: 18px; }
+.main-section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 3px rgba(38, 49, 59, .06), 0 8px 24px rgba(38, 49, 59, .05);
+    padding: 8px 14px 22px;
+}
+
+/* 見出し */
+.main-section h2 {
+    font-size: 1.45em;
+    font-weight: 700;
+    color: var(--text);
+    border-left: 5px solid var(--accent);
+    padding: 2px 0 2px 12px;
+    margin: 18px 10px 10px;
+}
+.main-section h4 {
+    font-weight: 700;
+    color: var(--accent-dark);
+    margin: 20px 10px 6px;
+}
+.wdate { color: var(--muted); font-weight: 400; }
+
+/* ---------- サブメニュー（チップ） ---------- */
+.submenunav { margin: 10px 0 4px; }
+.submenunav .pager {
+    margin: 4px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    border: none;
+}
+.submenunav .pager li { display: inline-block; }
+.submenunav .pager li a {
+    display: inline-block;
+    background: var(--accent-light);
+    color: var(--accent-dark);
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 3px 14px;
+    font-size: 13px;
+    transition: all .15s;
+}
+.submenunav .pager li a:hover {
+    background: var(--accent);
+    color: #fff;
+    text-decoration: none;
+}
+/* 現在ページ（テンプレートのインライン #d3d3d3 指定）と調和させる */
+.submenunav .pager li a[style] {
+    background: var(--accent) !important;
+    color: #fff !important;
+    font-weight: 600;
+}
+
+/* 地域ジャンプなどのボタン群 */
+.btn-default {
+    background: var(--accent-light);
+    border: 1px solid #c3d9ee;
+    color: var(--accent-dark);
+    border-radius: 8px;
+    transition: all .15s;
+}
+.btn-default:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+select.form-horizontal {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 10px;
+    background: #fff;
+    color: var(--text);
+}
+
+/* ---------- テーブル ---------- */
+.weathertable, .ranktable {
+    border: none !important;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px var(--border);
+    margin: 10px;
+    background: #fff;
+}
+.weathertable th, .ranktable th {
+    background: linear-gradient(180deg, #f2f7fc, #e7f0f9);
+    color: #33475b;
+    border: 1px solid var(--border) !important;
+    font-weight: 600;
+}
+.weathertable td, .ranktable td {
+    border: 1px solid #e7edf4 !important;
+    padding: 4px 8px !important;
+}
+/* 行ホバー: インラインの色分け背景の上に薄く重ねる */
+.weathertable tr:hover td, .ranktable tr:hover td {
+    box-shadow: inset 0 0 0 99em rgba(13, 71, 161, .045);
+}
+
+/* ---------- 投票ボタン ---------- */
+[id^="vote-"] a {
+    display: inline-block;
+    min-width: 2.0em;
+    text-align: center;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 1px 8px;
+    font-weight: 700;
+    transition: all .15s;
+}
+[id^="vote-"] a:first-of-type:hover { background: #e8f5e9; border-color: #66bb6a; color: #2e7d32; text-decoration: none; }
+[id^="vote-"] a:last-of-type:hover { background: #ffebee; border-color: #ef5350; color: #c62828; text-decoration: none; }
+
+/* ---------- 本文まわり ---------- */
+.main-section p { margin: 8px 10px; }
+.explain { color: var(--text); }
+.red { color: #d32f2f; }
+.nmenu a {
+    display: inline-block;
+    background: #f4f8fc;
+    border-radius: 6px;
+    padding: 1px 9px;
+    margin: 2px 4px 2px 0;
+    font-size: 13px;
+}
+.nmenu a:hover { background: var(--accent); color: #fff; text-decoration: none; }
+
+/* ---------- フッター ---------- */
+#footer {
+    background: #24303c;
+    color: #b8c4d0;
+    margin-top: 26px;
+    padding: 26px 8vw 18px;
+    font-size: 13px;
+}
+#footer h6 { color: #fff; font-weight: 700; font-size: 13px; }
+#footer ul { list-style: none; padding-left: 0; }
+#footer ul li { margin: 3px 0; }
+#footer a { color: #9fc3e8; }
+#footer a:hover { color: #fff; }
+#footer p { margin-top: 14px; color: #7d8b99; }
+
+/* ---------- 細部 ---------- */
+::selection { background: rgba(25, 118, 210, .2); }
+.table-responsive { border: none; }
+@media (max-width: 767px) {
+    .main-section { padding: 4px 6px 16px; border-radius: 8px; }
+    .main-section h2 { font-size: 1.25em; }
+    .weathertable, .ranktable { margin: 8px 4px; }
+}
+
+/* ---------- 地方別フィルタチップ ---------- */
+.region-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 10px; }
+.region-chips .rchip {
+    display: inline-block;
+    background: var(--accent-light);
+    color: var(--accent-dark);
+    border-radius: 999px;
+    padding: 3px 15px;
+    font-size: 13px;
+    transition: all .15s;
+}
+.region-chips .rchip:hover { background: var(--accent); color: #fff; text-decoration: none; }
+.region-chips .rchip.active { background: var(--accent); color: #fff; font-weight: 600; }
+
+/* ---------- 季節ランキングページ ---------- */
+#subnav { margin: 12px 10px 4px; display: flex; flex-wrap: wrap; gap: 0; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px var(--border); width: fit-content; }
+#subnav .btn-group { float: none; }
+#subnav .btn {
+    border: none; border-right: 1px solid var(--border); border-radius: 0;
+    background: #fff; color: var(--accent-dark); padding: 6px 16px; font-size: 13.5px;
+}
+#subnav .btn-group:last-child .btn { border-right: none; }
+#subnav .btn:hover { background: var(--accent-light); }
+#subnav .btn.active { background: var(--accent); color: #fff; box-shadow: none; font-weight: 600; }
+
+.rank-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+    gap: 14px;
+    margin: 12px 10px;
+    align-items: start;
+}
+.rank-grid .item {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 10px 10px;
+    box-shadow: 0 1px 2px rgba(38, 49, 59, .05);
+}
+.rank-grid .item h5 { color: var(--accent-dark); font-weight: 700; }
+.wtable { box-shadow: 0 0 0 1px #e7edf4; border-radius: 8px; overflow: hidden; }
+.wtable th { background: linear-gradient(180deg, #f2f7fc, #e7f0f9); color: #33475b; border: 1px solid var(--border); font-weight: 600; }
+.wtable td { border: 1px solid #eef2f7; }
+.wtable tr:hover td { background: #f7fafd; }
+
+.rank-badge {
+    display: inline-block;
+    width: 1.7em; height: 1.7em; line-height: 1.7em;
+    border-radius: 50%;
+    text-align: center;
+    color: #fff; font-weight: 700; font-size: 12px;
+}
+.rank-badge.r1 { background: linear-gradient(160deg, #f6c344, #d99a06); }
+.rank-badge.r2 { background: linear-gradient(160deg, #b9c4ce, #8d9aa6); }
+.rank-badge.r3 { background: linear-gradient(160deg, #d29a6b, #a96a35); }
+
+#info {
+    background: #f6f9fc;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin: 18px 10px 6px;
+    padding: 6px 10px 10px;
+    font-size: 13.5px;
+    color: var(--muted);
+}
+#info h5 { color: var(--text); font-weight: 700; }

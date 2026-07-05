@@ -1,0 +1,38 @@
+{# 気温ページ共通のサブメニュー。submenu_active でハイライト位置を指定する。 #}
+{% macro hl(key) %}{% if submenu_active == key %} style="background-color: #d3d3d3"{% endif %}{% endmacro %}
+<div class="submenunav hidden-xs">
+    <ul class="pager">
+        <li>今日の最高気温: <a href="/Temperature/HighsMain"{{ hl('highsmain') }}>主要都市</a></li>
+        <li><a href="/Temperature/HighsList"{{ hl('highslist') }}>各地</a></li>
+        <li><a href="/Temperature/TodayHighsDec"{{ hl('highsdec') }}>高い順</a></li>
+        <li><a href="/Temperature/TodayHighsAsc"{{ hl('highsasc') }}>低い順</a></li>
+        <li><a href="/Temperature/SummerMonth/">日毎の真夏日等の地点数</a></li>
+    </ul>
+    <ul class="pager">
+        <li>今朝の最低気温: <a href="/Temperature/LowsMain"{{ hl('lowsmain') }}>主要都市</a></li>
+        <li><a href="/Temperature/LowsList"{{ hl('lowslist') }}>各地</a></li>
+        <li><a href="/Temperature/TodayLowsDec"{{ hl('lowsdec') }}>高い順</a></li>
+        <li><a href="/Temperature/TodayLowsAsc"{{ hl('lowsasc') }}>低い順</a></li>
+        <li><a href="/Temperature/WinterMonth/">日毎の真冬日等の地点数</a></li>
+    </ul>
+</div>
+
+<div class="submenunav visible-xs">
+    <form class="form-horizontal">
+        <div class="form-group">
+            <label class="control-label">今日の気温 <span class="glyphicon glyphicon-arrow-right" aria-hidden="true"></span> </label>
+            <select class="form-horizontal" onchange="changeItem(this);">
+                <option value="/Temperature/HighsMain"{% if submenu_active == 'highsmain' %} selected{% endif %}>今日の最高気温 - 主要都市</option>
+                <option value="/Temperature/HighsList"{% if submenu_active == 'highslist' %} selected{% endif %}>今日の最高気温 - 各地</option>
+                <option value="/Temperature/TodayHighsDec"{% if submenu_active == 'highsdec' %} selected{% endif %}>今日の最高気温 - 高い順</option>
+                <option value="/Temperature/TodayHighsAsc"{% if submenu_active == 'highsasc' %} selected{% endif %}>今日の最高気温 - 低い順</option>
+                <option value="/Temperature/LowsMain"{% if submenu_active == 'lowsmain' %} selected{% endif %}>今朝の最低気温 - 主要都市</option>
+                <option value="/Temperature/LowsList"{% if submenu_active == 'lowslist' %} selected{% endif %}>今朝の最低気温 - 各地</option>
+                <option value="/Temperature/TodayLowsDec"{% if submenu_active == 'lowsdec' %} selected{% endif %}>今朝の最低気温 - 高い順</option>
+                <option value="/Temperature/TodayLowsAsc"{% if submenu_active == 'lowsasc' %} selected{% endif %}>今朝の最低気温 - 低い順</option>
+                <option value="/Temperature/SummerMonth/">日毎の真夏日等の地点数</option>
+                <option value="/Temperature/WinterMonth/">日毎の真冬日等の地点数</option>
+            </select>
+        </div>
+    </form>
+</div>

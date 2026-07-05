@@ -46,6 +46,7 @@ jupyter lab notebooks/
 | 03 | [`03-point-forecast.ipynb`](03-point-forecast.ipynb) | Fetch 3 cities (Tokushima / Sapporo / Naha) in parallel via Open-Meteo and compare |
 | 04 | [`04-jma-nowcast.ipynb`](04-jma-nowcast.ipynb) | AMeDAS snapshot + `nearest_stations`; build a current-conditions table for major cities |
 | 05 | [`05-custom-chart.ipynb`](05-custom-chart.ipynb) | Use the project's palette LUT to draw your own chart |
+| 06 | [`06-era5-climatology-gcp.ipynb`](06-era5-climatology-gcp.ipynb) | Build the ERA5 climatology pack on GCP (Colab) — the one task that belongs next to the data |
 
 They're sequenced as an intro, but each notebook stands alone — open
 whichever section is relevant.

@@ -1,0 +1,71 @@
+{#
+  夏/冬の気温一覧（Summer/HottestList, Winter/LowestList）。都道府県別＋地方フィルタ。
+  コンテキスト:
+    page_header / subnav / period_start / period_end / n_stations / info_text
+    pair_headers … [(見出し)] ×3（各 値(℃)/日 の 2 列）
+    groups … [{prec_no, pref, region, stations: [{name, place,
+                pairs: [(val_str, date), ...]}]}]
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .weathertable { border-collapse: collapse; border: solid #aaa 1px; empty-cells: show; padding: 5px; margin: 10px; }
+    .weathertable th { border: solid #aaa 1px; padding: 5px; text-align: center; font-size: 90%; }
+    .weathertable td { border: solid #aaa 1px; padding: 2px 6px; font-size: 90%; white-space: nowrap; }
+    .stations { min-width: 6em; }
+    .wright { text-align: right; }
+    .bottonsection { margin: 8px 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="subnav" class="btn-group" role="group" aria-label="...">
+    {% for url, label, active in subnav %}
+    <div class="btn-group" role="group">
+        <a href="{{ url }}" type="button" class="btn btn-default{{ " active" if active }}">{{ label }}</a>
+    </div>
+    {% endfor %}
+</div>
+
+<h2>{{ page_header }} <a href="#info"><span class="glyphicon glyphicon-info-sign"></span></a></h2>
+<p>※集計期間、{{ period_start.year }}年{{ period_start.month }}月{{ period_start.day }}日～{{ period_end.year }}年{{ period_end.month }}月{{ period_end.day }}日</p>
+
+{% include "partials/_region_filter.html" %}
+
+{% for g in groups %}
+<div class="pref-group" data-region="{{ g.region }}">
+<a name="a{{ g.prec_no }}"></a>
+<h4>{{ g.pref }}　　<span style="font-size: 13px;"><a href="#top">ページのトップ</a></span></h4>
+<div class="table-responsive">
+<table class="weathertable">
+    <tr>
+        <th rowspan="2">地点</th>
+        {% for h in pair_headers %}<th colspan="2">{{ h | safe }}</th>{% endfor %}
+    </tr>
+    <tr>
+        {% for h in pair_headers %}<th>値(℃)</th><th>日</th>{% endfor %}
+    </tr>
+    {% for s in g.stations %}
+    <tr>
+        <td class="stations"><a href="/Stations/JP/{{ s.place }}">{{ s.name }}</a></td>
+        {% for val, d in s.pairs %}
+        <td class="wright">{{ val }}</td>
+        <td class="wright">{{ d | jdate }}</td>
+        {% endfor %}
+    </tr>
+    {% endfor %}
+</table>
+</div>
+</div>
+{% endfor %}
+
+<div id="info">
+    <h5>データについての説明　　　<span style="font-size:13px;"><a href="#top">ページのトップ</a></span></h5>
+    <p>{{ info_text }}</p>
+    <p>本データは、気象庁の<a href="https://www.data.jma.go.jp/stats/etrn/" target="_blank">過去の気象データ検索のページ</a>等から取得したデータを独自に集計したものです。
+       観測記録が集計期間の半分に満たない地点は集計から除いています（対象 {{ n_stations }} 地点）。</p>
+</div>
+{% endblock %}
+
+{% block add_script %}{% endblock %}

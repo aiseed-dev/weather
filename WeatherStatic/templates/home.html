@@ -1,0 +1,414 @@
+{#
+  トップページ。Views/Home/Index.cshtml を移植。
+  コンテキスト: now / hour0 / summer / season / counts / period_end / days_diff /
+                cities（主要 10 都市の最高・最低）/ graph（東京 31 日: start, ht, lt, n_ht, n_lt）
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    h4 { margin-bottom: 5px; }
+    .pager { text-align: left; margin-left: 10px; }
+    form.form-horizontal { margin-top: 15px; margin-left: 10px; }
+    .weathertable, .ranktable { border-collapse: collapse; border: solid #aaa 1px; empty-cells: show; padding: 5px; margin-left: 10px; margin-right: 10px; margin-top: 10px; }
+    .weathertable th, .ranktable th { border-collapse: collapse; border: solid #aaa 1px; padding: 5px; text-align: center; font-size: 90%; }
+    .weathertable td, .ranktable td { border-collapse: collapse; border: solid #aaa 1px; padding: 2px 5px; font-size: 90%; white-space: nowrap; }
+    .leftitem { float: left; max-width: 620px; }
+    .rightitem { float: left; max-width: 480px; margin-left: 20px; }
+    @media (max-width: 1100px) { .leftitem, .rightitem { float: none; margin-left: 0; } }
+    .wdate { font-size: 80%; font-weight: normal; }
+    .nmenu a { margin-right: 8px; line-height: 1.9; }
+    .wright { text-align: right; }
+    .wcenter { text-align: center; }
+    .red { color: red; }
+    .clearfix { clear: both; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% with submenu_active = 'home' %}{% include "temperature/_submenu.html" %}{% endwith %}
+
+<h2>{{ page_header }}</h2>
+<div class="leftitem">
+    {% if current_time %}
+    <h4>現在の天気と気温 <span class="wdate" id="cur-time">({{ current_time.month }}月{{ current_time.day }}日{{ current_time.hour }}時{{ "%02d" | format(current_time.minute) }}分現在)</span></h4>
+    <div class="table-responsive">
+        <table class="weathertable">
+            <tr>
+                <th>都市名</th>
+                {% for c in cities %}<td class="wcenter"><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>{% endfor %}
+            </tr>
+            <tr>
+                <th>天気</th>
+                {% for c in cities %}
+                <td class="wcenter" id="cur-w-{{ c.code }}">
+                    {% if c.cur_wcode %}<img src="/Images/Forecast/{{ c.cur_wcode | weather_img }}.png" alt="{{ c.cur_wthr }}" title="{{ c.cur_wthr }}" width="40" height="18"/><br/>{% endif %}
+                    <span style="font-size: 85%;">{{ c.cur_wthr or "-" }}</span>
+                </td>
+                {% endfor %}
+            </tr>
+            <tr>
+                <th>気温</th>
+                {% for c in cities %}<td class="wright" id="cur-t-{{ c.code }}">{{ c.cur_temp | ondo }}</td>{% endfor %}
+            </tr>
+            <tr>
+                <th>服装の目安</th>
+                {% for c in cities %}
+                <td class="wcenter" style="font-size: 82%;" id="cur-c-{{ c.code }}">
+                    {{ c.cur_temp | clothes }}{% if c.cur_wthr in ("雨", "雨または雪", "雪") %}<br/>☂ 傘{% endif %}
+                </td>
+                {% endfor %}
+            </tr>
+            <tr>
+                <th>合ってる？<br/><span style="font-weight:normal; font-size:80%;">投票</span></th>
+                {% for c in cities %}
+                <td class="wcenter" id="vote-{{ c.code }}">
+                    <a href="javascript:void(0)" onclick="vote({{ c.code }}, 1, this)" title="服装の目安は合っている">○</a>
+                    ／
+                    <a href="javascript:void(0)" onclick="vote({{ c.code }}, 0, this)" title="服装の目安は違う">×</a>
+                </td>
+                {% endfor %}
+            </tr>
+        </table>
+    </div>
+    <p style="font-size: 85%; margin-left: 10px;">気温はアメダスの10分毎の観測値、天気は気象庁「推計気象分布」{% if wthr_time %}（{{ wthr_time.hour }}時現在）{% endif %}による推計値です。服装の目安は気温から算出しています。
+    {% if vote_summary %}<br/>昨日の「服装の目安」投票: 合ってた {{ vote_summary.pct }}%（{{ vote_summary.total }}票）ご協力ありがとうございます。{% endif %}</p>
+    {% endif %}
+    <h4>今日の最高気温の状況 <span class="wdate">({{ now | jikan }}現在)</span></h4>
+    {% if hour0 %}<p><span class="red">10時頃までは、昨日のデータを表示してます。</span></p>{% endif %}
+    <div>
+      <table class="weathertable">
+        {% if season == 1 %}
+            <tr><th>{{ "昨日" if hour0 else "今日" }}猛暑日となった地点</th><td class="wright"><a href="/Temperature/TodayHighsDec"><strong>{{ counts['moushobi'] }} 地点</strong></a></td></tr>
+        {% else %}
+            <tr><th>{{ "昨日真冬日となった地点" if hour0 else "今日最高気温0℃未満の地点" }}</th><td class="wright"><a href="/Temperature/TodayHighsAsc"><strong>{{ counts['mafuyubi'] }} 地点</strong></a></td></tr>
+        {% endif %}
+        <tr><th>{{ "昨日" if hour0 else "今日" }}真夏日となった地点</th><td class="wright"><a href="/Temperature/TodayHighsDec"><strong>{{ counts['manatsubi'] }} 地点</strong></a></td></tr>
+      </table>
+    </div>
+    <div class="table-responsive">
+        <table class="ranktable">
+            {% if summer %}
+            <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日" if hour0 else "今日" }}の<br/>最高気温</th><th rowspan="2">最高気温<br/>の平年値</th><th colspan="4">{{ "一昨日" if days_diff >= 2 else "昨日" }}までの記録</th></tr>
+            <tr><th>最高気温</th><th>起日</th><th>猛暑日<br/>の日数</th><th>真夏日<br/>の日数</th></tr>
+            {% for c in cities %}
+            <tr>
+                <td><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>
+                <td class="wright" style="background-color: {{ c.tmax_bg }}">{{ c.tmax | ondo }}</td>
+                <td class="wright">{{ c.normal_tmax | ondo }}</td>
+                <td class="wright">{{ c.hs_val | ondo }}</td>
+                <td class="wright">{{ c.hs_date | jdate }}</td>
+                <td class="wright">{{ c.counts.moushobi }}日</td>
+                <td class="wright">{{ c.counts.manatsubi }}日</td>
+            </tr>
+            {% endfor %}
+            {% else %}
+            <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日" if hour0 else "今日" }}の<br/>最高気温</th><th rowspan="2">最高気温<br/>の平年値</th><th colspan="3">今季の{{ "一昨日" if days_diff >= 2 else "昨日" }}までの記録</th></tr>
+            <tr><th>日最高気温<br/>の最低</th><th>起日</th><th>真冬日<br/>の日数</th></tr>
+            {% for c in cities %}
+            <tr>
+                <td><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>
+                <td class="wright" style="background-color: {{ c.tmax_bg }}">{{ c.tmax | ondo }}</td>
+                <td class="wright">{{ c.normal_tmax | ondo }}</td>
+                <td class="wright">{{ c.hs_val | ondo }}</td>
+                <td class="wright">{{ c.hs_date | jdate }}</td>
+                <td class="wright">{{ c.counts.mafuyubi }}日</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+        </table>
+    </div>
+    <br />
+    <h4>今朝の最低気温の状況 <span class="wdate">({{ now | jikan }}現在)</span></h4>
+    <div>
+        <table class="weathertable">
+            <tr><th>{{ "昨日" if hour0 else "今朝" }}最低気温25℃以上</th><td class="wright"><a href="/Temperature/TodayLowsDec"><strong>{{ counts['nettaiya'] }} 地点</strong></a></td></tr>
+            <tr><th>{{ "昨日" if hour0 else "今朝" }}冬日となった地点数</th><td class="wright"><a href="/Temperature/TodayLowsAsc"><strong>{{ counts['fuyubi'] }} 地点</strong></a></td></tr>
+        </table>
+    </div>
+    <div class="table-responsive">
+        <table class="ranktable">
+            {% if summer %}
+            <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日" if hour0 else "今朝" }}の<br/>最低気温</th><th rowspan="2">最低気温の<br/>平年値</th><th colspan="3">{{ "一昨日" if days_diff >= 2 else "昨日" }}までの記録</th></tr>
+            <tr><th>日最低気<br/>温の最高</th><th>起日</th><th>最低気温<br/>25℃以上<br/>の日数</th></tr>
+            {% for c in cities %}
+            <tr>
+                <td><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>
+                <td class="wright" style="background-color: {{ c.tmin_bg }}">{{ c.tmin | ondo }}</td>
+                <td class="wright">{{ c.normal_tmin | ondo }}</td>
+                <td class="wright">{{ c.ls_val | ondo }}</td>
+                <td class="wright">{{ c.ls_date | jdate }}</td>
+                <td class="wright">{{ c.counts.nettaiya }}日</td>
+            </tr>
+            {% endfor %}
+            {% else %}
+            <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日" if hour0 else "今朝" }}の<br/>最低気温</th><th rowspan="2">最低気温の<br/>平年値</th><th colspan="3">今季の{{ "一昨日" if days_diff >= 2 else "昨日" }}までの記録</th></tr>
+            <tr><th>最低気温</th><th>起日</th><th>冬日<br/>の日数</th></tr>
+            {% for c in cities %}
+            <tr>
+                <td><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>
+                <td class="wright" style="background-color: {{ c.tmin_bg }}">{{ c.tmin | ondo }}</td>
+                <td class="wright">{{ c.normal_tmin | ondo }}</td>
+                <td class="wright">{{ c.ls_val | ondo }}</td>
+                <td class="wright">{{ c.ls_date | jdate }}</td>
+                <td class="wright">{{ c.counts.fuyubi }}日</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+        </table>
+    </div>
+    <br />
+    <h4>2014年夏の猛暑の記録</h4>
+    <p>2014年は8月に前線が日本付近に停滞することが多く、雨が多い年になりました。そのため平均気温は比較的低い場所が多い年となりました。</p>
+    <p>最高気温の記録</p>
+    <table class="weathertable">
+        <tr><td class="wcenter" colspan="2">1 位</td><td class="wcenter" colspan="2">2 位</td><td class="wcenter" colspan="2">3 位</td></tr>
+        <tr><td>群馬県館林</td><td>39.5℃</td><td>岐阜県多治見</td><td>39.3℃</td><td>群馬県伊勢崎</td><td>39.0℃</td></tr>
+    </table>
+    <p>猛暑日の日数の記録</p>
+    <table class="weathertable">
+        <tr><td class="wcenter" colspan="2">1 位</td><td class="wcenter" colspan="2">2 位</td><td class="wcenter" colspan="2">4 位</td></tr>
+        <tr><td>群馬県館林</td><td>23日</td><td>群馬県伊勢崎<br>埼玉県熊谷</td><td>19日</td><td>群馬県前橋<br>山梨県勝沼</td><td>18日</td></tr>
+    </table>
+    <h4>2013年夏の猛暑の記録</h4>
+    <p>2013年は記録的な猛暑となりました。高知県江川崎では8月12日に国内観測史上の最高気温41・0℃を記録しました。また、観測地点（927地点）のうち125地点で最高気温を更新し、18地点でタイ記録となりました。東京では、8月11日に最低気温が30.4℃と30℃を超え全国歴代2位を記録しました。</p>
+    <p>最高気温の記録</p>
+    <table class="weathertable">
+        <tr><td class="wcenter" colspan="2">1 位</td><td class="wcenter" colspan="2">2 位</td><td class="wcenter" colspan="2">3 位</td></tr>
+        <tr><td>高知県江川崎</td><td>41.0℃</td><td>山梨県甲府</td><td>40.7℃</td><td>山梨県勝沼</td><td>40.5℃</td></tr>
+    </table>
+    <p>猛暑日の日数の記録</p>
+    <table class="weathertable">
+        <tr><td class="wcenter" colspan="2">1 位</td><td class="wcenter" colspan="2">2 位</td><td class="wcenter" colspan="2">3 位</td></tr>
+        <tr><td>大分県日田</td><td>38日</td><td>高知県江川崎</td><td>36日</td><td>岐阜県多治見<br>宮崎県西米良</td><td>33日</td></tr>
+    </table>
+    <h4>2012年夏の猛暑の記録</h4>
+    <p>2012年も平年より暑い夏になりました。特に北日本では、2012年8月下旬～9月中旬に記録的な高温になりました。</p>
+    <p>最高気温の記録</p>
+    <table class="weathertable">
+        <tr><td class="wcenter" colspan="2">1 位</td><td class="wcenter" colspan="2">2 位</td><td class="wcenter" colspan="2">3 位</td></tr>
+        <tr><td>群馬県館林</td><td>39.2℃</td><td>群馬県伊勢崎</td><td>39.1℃</td><td>岐阜県多治見</td><td>38.5℃</td></tr>
+    </table>
+    <p>猛暑日の日数の記録</p>
+    <table class="weathertable">
+        <tr><td class="wcenter" colspan="2">1 位</td><td class="wcenter" colspan="2">5 位</td><td class="wcenter" colspan="2">6 位</td></tr>
+        <tr><td>群馬県館林<br />埼玉県熊谷<br />埼玉県鳩山<br />兵庫県豊岡</td><td>32日</td><td>群馬県伊勢崎</td><td>30日</td><td>新潟県小出</td><td>28日</td></tr>
+    </table>
+    <h4>2011年夏の猛暑の記録</h4>
+    <p>2011年の夏は、6月下旬に猛暑となり東日本と西日本で平均気温の最高値を記録した。6月24日には、埼玉県熊谷市で39.8℃を記録した。これは、6月の最高気温の記録である。</p>
+    <p>最高気温の記録</p>
+    <table class="weathertable">
+        <tr><td class="wcenter" colspan="2">1 位</td><td class="wcenter" colspan="2">2 位</td><td class="wcenter" colspan="2">3 位</td></tr>
+        <tr><td>埼玉県熊谷</td><td>39.8℃</td><td>埼玉県鳩山</td><td>39.4℃</td><td>群馬県館林</td><td>39.3℃</td></tr>
+    </table>
+    <h4>2010年夏の猛暑の記録</h4>
+    <p>2010年の夏は猛暑でした。</p>
+    <p>最高気温の記録</p>
+    <table class="weathertable">
+        <tr><td class="wcenter" colspan="2">1位</td><td class="wcenter" colspan="2">2位</td><td class="wcenter" colspan="2">3位</td></tr>
+        <tr><td>岐阜県多治見</td><td>39.4℃</td><td>岐阜県八幡</td><td>39.1℃</td><td>群馬県館林<br />三重県桑名</td><td>38.9℃</td></tr>
+    </table>
+    <p>猛暑日の日数の記録</p>
+    <table class="weathertable">
+        <tr><td class="wcenter" colspan="2">1位</td><td class="wcenter" colspan="2">3位</td><td class="wcenter" colspan="2">5位</td></tr>
+        <tr><td>群馬県館林<br />埼玉県熊谷</td><td>41日</td><td>岐阜県多治見<br />兵庫県豊岡</td><td>38日</td><td>埼玉県鳩山<br />東京都練馬<br />大阪府枚方<br />大分県日田</td><td>37日</td></tr>
+    </table>
+</div>
+
+<div class="rightitem">
+    <h4>最近の最高気温と最低気温の推移</h4>
+    <p>東京の過去30日間の気温の推移のグラフ</p>
+    <div id="chart_div">{{ graph_svg | safe }}
+        <p style="font-size:80%; color:#64748b; margin:2px 0 0;">
+            <span style="color:#F92500;">━ 最高気温</span>　<span style="color:#0C00CC;">━ 最低気温</span>　細線は平年値</p>
+    </div>
+    <p class="nmenu">
+        <a href="/Stations/JP/sapporo">札幌</a>
+        <a href="/Stations/JP/asahikawa">旭川</a>
+        <a href="/Stations/JP/kushiro">釧路</a>
+        <a href="/Stations/JP/aomori">青森</a>
+        <a href="/Stations/JP/akita">秋田</a>
+        <a href="/Stations/JP/sendai">仙台</a>
+        <a href="/Stations/JP/utsunomiya">宇都宮</a>
+        <a href="/Stations/JP/tokyo">東京</a><br />
+        <a href="/Stations/JP/nagano">長野</a>
+        <a href="/Stations/JP/niigata">新潟</a>
+        <a href="/Stations/JP/kanazawa">金沢</a>
+        <a href="/Stations/JP/nagoya">名古屋</a>
+        <a href="/Stations/JP/osaka">大阪</a>
+        <a href="/Stations/JP/hiroshima">広島</a>
+        <a href="/Stations/JP/matsue">松江</a>
+        <a href="/Stations/JP/takamatsu">高松</a><br />
+        <a href="/Stations/JP/kochi">高知</a>
+        <a href="/Stations/JP/fukuoka">福岡</a>
+        <a href="/Stations/JP/kagoshima">鹿児島</a>
+        <a href="/Stations/JP/naha">那覇</a>
+        <a href="/Stations/JP/ishigakijima">石垣島</a>
+    </p>
+    <h4>日本各地の雨温図</h4>
+    <p>平年値の気温と雨量の雨温図です。別の場所との比較ができ、例えば、<a href="/Climate/Chart/osaka?compare=nagoya">大阪と名古屋どちらが暑いか</a>がよくわかります。</p>
+    <a href="/Climate/Chart/tokyo"><img src="/Images/47662_1.png" alt="東京の雨温図" width="300" height="275" /></a>
+    <h4>8月の気温のランキング</h4>
+    <p>日本の夏、一番暑い場所は、館林、多治見、大阪、日田それとも石垣島？それで、<a href="/Monthly/Heinenti/08">8月の気温の平年値のランキング</a>を作ってみました。</p>
+    <h4>年降水量のランキング</h4>
+    <p>日本で雨が多い場所がわかるように<a href="/Precipitation">年降水量ランキング</a>を作成しました。一番雨が多いのは鹿児島県の屋久島で、一番雨が少ないのは北海道の北見市です。</p>
+</div>
+<div class="clearfix"></div>
+<p>このWebサイトで公開している情報については充分に注意しているつもりですが、プログラムミス、翻訳ミス、転記ミス等の可能性があります。利用者の方が何らかの損害を被った場合でも一切責任を負えませんので、利用者の責任においてこのウェブサイトをご利用ください。</p>
+{% endblock %}
+
+{% block add_script %}
+
+<script>
+    function changeItem(a) {
+        var url = a.options[a.selectedIndex].value;
+        a.selectedIndex = 0;
+        window.location = url;
+    }
+</script>
+<script type="text/javascript">
+//<![CDATA[
+// ---- 服装投票（vote.gif ビーコン → アクセスログで集計） ----
+function todayStr() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')
+           + '-' + String(d.getDate()).padStart(2, '0');
+}
+function markVoted(code) {
+    var td = document.getElementById('vote-' + code);
+    if (td) td.innerHTML = '<span style="color:green; font-size:85%;">✓ 投票済</span>';
+}
+function vote(code, v, el) {
+    var key = 'cvote-' + todayStr() + '-' + code;
+    try { if (localStorage.getItem(key)) { markVoted(code); return; } } catch (e) {}
+    new Image().src = '/vote.gif?d=' + todayStr() + '&c=' + code + '&v=' + v + '&_=' + Date.now();
+    try { localStorage.setItem(key, String(v)); } catch (e) {}
+    markVoted(code);
+}
+document.addEventListener('DOMContentLoaded', function () {
+    LIVE.forEach(function (c) {
+        try { if (localStorage.getItem('cvote-' + todayStr() + '-' + c.code)) markVoted(c.code); } catch (e) {}
+    });
+});
+
+// ---- 現在の天気・気温のライブ更新（ブラウザが気象庁から直接取得。CORS 許可を確認済み） ----
+var LIVE = {{ live_cities | tojson }};
+var BANDS = [[310, '熱中症に注意'], [255, '半袖の軽装'], [205, '長袖or半袖'],
+             [155, 'ジャケットorカーディガン'], [115, 'ジャケット、セーターの重着'],
+             [65, 'コートが必要'], [-9999, '防寒対策を念入りに']];
+var WCOLORS = { '255,170,0': '晴れ', '170,170,170': 'くもり', '0,65,255': '雨',
+                '160,210,255': '雨または雪', '242,242,255': '雪' };
+var WIMG = { '晴れ': 's100', 'くもり': 's200', '雨': 's300', '雨または雪': 's400', '雪': 's400' };
+var RAINY = { '雨': 1, '雨または雪': 1, '雪': 1 };
+var liveState = {};   // code -> {temp, wthr}
+
+function ondoStr(t) { return t == null ? '-' : (t / 10).toFixed(1) + '\u2103'; }
+function clothesStr(t) {
+    if (t == null) return '';
+    for (var i = 0; i < BANDS.length; i++) if (t >= BANDS[i][0]) return BANDS[i][1];
+    return '';
+}
+function renderCity(code) {
+    var s = liveState[code] || {};
+    if (s.temp !== undefined) {
+        var td = document.getElementById('cur-t-' + code);
+        if (td) td.textContent = ondoStr(s.temp);
+    }
+    var cl = document.getElementById('cur-c-' + code);
+    if (cl && s.temp !== undefined) {
+        cl.innerHTML = clothesStr(s.temp) + (s.wthr && RAINY[s.wthr] ? '<br/>\u2602 \u5098' : '');
+    }
+    if (s.wthr) {
+        var wd = document.getElementById('cur-w-' + code);
+        if (wd) wd.innerHTML = '<img src="/Images/Forecast/' + WIMG[s.wthr] +
+            '.png" alt="' + s.wthr + '" width="40" height="18"/><br/><span style="font-size:85%;">' + s.wthr + '</span>';
+    }
+}
+function tileOf(lat, lon) {
+    var Z = 8, TS = 512, world = Math.pow(2, Z) * 256;
+    var xf = (lon + 180) / 360 * world;
+    var lr = lat * Math.PI / 180;
+    var yf = (1 - Math.log(Math.tan(lr) + 1 / Math.cos(lr)) / Math.PI) / 2 * world;
+    return { x: Math.floor(xf / TS), y: Math.floor(yf / TS),
+             px: Math.floor(xf % TS), py: Math.floor(yf % TS) };
+}
+function updateTemps() {
+    return fetch('https://www.jma.go.jp/bosai/amedas/data/latest_time.txt', { cache: 'no-store' })
+        .then(function (r) { return r.text(); })
+        .then(function (ts) {
+            var key = ts.replace(/[^0-9]/g, '').slice(0, 12) + '00';
+            var d = new Date(ts);
+            var el = document.getElementById('cur-time');
+            if (el) el.textContent = '(' + (d.getMonth() + 1) + '月' + d.getDate() + '日'
+                + d.getHours() + '時' + String(d.getMinutes()).padStart(2, '0') + '分現在)';
+            return fetch('https://www.jma.go.jp/bosai/amedas/data/map/' + key + '.json',
+                         { cache: 'no-store' }).then(function (r) { return r.json(); });
+        })
+        .then(function (map) {
+            LIVE.forEach(function (c) {
+                var e = map[c.amedas];
+                if (e && e.temp && e.temp[1] === 0) {
+                    liveState[c.code] = liveState[c.code] || {};
+                    liveState[c.code].temp = Math.round(e.temp[0] * 10);
+                    renderCity(c.code);
+                }
+            });
+        });
+}
+function updateWeather() {
+    return fetch('https://www.jma.go.jp/bosai/jmatile/data/suikeikishou/targetTimes.json',
+                 { cache: 'no-store' })
+        .then(function (r) { return r.json(); })
+        .then(function (tt) {
+            var e = tt.find(function (x) { return (x.elements || []).indexOf('wthr') >= 0; });
+            if (!e) return;
+            var groups = {};
+            LIVE.forEach(function (c) {
+                var o = tileOf(c.lat, c.lon);
+                var k = o.x + '_' + o.y;
+                (groups[k] = groups[k] || { x: o.x, y: o.y, pts: [] }).pts.push({ c: c, o: o });
+            });
+            Object.keys(groups).forEach(function (k) {
+                var g = groups[k];
+                var img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = function () {
+                    var cv = document.createElement('canvas');
+                    cv.width = cv.height = 512;
+                    var ctx = cv.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    g.pts.forEach(function (p) {
+                        var w = null;
+                        outer: for (var d = 0; d <= 2; d++) {
+                            for (var dx = -d; dx <= d; dx++) for (var dy = -d; dy <= d; dy++) {
+                                var qx = p.o.px + dx, qy = p.o.py + dy;
+                                if (qx < 0 || qy < 0 || qx >= 512 || qy >= 512) continue;
+                                var px = ctx.getImageData(qx, qy, 1, 1).data;
+                                if (px[3] === 0) continue;
+                                w = WCOLORS[px[0] + ',' + px[1] + ',' + px[2]];
+                                if (w) break outer;
+                            }
+                        }
+                        if (w) {
+                            liveState[p.c.code] = liveState[p.c.code] || {};
+                            liveState[p.c.code].wthr = w;
+                            renderCity(p.c.code);
+                        }
+                    });
+                };
+                img.src = 'https://www.jma.go.jp/bosai/jmatile/data/suikeikishou/' + e.basetime +
+                          '/none/' + e.validtime + '/surf/wthr/8/' + g.x + '/' + g.y + '.png';
+            });
+        });
+}
+function updateLive() {
+    updateTemps().catch(function () {});
+    updateWeather().catch(function () {});
+}
+document.addEventListener('DOMContentLoaded', function () {
+    updateLive();
+    setInterval(updateLive, 10 * 60 * 1000);   // 10 分毎（アメダスの更新間隔に合わせる）
+});
+//]]>
+</script>
+{% endblock %}

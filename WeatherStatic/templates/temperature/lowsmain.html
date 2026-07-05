@@ -1,0 +1,138 @@
+{#
+  今朝の最低気温 - 主要都市。
+  Views/Temperature/LowsMain.cshtml を移植（DATA_CONTRACT v2.1 のコンテキスト）。
+
+  コンテキスト（generate.py build_lowsmain が組み立て）:
+    now / hour0 / summer / season / counts / morning（9 時前=今朝の予報を表示）
+    period_start / period_end / days_diff
+    cities … [{name, place, tmin, tmin_bg, fc_tmin, fc_bg, fc_weather, fc_wcode,
+               normal, season_val, season_date, counts:{nettaiya, fuyubi, ...}}]
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    h4 { margin-bottom: 5px; }
+    .pager { text-align: left; margin-left: 10px; }
+    form.form-horizontal { margin-top: 15px; margin-left: 10px; }
+    .weathertable { border-collapse: collapse; border: solid #aaa 1px; empty-cells: show; padding: 5px; margin-left: 10px; margin-right: 10px; margin-top: 10px; }
+    .weathertable th { border-collapse: collapse; border: solid #aaa 1px; padding: 5px; text-align: center; font-size: 90%; }
+    .weathertable td { border-collapse: collapse; border: solid #aaa 1px; padding: 2px 5px; font-size: 90%; white-space: nowrap; }
+    .weathertable td span { white-space: nowrap; }
+    .weathernowrap { white-space: nowrap; }
+    .wright { text-align: right; }
+    .wcenter { text-align: center; }
+    .red { color: red; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="submenunav hidden-xs">
+    <ul class="pager">
+        <li>今日の最高気温: <a href="/Temperature/HighsMain">主要都市</a></li>
+        <li><a href="/Temperature/HighsList">各地</a></li>
+        <li><a href="/Temperature/TodayHighsDec">高い順</a></li>
+        <li><a href="/Temperature/TodayHighsAsc">低い順</a></li>
+        <li><a href="/Temperature/SummerMonth/">日毎の真夏日等の地点数</a></li>
+    </ul>
+    <ul class="pager">
+        <li>今朝の最低気温: <a href="/Temperature/LowsMain" style="background-color: #d3d3d3">主要都市</a></li>
+        <li><a href="/Temperature/LowsList">各地</a></li>
+        <li><a href="/Temperature/TodayLowsDec">高い順</a></li>
+        <li><a href="/Temperature/TodayLowsAsc">低い順</a></li>
+        <li><a href="/Temperature/WinterMonth/">日毎の真冬日等の地点数</a></li>
+    </ul>
+</div>
+
+<div class="submenunav visible-xs">
+    <form class="form-horizontal">
+        <div class="form-group">
+            <label class="control-label">今日の気温 <span class="glyphicon glyphicon-arrow-right" aria-hidden="true"></span> </label>
+            <select class="form-horizontal" onchange="changeItem(this);">
+                <option value="/Temperature/HighsMain">今日の最高気温 - 主要都市</option>
+                <option value="/Temperature/HighsList">今日の最高気温 - 各地</option>
+                <option value="/Temperature/TodayHighsDec">今日の最高気温 - 高い順</option>
+                <option value="/Temperature/TodayHighsAsc">今日の最高気温 - 低い順</option>
+                <option value="/Temperature/LowsMain" selected>今朝の最低気温 - 主要都市</option>
+                <option value="/Temperature/LowsList">今朝の最低気温 - 各地</option>
+                <option value="/Temperature/TodayLowsDec">今朝の最低気温 - 高い順</option>
+                <option value="/Temperature/TodayLowsAsc">今朝の最低気温 - 低い順</option>
+                <option value="/Temperature/SummerMonth/">日毎の真夏日等の地点数</option>
+                <option value="/Temperature/WinterMonth/">日毎の真冬日等の地点数</option>
+            </select>
+        </div>
+    </form>
+</div>
+
+<div class="hidden-xs">
+  <table class="weathertable">
+    {% if season == 1 %}
+        <tr><th>{{ "昨日、最低気温が25℃以上となった" if hour0 else "今朝、最低気温が25℃以上となっている" }}地点数</th><td class="wright"><a href="/Temperature/TodayLowsDec">{{ counts['nettaiya'] }} 地点</a></td><td>{{ now | jikan }}現在</td></tr>
+        <tr><th>{{ "昨日" if hour0 else "今朝" }}、冬日（最低気温零度未満）となった地点数</th><td class="wright"><a href="/Temperature/TodayLowsAsc">{{ counts['fuyubi'] }} 地点</a></td><td> 〃</td></tr>
+    {% else %}
+        <tr><th>{{ "昨日" if hour0 else "今朝" }}、冬日（最低気温零度未満）となった地点数</th><td class="wright"><a href="/Temperature/TodayLowsAsc">{{ counts['fuyubi'] }} 地点</a></td><td>{{ now | jikan }}現在</td></tr>
+        <tr><th>{{ "昨日、最低気温が25℃以上となった" if hour0 else "今朝、最低気温が25℃以上となっている" }}地点数</th><td class="wright"><a href="/Temperature/TodayLowsDec">{{ counts['nettaiya'] }} 地点</a></td><td> 〃</td></tr>
+    {% endif %}
+  </table>
+</div>
+
+<h2>{{ page_header }}</h2>
+<p>日本の主要な都市（気象台のある場所）の今朝の最低気温等を表示しています。</p>
+<h4>※データは、{{ now | jikan }}現在のものです。</h4>
+
+<div class="table-responsive">
+<table class="weathertable">
+    <tr>
+        <th rowspan="2">都市名</th>
+        <th rowspan="2">{{ "昨日の" if hour0 else "今朝の" }}<br/>最低気温</th>
+        <th rowspan="2">{{ "今朝" if morning else "明朝" }}の<br/>最低気温<br/>(予報)</th>
+        <th rowspan="2">{{ "今日" if morning else "明日" }}の<br/>天気<br/>(予報)</th>
+        <th rowspan="2">最低気温<br/>の平年値</th>
+        {% if summer %}
+            <th colspan="3">{{ period_start.year }} 年の{{ "一昨日" if days_diff >= 2 else "昨日" }}（{{ period_end.day }} 日）までの記録</th>
+        {% else %}
+            <th colspan="3">今季の{{ "一昨日" if days_diff >= 2 else "昨日" }}（{{ period_end.day }} 日）までの記録</th>
+        {% endif %}
+    </tr>
+    <tr>
+        {% if summer %}
+            <th>最低気温<br/>の最高</th><th>起日</th><th>最低気温25℃<br/>以上の日数</th>
+        {% else %}
+            <th>最低気温</th><th>起日</th><th>冬日の日数</th>
+        {% endif %}
+    </tr>
+    {% for c in cities %}
+        <tr>
+            <td><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>
+            <td class="wright" style="background-color: {{ c.tmin_bg }}">{{ c.tmin | ondo }}</td>
+            <td class="wright" style="background-color: {{ c.fc_bg }}">{{ (c.fc_tmin ~ "℃") if c.fc_tmin is not none else "-" }}</td>
+            <td class="wcenter"><img src="/Images/Forecast/{{ c.fc_wcode | weather_img }}.png" alt="{{ c.fc_weather }}" title="{{ c.fc_weather }}" width="40" height="18"/></td>
+            <td class="wright">{{ c.normal | ondo }}</td>
+            <td class="wright">{{ c.season_val | ondo }}</td>
+            <td class="wright">{{ c.season_date | jdate }}</td>
+            {% if summer %}
+                <td class="wright">{{ (c.counts.nettaiya ~ "日") if c.counts.nettaiya else "" }}</td>
+            {% else %}
+                <td class="wright">{{ (c.counts.fuyubi ~ "日") if c.counts.fuyubi else "" }}</td>
+            {% endif %}
+        </tr>
+    {% endfor %}
+</table>
+</div>
+
+<p>予報については、基本的に気象庁の前日午後5時発表のものを表示しているため最新の天気予報とは異なる場合があります。午後5時以前は、午前11時発表のものを表示しています。</p>
+{% if not summer %}
+    <p>今季：冬期の季節現象は年をまたぐため、寒候年（{{ period_start.year }}年8月1日から{{ period_start.year + 1 }}年7月31日まで）で表し、8月1日からのデータを集計しています。<br />冬日：最低気温が0℃未満の日</p>
+{% endif %}
+<p>本日の最低気温の詳細は、<a href="http://www.data.jma.go.jp/obd/stats/data/mdrr/tem_rct/index_mntem.html" target="_blank">気象庁のページ</a>で確認できます。</p>
+{% endblock %}
+
+{% block add_script %}
+<script>
+    function changeItem(a) {
+        var url = a.options[a.selectedIndex].value;
+        a.selectedIndex = 4;
+        window.location = url;
+    }
+</script>
+{% endblock %}

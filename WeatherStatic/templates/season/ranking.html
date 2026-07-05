@@ -1,0 +1,66 @@
+{#
+  夏/冬の日数・気温ランキング（Summer/Ranking, Summer/Hottest, Winter/Ranking, Winter/Coldest）。
+  Views/Summer/Ranking.cshtml ほかを移植。
+
+  コンテキスト:
+    page_header / subnav … [(url, label, active)] / period_start / period_end
+    tables … [{title, kind: 'days'|'temp', rows: [{rank, name, place, val}]}]
+    n_stations / info_text
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .item h5 { margin: 0 0 8px; font-size: 15px; text-align: center; }
+    .wtable { border-collapse: collapse; empty-cells: show; width: 100%; }
+    .wtable th { padding: 4px; text-align: center; font-size: 90%; }
+    .wtable td { padding: 2px 6px; font-size: 90%; white-space: nowrap; }
+    .wright { text-align: right; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="subnav" class="btn-group" role="group" aria-label="...">
+    {% for url, label, active in subnav %}
+    <div class="btn-group" role="group">
+        <a href="{{ url }}" type="button" class="btn btn-default{{ " active" if active }}">{{ label }}</a>
+    </div>
+    {% endfor %}
+</div>
+
+<h2>{{ page_header }} <a href="#info"><span class="glyphicon glyphicon-info-sign"></span></a></h2>
+<p>※集計期間、{{ period_start.year }}年{{ period_start.month }}月{{ period_start.day }}日～{{ period_end.year }}年{{ period_end.month }}月{{ period_end.day }}日</p>
+
+<div class="rank-grid">
+{% for t in tables %}
+<div class="item">
+    <h5>{{ t.title }}</h5>
+    <table class="wtable">
+        <tbody>
+            <tr>
+                <th style="white-space:nowrap">順位</th>
+                <th>地点</th>
+                <th style="white-space:nowrap">{{ "日数" if t.kind == "days" else "気温" }}</th>
+            </tr>
+            {% for item in t.rows %}
+            <tr>
+                <td class="wright">{% if item.rank <= 3 %}<span class="rank-badge r{{ item.rank }}">{{ item.rank }}</span>{% else %}{{ item.rank }}{% endif %}</td>
+                <td><a href="/Stations/JP/{{ item.place }}" target="_blank">{{ item.name }}</a></td>
+                <td class="wright">{{ item.val }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endfor %}
+</div>
+
+<div id="info">
+    <h5>データについての説明　　　<span style="font-size:13px;"><a href="#top">ページのトップ</a></span></h5>
+    <p>{{ info_text }}</p>
+    <p>本データは、気象庁の<a href="https://www.data.jma.go.jp/stats/etrn/" target="_blank">過去の気象データ検索のページ</a>等から取得したデータを独自に集計したものです。
+       観測記録が集計期間の半分に満たない地点は集計から除いています（対象 {{ n_stations }} 地点）。</p>
+</div>
+{% endblock %}
+
+{% block add_script %}{% endblock %}

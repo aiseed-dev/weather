@@ -217,3 +217,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- WeatherStatic（気温と雨量の統計 静的ジェネレータ）の運用データ ---
+# 観測蓄積・帳簿（投票者IPハッシュ含む）・生成サイト・マスターはすべて再生成可能。
+# 観測NetCDF等の「配布」はgitでなくCloudflare R2で行う（docs/data-acquisition.md 参照）
+WeatherStatic/.venv/
+WeatherStatic/store/
+WeatherStatic/data/
+WeatherStatic/public/
+WeatherStatic/master/
+WeatherStatic/logs/
+WeatherStatic/dist/

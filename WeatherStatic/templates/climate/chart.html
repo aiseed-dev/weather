@@ -1,0 +1,169 @@
+{#
+  雨温図（Views/Climate/Chart.cshtml を移植）。
+  比較（?compare=slug）は静的サイトのため /data/climate/{slug}.json をクライアントが fetch して描画する。
+
+  コンテキスト:
+    st … {slug, name, pref, prec_no, prec_name, amedas, is_kansho,
+          year_tavg, year_precip, period, etrn_url,
+          monthly: {tmax: [...], tavg: [...], tmin: [...], precip: [...]}}  # 表示値(数値/None)
+    kennai … [{slug, name, is_kansho}]（同一府県の地点）
+    main_links … [(slug, name)]（主要都市）
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .climatecontent table { border-collapse: collapse; margin: 8px 10px; }
+    .climatecontent th, .climatecontent td { border: 1px solid #ccc; padding: 3px 8px; font-size: 90%; text-align: right; white-space: nowrap; }
+    .climatecontent th:first-child { text-align: left; }
+    #selectobs { margin: 10px; }
+    #obsdiv ul { list-style: none; padding-left: 10px; }
+    #obsdiv li { display: inline-block; margin: 2px 10px 2px 0; }
+    #sideobs-list li { display: inline-block; margin: 1px 8px 1px 0; font-size: 13px; }
+    #sideobs-list ul { list-style: none; padding-left: 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2 id="page-h2">{{ st.pref }} {{ st.name }} の気候</h2>
+<div id="subnav" class="btn-group" role="group" aria-label="...">
+    <div class="btn-group" role="group">
+        <a href="/Climate/Chart/{{ st.slug }}" type="button" class="btn btn-default active">雨温図</a>
+    </div>
+    <div class="btn-group" role="group">
+        <a href="/Stations/JP/{{ st.slug }}" type="button" class="btn btn-default">最高気温、最低気温の推移</a>
+    </div>
+</div>
+
+<div id="selectobs">
+    観測地点の比較・移動　都道府県:
+    <select id="pref-select" class="form-horizontal"></select>
+    観測地点:
+    <select id="point-select" class="form-horizontal"></select>
+    <a href="javascript:void(0)" class="btn btn-default" onclick="doCompare()">比較する</a>
+    <a href="javascript:void(0)" class="btn btn-default" onclick="doMove()">移動する</a>
+</div>
+
+<div id="container" style="min-width: 320px; margin: 0 auto; text-align: center;">{{ st_svg | safe }}</div>
+<div id="compare-chart" style="min-width: 320px; margin: 0 auto; text-align: center; display: none;"></div>
+
+<p>{{ st.name }} 年平均気温：{{ st.year_tavg }} ℃ &nbsp;年降水量：{{ st.year_precip }} mm &nbsp;統計期間：{{ st.period }}</p>
+<div class="climatecontent table-responsive">
+    <table>
+        <tbody>
+            <tr><th></th>{% for m in range(1, 13) %}<th>{{ m }}月</th>{% endfor %}</tr>
+            <tr><th>最高気温( °C)</th>{% for p in st.monthly.tmax %}<td>{{ p if p is not none else "-" }}</td>{% endfor %}</tr>
+            <tr><th>平均気温( °C)</th>{% for p in st.monthly.tavg %}<td>{{ p if p is not none else "-" }}</td>{% endfor %}</tr>
+            <tr><th>最低気温( °C)</th>{% for p in st.monthly.tmin %}<td>{{ p if p is not none else "-" }}</td>{% endfor %}</tr>
+            <tr><th>降水量(mm)</th>{% for p in st.monthly.precip %}<td>{{ p if p is not none else "-" }}</td>{% endfor %}</tr>
+        </tbody>
+    </table>
+</div>
+<p>気象庁の過去の気象データ検索のページへのリンク：<a href="{{ st.etrn_url }}" target="_blank">平年値</a></p>
+
+<div id="compare-area"></div>
+
+<h6>{{ st.prec_name }}内の観測地点に移動</h6>
+<div id="obsdiv">
+    <ul>
+        {% for k in kennai %}
+        <li><a href="/Climate/Chart/{{ k.slug }}">{{ k.name }}</a>{{ "" if k.is_kansho else "*" }}</li>
+        {% endfor %}
+    </ul>
+</div>
+<p style="font-size: 85%;">* はアメダス観測点（気温の平年値は参考値）です。</p>
+
+<h6>主要観測地点への移動</h6>
+<div id="sideobs-list">
+    <ul>
+        {% for slug, name in main_links %}
+        <li><a href="/Climate/Chart/{{ slug }}">{{ name }}</a></li>
+        {% endfor %}
+    </ul>
+</div>
+{% endblock %}
+
+{% block add_script %}
+<script src="/js/d3.v7.min.js"></script>
+<script src="/js/climate-compare.js?v={{ css_version }}"></script>
+<script type="text/javascript">
+//<![CDATA[
+var ST = {{ st | tojson }};
+var MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+function renderCompareArea(c) {
+    var rows = [['最高気温( °C)', c.monthly.tmax], ['平均気温( °C)', c.monthly.tavg],
+                ['最低気温( °C)', c.monthly.tmin], ['降水量(mm)', c.monthly.precip]];
+    var h = '<p>' + c.name + ' 年平均気温：' + c.year_tavg + ' ℃ &nbsp;年降水量：' +
+            c.year_precip + ' mm &nbsp;統計期間：' + c.period + '</p>' +
+            '<div class="climatecontent table-responsive"><table><tbody><tr><th></th>';
+    MONTHS.forEach(function (m) { h += '<th>' + m + '</th>'; });
+    h += '</tr>';
+    rows.forEach(function (r) {
+        h += '<tr><th>' + r[0] + '</th>';
+        r[1].forEach(function (v) { h += '<td>' + (v == null ? '-' : v) + '</td>'; });
+        h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+    document.getElementById('compare-area').innerHTML = h;
+}
+
+function loadCompare(slug) {
+    fetch('/data/climate/' + slug + '.json', { cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+        .then(function (c) {
+            document.getElementById('container').style.display = 'none';
+            var el = document.getElementById('compare-chart');
+            el.style.display = '';
+            ClimateCompare.draw(el, ST, c);
+            renderCompareArea(c);
+            document.getElementById('page-h2').textContent =
+                ST.pref + ' ' + ST.name + ' と ' + c.pref + ' ' + c.name + ' の気候の比較';
+        })
+        .catch(function () {});
+}
+
+// 比較・移動セレクタ（/data/climate/index.json から構築）
+var CINDEX = null;
+function fillPoints() {
+    var prec = document.getElementById('pref-select').value;
+    var ps = document.getElementById('point-select');
+    ps.innerHTML = '';
+    (CINDEX[prec].stations || []).forEach(function (s) {
+        var o = document.createElement('option');
+        o.value = s.slug;
+        o.textContent = s.name + (s.k ? '' : '*');
+        ps.appendChild(o);
+    });
+}
+function doCompare() {
+    var slug = document.getElementById('point-select').value;
+    if (slug) location.href = '/Climate/Chart/' + ST.slug + '/?compare=' + slug;
+}
+function doMove() {
+    var slug = document.getElementById('point-select').value;
+    if (slug) location.href = '/Climate/Chart/' + slug + '/';
+}
+document.addEventListener('DOMContentLoaded', function () {
+    var m = location.search.match(/[?&]compare=([A-Za-z0-9_-]+)/);
+    if (m) loadCompare(m[1].toLowerCase());
+
+    fetch('/data/climate/index.json')
+        .then(function (r) { return r.json(); })
+        .then(function (ix) {
+            CINDEX = ix;
+            var sel = document.getElementById('pref-select');
+            Object.keys(ix).sort(function (a, b) { return a - b; }).forEach(function (prec) {
+                var o = document.createElement('option');
+                o.value = prec;
+                o.textContent = ix[prec].name;
+                if (parseInt(prec) === ST.prec_no) o.selected = true;
+                sel.appendChild(o);
+            });
+            sel.addEventListener('change', fillPoints);
+            fillPoints();
+        }).catch(function () {});
+});
+//]]>
+</script>
+{% endblock %}

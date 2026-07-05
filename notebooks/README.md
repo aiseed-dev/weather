@@ -41,6 +41,7 @@ jupyter lab notebooks/
 | 03 | [`03-point-forecast.ipynb`](03-point-forecast.ipynb) | Open-Meteo で 3 都市 (徳島・札幌・那覇) を並列取得して比較 |
 | 04 | [`04-jma-nowcast.ipynb`](04-jma-nowcast.ipynb) | AMeDAS スナップショット + 最寄観測点抽出、大都市の現況テーブル |
 | 05 | [`05-custom-chart.ipynb`](05-custom-chart.ipynb) | プロジェクトのパレット LUT を使って独自チャートを描く |
+| 06 | [`06-era5-climatology-gcp.ipynb`](06-era5-climatology-gcp.ipynb) | ERA5 気候値パックを GCP (Colab) 側で作る — このタスクだけは GCP で実行 |
 
 順番に読み進める設計だが、各ノートは独立して動くので必要なところだけ
 開いても OK。

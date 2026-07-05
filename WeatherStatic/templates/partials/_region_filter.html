@@ -1,0 +1,28 @@
+{# 地方別フィルタ（チップ＋JS）。.pref-group[data-region] を持つページで include する。 #}
+<div class="bottonsection region-chips" id="region-chips">
+    <a href="javascript:void(0)" data-region="all" class="rchip active">全国</a>
+    {% for key, name in region_filters %}
+    <a href="javascript:void(0)" data-region="{{ key }}" class="rchip">{{ name }}</a>
+    {% endfor %}
+</div>
+<script>
+    (function () {
+        function apply(region) {
+            document.querySelectorAll('.pref-group').forEach(function (g) {
+                g.style.display = (region === 'all' || g.dataset.region === region) ? '' : 'none';
+            });
+            document.querySelectorAll('#region-chips .rchip').forEach(function (c) {
+                c.classList.toggle('active', c.dataset.region === region);
+            });
+            if (history.replaceState)
+                history.replaceState(null, '', region === 'all' ? location.pathname : '#r=' + region);
+        }
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('#region-chips .rchip').forEach(function (c) {
+                c.addEventListener('click', function () { apply(c.dataset.region); });
+            });
+            var m = location.hash.match(/^#r=([a-z]+)/);
+            if (m) apply(m[1]);
+        });
+    })();
+</script>

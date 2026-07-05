@@ -1,0 +1,35 @@
+{#
+  雨温図の地点一覧（Views/Climate/Index.cshtml 相当）。都道府県別＋地方フィルタ。
+  コンテキスト: groups … [{prec_no, pref, region, stations: [{slug, name, is_kansho}]}]
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .obslist ul { list-style: none; padding-left: 10px; margin: 4px 0 10px; }
+    .obslist li { display: inline-block; margin: 2px 10px 2px 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>雨温図（気温と降水量のグラフ）の観測地点一覧</h2>
+<p>各地の平年値（1991〜2020年）による雨温図を表示できます。地点名をクリックしてください。
+   * はアメダス観測点です。別の地点との比較もできます。</p>
+
+{% include "partials/_region_filter.html" %}
+
+{% for g in groups %}
+<div class="pref-group" data-region="{{ g.region }}">
+<h4>{{ g.pref }}</h4>
+<div class="obslist">
+    <ul>
+        {% for s in g.stations %}
+        <li><a href="/Climate/Chart/{{ s.slug }}">{{ s.name }}</a>{{ "" if s.is_kansho else "*" }}</li>
+        {% endfor %}
+    </ul>
+</div>
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block add_script %}{% endblock %}

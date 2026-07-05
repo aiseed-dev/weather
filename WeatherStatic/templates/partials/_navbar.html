@@ -1,0 +1,13 @@
+{#
+  グローバルナビ。Views/Shared/Partials/_NavBarN.cshtml を移植。
+  active 判定は生成時に決まるので、コンテキスト変数 nav_active（例 "temperature"）で渡す。
+#}
+<ul class="nav navbar-nav">
+  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'temperature' }}" href="/Temperature/HighsMain">今日の気温</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'summer' }}" href="/Summer/Ranking">暑さランキング</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'winter' }}" href="/Winter/LowestList">寒さランキング</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active in ('climate', 'station') }}" href="/Climate">雨温図</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'monthly' }}" href="/Monthly">月別気温</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'precipitation' }}" href="/Precipitation">降水量ランキング</a></li>
+  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'gfs' }}" href="/Gfs">天気図</a></li>
+</ul>

@@ -1,0 +1,67 @@
+{#
+  今日の最高/最低気温ランキング（高い順・低い順の 4 ページ共通）。
+  Views/Temperature/TodayHighsDec.cshtml 等を移植。
+
+  コンテキスト: now / hour0 / page_header / explain / items / count_lines / path
+    items … [{rank, pref, name, place, temp_str, at}]
+    count_lines … [(ラベル, 地点数), ...]
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    h4 { margin-bottom: 5px; }
+    .pager { text-align: left; margin-left: 10px; }
+    form.form-horizontal { margin-top: 15px; margin-left: 10px; }
+    .weathertable { border-collapse: collapse; border: solid #aaa 1px; empty-cells: show; padding: 5px; margin-left: 10px; margin-right: 10px; margin-top: 10px; }
+    .weathertable th { border-collapse: collapse; border: solid #aaa 1px; padding: 5px; text-align: center; font-size: 90%; }
+    .weathertable td { border-collapse: collapse; border: solid #aaa 1px; padding: 2px 5px; font-size: 90%; white-space: nowrap; }
+    .explain { margin: 8px 10px; }
+    .wright { text-align: right; }
+    .red { color: red; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set active_map = {"Temperature/TodayHighsDec": "highsdec", "Temperature/TodayHighsAsc": "highsasc",
+                     "Temperature/TodayLowsDec": "lowsdec", "Temperature/TodayLowsAsc": "lowsasc"} %}
+{% with submenu_active = active_map[path] %}{% include "temperature/_submenu.html" %}{% endwith %}
+
+<h2>{{ page_header }}</h2>
+<p class="explain">
+    {{ "昨日" if hour0 else "今日" }}（{{ now | jikan }}現在 ）{{ explain }}<br />
+    {% if hour0 %}<span class="red">10時頃までは、昨日のデータを表示しています。</span><br />{% endif %}
+    {% for label, n in count_lines %}
+    {{ label }}：{{ n }} 地点<br />
+    {% endfor %}
+</p>
+
+<table class="weathertable">
+<tbody>
+    <tr>
+        <th style="white-space:nowrap">順位</th>
+        <th>観測地点</th>
+        <th style="white-space:nowrap">気温（℃）</th>
+        <th style="white-space:nowrap">起時</th>
+    </tr>
+    {% for item in items %}
+    <tr>
+        <td class="wright">{{ item.rank }}</td>
+        <td><a href="/Stations/JP/{{ item.place }}">{{ item.pref }} {{ item.name }}</a></td>
+        <td class="wright">{{ item.temp_str }}</td>
+        <td class="wright">{{ item.at }}</td>
+    </tr>
+    {% endfor %}
+</tbody>
+</table>
+{% endblock %}
+
+{% block add_script %}
+<script>
+    function changeItem(a) {
+        var url = a.options[a.selectedIndex].value;
+        a.selectedIndex = 2;
+        window.location = url;
+    }
+</script>
+{% endblock %}
