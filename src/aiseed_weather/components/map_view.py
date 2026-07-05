@@ -795,12 +795,22 @@ def MapView(settings: UserSettings, fetch=None):
     # download. Dialog body shows base time, frame count, and how
     # many are already cached.
     show_fetch_confirm, set_show_fetch_confirm = ft.use_state(False)
+    # Mirror source only: also fetch the ext-tier packs (remaining
+    # variables / pressure levels). Off by default — core covers the
+    # main chart set at ~1/4 the transfer.
+    include_ext, set_include_ext = ft.use_state(False)
 
     # Selected data source per product. Initial value for ECMWF HRES
     # comes from config.toml (settings.forecast_source) so the user's
     # config-time preference is honoured before they touch the dialog.
     def _initial_source_for(p_key: str) -> str:
         if p_key == "ecmwf_hres":
+            from aiseed_weather.models.user_settings import ForecastSource
+            if settings.forecast_source == ForecastSource.MIRROR:
+                # The mirror is not an ecmwf-opendata Client source, so
+                # it has no _CLIENT_SOURCE entry — but it IS the user's
+                # explicit choice; never substitute the catalog default.
+                return "mirror"
             # Map ForecastSource enum → ecmwf-opendata Client source string.
             try:
                 return _CLIENT_SOURCE[settings.forecast_source]
@@ -1454,7 +1464,8 @@ def MapView(settings: UserSettings, fetch=None):
             session.items = list(items)
 
         try:
-            service = ForecastService(settings, override_source=data_source_key)
+            service = ForecastService(settings, override_source=data_source_key,
+                                      include_ext=include_ext)
         except ForecastDisabledError as e:
             set_error(str(e))
             set_state("disabled")
@@ -2640,7 +2651,19 @@ def MapView(settings: UserSettings, fetch=None):
                         "バックグラウンドで進行し、いつでも停止できます。",
                         size=10, color=ft.Colors.GREY,
                     ),
-                ],
+                ] + ([
+                    ft.Divider(height=8),
+                    ft.Checkbox(
+                        label="ext も取得（全変数・全気圧面, +約150MB/步）",
+                        value=include_ext,
+                        on_change=lambda e: set_include_ext(bool(e.control.value)),
+                    ),
+                    ft.Text(
+                        "オフでも定番チャート（MSL / 気温 / 風 / 降水 / 雲量、"
+                        "gh·t·u·v·r·w × 250–850hPa）は全部描けます。",
+                        size=10, color=ft.Colors.GREY,
+                    ),
+                ] if data_source_key == "mirror" else []),
             ),
         ),
         actions=[

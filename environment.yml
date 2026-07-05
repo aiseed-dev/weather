@@ -39,6 +39,7 @@ dependencies:
   # Numerical
   - numpy
   - pandas
+  - scipy  # figures/_layered_renderer の gaussian_filter
 
   # Map rendering — PROJ + GEOS deps bundled
   - matplotlib

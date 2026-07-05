@@ -239,14 +239,20 @@ class ForecastService:
         settings: UserSettings,
         *,
         override_source: str | None = None,
+        include_ext: bool = False,
     ):
         """Build a service against an ECMWF Open Data mirror.
 
         ``override_source``, when set, takes precedence over
         ``settings.forecast_source``. It must be one of the strings
-        ecmwf-opendata's ``Client(source=...)`` accepts: 'aws',
-        'azure', 'google', or 'ecmwf'. The UI passes this when the user
-        picks a non-default mirror in the catalog dialog.
+        ecmwf-opendata's ``Client(source=...)`` accepts ('aws',
+        'azure', 'google', 'ecmwf') or ``"mirror"``. The UI passes
+        this when the user picks a non-default mirror in the catalog
+        dialog.
+
+        ``include_ext`` (mirror only): also download the ext-tier
+        packs (remaining variables / pressure levels) alongside each
+        core pack. decode merges them automatically when present.
         """
         if override_source is None and settings.forecast_source == ForecastSource.NONE:
             raise ForecastDisabledError(
@@ -254,9 +260,23 @@ class ForecastService:
             )
         if override_source is not None:
             client_source = override_source
+        elif settings.forecast_source == ForecastSource.MIRROR:
+            client_source = "mirror"
         else:
             client_source = _CLIENT_SOURCE[settings.forecast_source]
-        self._client = Client(source=client_source)
+        if client_source == "mirror":
+            if not settings.mirror_url:
+                raise ForecastDisabledError(
+                    "forecast_source = \"mirror\" requires mirror_url in config.toml."
+                )
+            # No ecmwf-opendata Client: the mirror is plain HTTPS files
+            # (latest.json + per-step NetCDF packs). latest_run() reads
+            # latest.json instead of probing ECMWF.
+            self._client = None
+        else:
+            self._client = Client(source=client_source)
+        self._settings = settings
+        self._include_ext = include_ext
         self._cache_dir = resolved_data_dir(settings) / "ecmwf"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self.client_source = client_source  # for logging / display
@@ -291,14 +311,54 @@ class ForecastService:
         already present).
         """
         path = self._cache_path(request)
-        if not force and path.exists() and path.stat().st_size > 0:
+        if (not force and path.exists() and path.stat().st_size > 0
+                and not self._missing_ext(request, path)):
             return path
         async with self._lock_for(path):
             # Re-check after acquiring: another coroutine may have
             # raced ahead and filled the cache while we were waiting.
             if force or not path.exists() or path.stat().st_size == 0:
                 await asyncio.to_thread(self._download, request, path)
+            for name in self._missing_ext(request, path):
+                await asyncio.to_thread(self._download_ext, request, path, name)
         return path
+
+    # ext-tier pack names per kind (mirror only). sol has no ext —
+    # the publisher puts the whole soil hypercube in sol-core.
+    _EXT_PARTS = {"sfc": ("sfc-ext",), "pl": ("pl-ext", "pl-ext-lv")}
+
+    def _missing_ext(self, r: ForecastRequest, core_path: Path) -> "list[str]":
+        """Sibling ext filenames still to fetch (empty unless the
+        service is a mirror with include_ext on)."""
+        if self.client_source != "mirror" or not self._include_ext:
+            return []
+        out = []
+        for part in self._EXT_PARTS.get(r.kind, ()):
+            name = f"{r.step_hours:03d}h-{part}.nc"
+            sib = core_path.with_name(name)
+            if not sib.exists() or sib.stat().st_size == 0:
+                out.append(name)
+        return out
+
+    def _download_ext(self, r: ForecastRequest, core_path: Path, name: str) -> None:
+        """Fetch one ext sibling. A 404 is tolerated: the mirror may
+        only have published the core tier yet (the publisher uploads
+        core first by design) — core alone still renders the main
+        chart set."""
+        url = f"{self._settings.mirror_url}/runs/{r.run_time:%Y%m%d_%H}z/{name}"
+        target = core_path.with_name(name)
+        tmp = target.with_suffix(target.suffix + ".part")
+        req = urllib.request.Request(url, headers={"User-Agent": "aiseed-weather/1.0"})
+        try:
+            with urllib.request.urlopen(req) as resp, tmp.open("wb") as f:
+                shutil.copyfileobj(resp, f, 1 << 20)
+            tmp.replace(target)
+        except urllib.error.HTTPError as e:
+            tmp.unlink(missing_ok=True)
+            if e.code == 404:
+                logger.warning("mirror has no %s yet (core-only run?) — skipping", name)
+                return
+            raise
 
     async def decode(self, request: ForecastRequest) -> xr.Dataset:
         """Decode an already-cached GRIB. Raises FileNotFoundError if
@@ -319,6 +379,10 @@ class ForecastService:
         """Return the run datetime of the most recent publicly available run
         that contains the requested field. Probes the server.
         """
+        if self.client_source == "mirror":
+            run = await asyncio.to_thread(self._mirror_latest_run)
+            logger.info("mirror latest run: %s", run)
+            return run
         run = await asyncio.to_thread(
             self._client.latest, type="fc", step=step_hours, param=param,
         )
@@ -329,13 +393,23 @@ class ForecastService:
         logger.info("ECMWF latest run for step=%s param=%s: %s", step_hours, param, run)
         return run
 
+    def _mirror_latest_run(self) -> datetime:
+        import json
+
+        url = f"{self._settings.mirror_url}/latest.json"
+        req = urllib.request.Request(url, headers={"User-Agent": "aiseed-weather/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            latest = json.loads(resp.read().decode("utf-8"))
+        # publisher writes "2026-07-05T12Z"
+        return datetime.strptime(latest["run"], "%Y-%m-%dT%HZ").replace(tzinfo=timezone.utc)
+
     def _cache_path(self, r: ForecastRequest) -> Path:
-        # One bulk file per (cycle, step), kind-agnostic. Hierarchical
-        # layout so a single run gathers all its fields under one
-        # directory and many runs don't crowd a single flat folder.
-        run_dir = self._cache_dir / r.run_time.strftime("%Y%m%d") / r.run_time.strftime("%Hz")
-        run_dir.mkdir(parents=True, exist_ok=True)
-        return run_dir / f"{r.step_hours}h.grib2"
+        # Same layout as the free function grib_cache_path — keep the
+        # two in sync (UI inspects cache state through that function).
+        path = grib_cache_path(self._settings, r.run_time, r.step_hours, r.kind,
+                               source=self.client_source)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
 
     def _download(self, r: ForecastRequest, target: Path) -> None:
         """One HTTPS GET of the bulk per-step file from the user's mirror.
@@ -344,7 +418,10 @@ class ForecastService:
         crash mid-download never leaves a half-cached file that
         ``is_cached`` would mistake for valid.
         """
-        url = _bulk_url(self.client_source, r.run_time, r.step_hours)
+        if self.client_source == "mirror":
+            url = _mirror_pack_url(self._settings.mirror_url, r)
+        else:
+            url = _bulk_url(self.client_source, r.run_time, r.step_hours)
         tmp = target.with_suffix(target.suffix + ".part")
         logger.info("ECMWF bulk GET %s → %s", url, target.name)
         req = urllib.request.Request(
@@ -359,6 +436,34 @@ class ForecastService:
 
 
 def _decode_kind(path: Path, kind: str) -> xr.Dataset:
+    """Open a cached forecast file and return the dataset for the kind.
+
+    Dispatches on the file type: ``.nc`` is a mirror pack (already
+    kind-split NetCDF, see docs/forecast-distribution.md), anything
+    else is a bulk ECMWF Open Data GRIB.
+    """
+    if path.suffix == ".nc":
+        return _decode_pack(path, kind)
+    return _decode_grib(path, kind)
+
+
+def _decode_pack(path: Path, kind: str) -> xr.Dataset:
+    """Open a mirror pack. The file is already the right kind; if the
+    optional ext-tier siblings have been downloaded too, merge them in
+    (core has the chart set, ext the remaining variables/levels)."""
+    parts = [xr.open_dataset(path)]
+    step_part = path.name.split("-")[0]  # "024h"
+    for tier in ("ext", "ext-lv"):
+        sibling = path.with_name(f"{step_part}-{kind}-{tier}.nc")
+        if sibling.exists():
+            parts.append(xr.open_dataset(sibling))
+    ds = xr.merge(parts, compat="override") if len(parts) > 1 else parts[0]
+    if kind == "sfc":
+        ds = _restore_grib_shortnames(ds)
+    return ds
+
+
+def _decode_grib(path: Path, kind: str) -> xr.Dataset:
     """Open a bulk ECMWF Open Data GRIB and return the dataset that
     matches the requested kind.
 
@@ -451,28 +556,49 @@ def _restore_grib_shortnames(ds: xr.Dataset) -> xr.Dataset:
     return ds
 
 
+def _mirror_pack_url(mirror_url: str, r: ForecastRequest) -> str:
+    """URL of one per-(step, kind) core pack on the mirror.
+
+    Layout is fixed by tools/publish_forecast.py:
+    ``runs/{YYYYMMDD}_{HH}z/{step:03d}h-{kind}-core.nc``.
+    """
+    return (
+        f"{mirror_url}/runs/{r.run_time:%Y%m%d_%H}z/"
+        f"{r.step_hours:03d}h-{r.kind}-core.nc"
+    )
+
+
 def grib_cache_path(
     settings: UserSettings,
     run_time: datetime,
     step_hours: int,
-    kind: str = "sfc",  # kept for API compat; bulk file is kind-agnostic
+    kind: str = "sfc",
+    *,
+    source: str | None = None,
 ) -> Path:
-    """Compute the on-disk cache path for one (cycle, step) bulk GRIB.
+    """Compute the on-disk cache path for one (cycle, step) download.
 
     Mirrors :meth:`ForecastService._cache_path` but is a free function
     so UI code can inspect cache state without going through the
     (potentially expensive, requires-network-ready settings) full
-    service object. The ``kind`` argument is accepted for backward
-    compatibility with the per-kind cache layout and is intentionally
-    ignored — every kind shares the same bulk file.
+    service object.
+
+    For ECMWF bulk sources the path is kind-agnostic (every kind shares
+    the one bulk GRIB). For the mirror source the packs are split per
+    kind, so ``kind`` matters. ``source`` overrides the settings-derived
+    source (the service passes its resolved ``client_source``).
     """
-    del kind
-    return (
-        resolved_data_dir(settings) / "ecmwf"
+    if source is None:
+        source = "mirror" if settings.forecast_source == ForecastSource.MIRROR else "bulk"
+    run_dir = (
+        resolved_data_dir(settings)
+        / ("mirror" if source == "mirror" else "ecmwf")
         / run_time.strftime("%Y%m%d")
         / run_time.strftime("%Hz")
-        / f"{step_hours}h.grib2"
     )
+    if source == "mirror":
+        return run_dir / f"{step_hours:03d}h-{kind}-core.nc"
+    return run_dir / f"{step_hours}h.grib2"
 
 
 def is_grib_cached(

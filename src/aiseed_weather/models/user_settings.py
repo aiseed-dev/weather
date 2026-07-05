@@ -26,6 +26,7 @@ class ForecastSource(str, Enum):
     ECMWF_AZURE = "ecmwf_azure"
     ECMWF_GCP = "ecmwf_gcp"
     ECMWF_DIRECT = "ecmwf_direct"
+    MIRROR = "mirror"  # aiseed 再配布パック（docs/forecast-distribution.md）
 
 
 class HistoricalSource(str, Enum):
@@ -48,6 +49,7 @@ class UserSettings:
     reference_period_end: int = 2020
     accept_attribution: bool = False
     data_dir: str | None = None  # None → default user_cache_dir("aiseed-weather")
+    mirror_url: str | None = None  # forecast_source = "mirror" のときの配信 URL
 
     def has_forecast(self) -> bool:
         return self.forecast_source != ForecastSource.NONE
@@ -139,7 +141,19 @@ _TEMPLATE = """\
 #   "ecmwf_direct"  : ECMWF direct (data.ecmwf.int); 500-connection
 #                     limit, often 403s anonymous traffic. Last
 #                     resort only.
+#   "mirror"        : community redistribution packs (int16 NetCDF on
+#                     Cloudflare R2). The core chart set is ~42 MB/step
+#                     instead of the 150 MB bulk GRIB, and the load
+#                     lands on the mirror, not on ECMWF. Requires
+#                     mirror_url below. Serves the core chart layers
+#                     (msl / t2m / wind10m / tp / tcc, and gh,t,u,v,r,w
+#                     at 250/300/500/700/850 hPa); other layers need a
+#                     direct ECMWF source for now.
 forecast_source = "none"
+
+# Required when forecast_source = "mirror": base URL of the pack tree
+# (the directory that contains latest.json).
+# mirror_url = "https://<your-mirror-host>/forecast"
 
 # ---- Historical (past grids, ERA5) ----
 # Options:
@@ -231,6 +245,7 @@ def _enum_field(data: dict, key: str, enum_cls, default):
 
 def _from_mapping(data: dict) -> UserSettings:
     raw_data_dir = data.get("data_dir")
+    raw_mirror_url = data.get("mirror_url")
     return UserSettings(
         forecast_source=_enum_field(
             data, "forecast_source", ForecastSource, _DEFAULTS.forecast_source,
@@ -251,4 +266,5 @@ def _from_mapping(data: dict) -> UserSettings:
             data.get("accept_attribution", _DEFAULTS.accept_attribution),
         ),
         data_dir=str(raw_data_dir) if raw_data_dir else None,
+        mirror_url=str(raw_mirror_url).rstrip("/") if raw_mirror_url else None,
     )
