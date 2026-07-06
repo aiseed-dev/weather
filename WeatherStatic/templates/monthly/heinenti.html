@@ -1,0 +1,58 @@
+{#
+  月別気温ランキング（平年値）。最高/平均/最低の 3 表。
+  コンテキスト: month / low(bool) / tables = [(label, rows[rank,name,pref,slug,value])]
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .month-pager { display: flex; align-items: center; gap: 10px; margin: 10px 10px 0; flex-wrap: wrap; }
+    .month-pager a.pg { padding: 4px 12px; border-radius: 16px; background: var(--accent-light); font-size: 13px; }
+    .month-pager .spacer { flex: 1; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="month-pager">
+    {% set prev = month - 1 if month > 1 else 12 %}
+    {% set next = month + 1 if month < 12 else 1 %}
+    <a class="pg" href="/Monthly/Heinenti{{ "%02d"|format(prev) }}{{ "l" if low }}">&laquo; {{ prev }}月</a>
+    <div id="subnav" class="btn-group" role="group" aria-label="高い順・低い順" style="margin:0">
+        <div class="btn-group" role="group"><a href="/Monthly/Heinenti{{ "%02d"|format(month) }}" class="btn btn-default{{ " active" if not low }}">気温の高い順</a></div>
+        <div class="btn-group" role="group"><a href="/Monthly/Heinenti{{ "%02d"|format(month) }}l" class="btn btn-default{{ " active" if low }}">気温の低い順</a></div>
+    </div>
+    <a class="pg" href="/Monthly/Heinenti{{ "%02d"|format(next) }}{{ "l" if low }}">{{ next }}月 &raquo;</a>
+    <span class="spacer"></span>
+    <a class="pg" href="/Monthly/">月の一覧へ</a>
+</div>
+
+<h2>{{ month }}月の気温ランキング（平年値・{{ "低い順" if low else "高い順" }}） <a href="#info"><span class="glyphicon glyphicon-info-sign"></span></a></h2>
+<p>平年値（1991〜2020年）による {{ month }}月の月平均です。{{ "寒さの目安" if low else "暑さの目安" }}として上位 {{ tables[0][1]|length }} 地点を表示しています。</p>
+
+<div class="rank-grid">
+    {% for label, rows in tables %}
+    <div class="item">
+        <h5>{{ label }}（{{ month }}月平年値）</h5>
+        <table class="wtable">
+            <tbody>
+                <tr><th>順位</th><th>地点</th><th>気温</th></tr>
+                {% for r in rows %}
+                <tr>
+                    <td class="wright">{% if r.rank <= 3 %}<span class="rank-badge r{{ r.rank }}">{{ r.rank }}</span>{% else %}{{ r.rank }}{% endif %}</td>
+                    <td><a href="/Stations/JP/{{ r.slug }}/" title="{{ r.pref }}">{{ r.name }}</a></td>
+                    <td class="wright">{{ r.value }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+</div>
+
+<div id="info">
+    <h5>データについての説明</h5>
+    <p>気象庁の平年値（1991〜2020年の30年平均）による月平均気温のランキングです。同値は同順位。
+       地点名にカーソルを合わせると都道府県が表示され、クリックで観測所情報ページへ移動します。
+       出典: 気象庁ホームページの公開データを加工して作成。</p>
+</div>
+{% endblock %}

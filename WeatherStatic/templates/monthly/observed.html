@@ -1,0 +1,39 @@
+{#
+  実測の月間気温ランキング（直近の完結月）。
+  コンテキスト: obs_label / n_stations / tables = [(label, rows)]
+#}
+{% extends "_layout.html" %}
+
+{% block content %}
+<h2>{{ obs_label }}の気温ランキング（実測） <a href="#info"><span class="glyphicon glyphicon-info-sign"></span></a></h2>
+<p>当サイトが蓄積している日別観測値から集計した {{ obs_label }}の月平均です（対象 {{ n_stations }} 地点）。
+   <a href="/Monthly/">平年値の月別ランキング</a>もどうぞ。</p>
+
+<div class="rank-grid">
+    {% for label, rows in tables %}
+    <div class="item">
+        <h5>{{ label }}の月平均</h5>
+        <table class="wtable">
+            <tbody>
+                <tr><th>順位</th><th>地点</th><th>気温</th></tr>
+                {% for r in rows %}
+                <tr>
+                    <td class="wright">{% if r.rank <= 3 %}<span class="rank-badge r{{ r.rank }}">{{ r.rank }}</span>{% else %}{{ r.rank }}{% endif %}</td>
+                    <td><a href="/Stations/JP/{{ r.slug }}/" title="{{ r.pref }}">{{ r.name }}</a></td>
+                    <td class="wright">{{ r.value }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endfor %}
+</div>
+
+<div id="info">
+    <h5>データについての説明</h5>
+    <p>気象庁アメダスの毎正時観測から当サイトが独自に集計した月平均値です（欠測 2 日まで許容）。
+       気象庁の公式統計値とは丸めや欠測の扱いで一致しない場合があります。
+       観測データの蓄積に合わせて対象地点は増えていきます。
+       出典: 気象庁ホームページの公開データを加工して作成。</p>
+</div>
+{% endblock %}

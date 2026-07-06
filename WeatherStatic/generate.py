@@ -78,6 +78,22 @@ def load_normals(code: int) -> dict | None:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+_SLUG_BY_AMEDAS: dict[str, str] = {}
+
+
+def station_slug(rec: dict) -> str:
+    """Stations/JP・Climate/Chart 共通の URL slug。
+
+    climate_targets() が衝突解決済みの slug を _SLUG_BY_AMEDAS に登録する
+    （main() の先頭で必ず計算される）。未登録地点はリンク先ページ自体が
+    無いので、素の小文字化で返す（リンクは生成側で張らないこと）。
+    """
+    s = _SLUG_BY_AMEDAS.get(str(rec.get("amedas")))
+    if s:
+        return s
+    return (rec.get("place") or rec.get("en") or "").lower().replace(" ", "-")
+
+
 def normal_daily(code: int, elem: str, d: date) -> int | None:
     nml = load_normals(code)
     if nml is None:
@@ -305,7 +321,7 @@ def build_highsmain(env: Environment, today: dict, meta: dict, fc: dict,
             season_val, season_date = hist.extreme(
                 "tmax", rec["row"], start.date(), end.date(), highest=False)
         cities.append({
-            "name": rec["name"], "place": rec.get("place", ""),
+            "name": rec["name"], "place": station_slug(rec),
             "tmax": tmax,
             "tmax_bg": bcolor(tmax - nml) if (tmax is not None and nml is not None) else "#FFFFFF",
             "fc_tmax": fc_tmax,
@@ -366,7 +382,7 @@ def build_lowsmain(env: Environment, today: dict, meta: dict, fc: dict,
         else:        # 冬: 今季の最低気温
             season_val, season_date = t.get("year_tmin"), t.get("year_tmin_date")
         cities.append({
-            "name": rec["name"], "place": rec.get("place", ""),
+            "name": rec["name"], "place": station_slug(rec),
             "tmin": tmin,
             "tmin_bg": bcolor(tmin - nml) if (tmin is not None and nml is not None) else "#FFFFFF",
             "fc_tmin": fc_tmin,
@@ -439,7 +455,7 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         cities.append({
             "code": code, "amedas": rec["amedas"],
             "lat": rec["lat"], "lon": rec["lon"],
-            "name": rec["name"], "place": rec.get("place", ""),
+            "name": rec["name"], "place": station_slug(rec),
             "cur_temp": cur.get("temp"),
             "cur_wthr": cur.get("wthr"),
             "cur_wcode": cur.get("wcode"),
@@ -580,7 +596,7 @@ def build_lists(env: Environment, today: dict, meta: dict,
             ls_val, ls_date = t.get("year_tmin"), t.get("year_tmin_date")
         g["stations"].append({
             "amedas": rec["amedas"], "name": rec["name"],
-            "place": rec.get("place") or rec.get("en") or "",
+            "place": station_slug(rec),
             "tmax": t.get("tmax"),
             "tmax_bg": bcolor(t["tmax"] - nml_tmax)
                        if (t.get("tmax") is not None and nml_tmax is not None) else "#FFFFFF",
@@ -640,7 +656,7 @@ def build_rankings(env: Environment, today: dict, meta: dict, stations: dict) ->
             out.append({
                 "rank": rank,
                 "pref": rec["pref"], "name": rec["name"],
-                "place": rec.get("place") or rec.get("en") or "",
+                "place": station_slug(rec),
                 "temp_str": f"{val / 10:.1f}", "at": at,
             })
         return out
@@ -732,7 +748,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
                 break
             code, rec = temp_st[oi]
             out.append({"rank": rank, "name": rec["pref"] + rec["name"],
-                        "place": rec.get("place") or rec.get("en") or "",
+                        "place": station_slug(rec),
                         "val": fmt(v)})
         return out
 
@@ -752,7 +768,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         return f"{v / 10:.1f}"
 
     def place_of(rec):
-        return rec.get("place") or rec.get("en") or ""
+        return station_slug(rec)
 
     common = {"nav_active": "ranking", "build_year": now.year,
               "region_filters": [(k, n) for k, n, _, _ in REGIONS]}
@@ -925,9 +941,19 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
 
 # ---------------------------------------------------------------- ページ: 雨温図
 
-def build_climate(env: Environment, stations: dict) -> None:
-    """雨温図: 一覧＋地点ごとのグラフページ＋比較用データ JSON（平年値マスターから生成）。"""
-    # 対象: 月別平年値（気温・降水量）が 12 か月そろっている地点
+_CLIMATE_TARGETS: list | None = None
+
+
+def climate_targets(stations: dict) -> list:
+    """月別平年値（気温・降水量）が 12 か月そろっている地点と一意 slug。
+
+    Climate（雨温図）と Stations/JP（観測所ページ）が同じ slug 空間を
+    共有するための単一の真実。slug の衝突解決は挿入順に依存するので、
+    候補集合と並び順をここで固定する。結果はプロセス内でキャッシュ。
+    """
+    global _CLIMATE_TARGETS
+    if _CLIMATE_TARGETS is not None:
+        return _CLIMATE_TARGETS
     targets = []
     slugs_seen: dict[str, int] = {}
     st_items = [(int(c), r) for c, r in stations["stations"].items()]
@@ -946,7 +972,14 @@ def build_climate(env: Environment, stations: dict) -> None:
         slugs_seen[base] = n + 1
         slug = base if n == 0 else f"{base}-{code}"   # 同名ローマ字の衝突は code で区別
         targets.append((code, rec, nml, slug))
+        _SLUG_BY_AMEDAS[str(rec.get("amedas"))] = slug
+    _CLIMATE_TARGETS = targets
+    return targets
 
+
+def build_climate(env: Environment, stations: dict) -> None:
+    """雨温図: 一覧＋地点ごとのグラフページ＋比較用データ JSON（平年値マスターから生成）。"""
+    targets = climate_targets(stations)
     print(f"  [climate] 対象 {len(targets)} 地点")
     if not targets:
         return
@@ -1031,6 +1064,212 @@ def build_climate(env: Environment, stations: dict) -> None:
     print(f"  [html] Climate/Chart/*  ({n} 地点)")
 
 
+# ---------------------------------------------------------------- ページ: 観測地点 (Stations)
+
+def _disp10(v) -> str:
+    return f"{v / 10:.1f}" if v is not None else "-"
+
+
+def build_stations(env: Environment, stations: dict, hist: History) -> None:
+    """観測地点: 都道府県別一覧 + 地点ごとの観測所情報ページ (Stations/JP)。"""
+    targets = [(c, r, n, s) for c, r, n, s in climate_targets(stations)
+               if r["elements"].get("temp")]
+    if not targets:
+        return
+
+    prec_names: dict[int, str] = {}
+    by_prec: dict[int, list] = {}
+    for code, rec, nml, slug in targets:
+        prec = rec.get("etrn", {}).get("prec_no", 99)
+        prec_names.setdefault(prec, rec["pref"])
+        by_prec.setdefault(prec, []).append(
+            {"slug": slug, "name": rec["name"], "is_kansho": bool(rec.get("intl"))})
+
+    groups = [{"prec_no": p, "pref": prec_names[p], "region": region_of(p),
+               "stations": by_prec[p]} for p in sorted(by_prec)]
+    write("Stations/index.html", env.get_template("stations/index.html").render(
+        page_title="気温の観測地点一覧（観測所情報）",
+        nav_active="station", build_year=datetime.now().year,
+        region_filters=[(k, n) for k, n, _, _ in REGIONS], groups=groups))
+
+    # 地点ページ: 直近 30 日の実測 vs 平年値
+    from weatherlib.svgchart import timeseries_svg
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=29)
+    n_days = 30
+    n_pages = 0
+    for code, rec, nml, slug in targets:
+        obs = {v: hist.series(v, rec["row"], start, end) for v in ("tmax", "tavg", "tmin")}
+        nml_series: dict[str, list] = {"tmax": [], "tmin": []}
+        for i in range(n_days):
+            d = start + timedelta(days=i)
+            md = nml["daily"].get(str(d.month), {})
+            for v in nml_series:
+                arr = md.get(v)
+                nml_series[v].append(arr[d.day - 1] if arr and len(arr) >= d.day else None)
+        svg = timeseries_svg(f"{rec['name']} 直近30日の気温", start, [
+            {"color": "#f5b7a8", "values": nml_series["tmax"], "dash": "5 4", "width": 1.2},
+            {"color": "#aab4f0", "values": nml_series["tmin"], "dash": "5 4", "width": 1.2},
+            {"color": "#F92500", "values": obs["tmax"], "width": 2, "r": 2},
+            {"color": "#008000", "values": obs["tavg"], "width": 1.5},
+            {"color": "#0C00CC", "values": obs["tmin"], "width": 2, "r": 2},
+        ], width=720, height=320)
+        has_obs = any(x is not None for s in obs.values() for x in s)
+
+        mo = nml["monthly"]
+        year = mo.get("year", {})
+        etrn = rec.get("etrn", {})
+        php = "nml_sfc_ym" if rec.get("intl") else "nml_amd_ym"
+        st = {
+            "slug": slug, "name": rec["name"], "kana": rec.get("kana", ""),
+            "en": rec.get("en", ""), "pref": rec["pref"],
+            "is_kansho": bool(rec.get("intl")), "intl": rec.get("intl"),
+            "amedas": rec["amedas"], "lat": rec.get("lat"), "lon": rec.get("lon"),
+            "alt": rec.get("alt"), "main": rec.get("main"),
+            "year_tavg": _disp10(year.get("tavg")), "year_tmax": _disp10(year.get("tmax")),
+            "year_tmin": _disp10(year.get("tmin")), "year_precip": _disp10(year.get("precip")),
+            "year_sun": _disp10(year.get("sun")),
+            "elements": rec.get("elements", {}),
+            "etrn_url": (f"https://www.data.jma.go.jp/stats/etrn/view/{php}.php"
+                         f"?prec_no={etrn.get('prec_no', '')}&block_no={etrn.get('block_no', '')}"
+                         "&year=&month=&day=&view="),
+            "gsi_url": (f"https://maps.gsi.go.jp/#13/{rec.get('lat')}/{rec.get('lon')}/"
+                        if rec.get("lat") else None),
+            "monthly_rows": [
+                {"m": m + 1,
+                 "tmax": _disp10((mo.get("tmax") or [None] * 12)[m]),
+                 "tavg": _disp10((mo.get("tavg") or [None] * 12)[m]),
+                 "tmin": _disp10((mo.get("tmin") or [None] * 12)[m]),
+                 "precip": _disp10((mo.get("precip") or [None] * 12)[m]),
+                 "sun": _disp10((mo.get("sun") or [None] * 12)[m])}
+                for m in range(12)],
+        }
+        html = env.get_template("stations/jp.html").render(
+            page_title=f"{st['pref']} {st['name']}の気温、降水量、観測所情報",
+            nav_active="station", build_year=datetime.now().year,
+            st=st, st_svg=svg, has_obs=has_obs,
+            period_label=f"{start.month}/{start.day}〜{end.month}/{end.day}",
+            kennai=by_prec[rec.get("etrn", {}).get("prec_no", 99)])
+        out = PUBLIC / "Stations" / "JP" / slug / "index.html"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(html, encoding="utf-8")
+        n_pages += 1
+    print(f"  [html] Stations/JP/*  ({n_pages} 地点)")
+
+
+# ---------------------------------------------------------------- ページ: 月別気温ランキング (Monthly)
+
+def build_monthly(env: Environment, stations: dict, hist: History) -> None:
+    """月別気温ランキング: 平年値 12 か月 × 高低 + 実測の直近月。"""
+    targets = [(c, r, n, s) for c, r, n, s in climate_targets(stations)
+               if r["elements"].get("temp")]
+    if not targets:
+        return
+    top_n = 60
+
+    def ranking(var: str, m: int, low: bool) -> list[dict]:
+        rows = []
+        for code, rec, nml, slug in targets:
+            vals = nml["monthly"].get(var)
+            if not vals or vals[m] is None:
+                continue
+            rows.append((vals[m], rec, slug))
+        rows.sort(key=lambda x: x[0], reverse=not low)
+        out, prev, rank = [], None, 0
+        for i, (v, rec, slug) in enumerate(rows[:top_n], 1):
+            rank = rank if v == prev else i    # 同値は同順位
+            prev = v
+            out.append({"rank": rank, "name": rec["name"], "pref": rec["pref"],
+                        "slug": slug, "value": _disp10(v)})
+        return out
+
+    # 平年値ランキング 12 か月 × 高低
+    for m in range(12):
+        for low in (False, True):
+            html = env.get_template("monthly/heinenti.html").render(
+                page_title=f"{m + 1}月の気温ランキング（平年値・{'低い順' if low else '高い順'}）",
+                nav_active="monthly", build_year=datetime.now().year,
+                month=m + 1, low=low,
+                tables=[("最高気温", ranking("tmax", m, low)),
+                        ("平均気温", ranking("tavg", m, low)),
+                        ("最低気温", ranking("tmin", m, low))])
+            write(f"Monthly/Heinenti{m + 1:02d}{'l' if low else ''}/index.html", html)
+
+    # 実測の直近完結月（nc の日別値から月平均を計算）
+    first_this = date.today().replace(day=1)
+    obs_end = first_this - timedelta(days=1)
+    obs_start = obs_end.replace(day=1)
+    obs_label = f"{obs_start.year}年{obs_start.month}月"
+    obs_tables, obs_n_stations = [], 0
+    import numpy as np
+    from weatherlib.ncstore import FILL
+    row_map = {r["row"]: (int(c), r) for c, r in stations["stations"].items()}
+    slug_map = {c: s for c, r, n, s in targets}
+    need = (obs_end - obs_start).days + 1
+    for var, label in (("tmax", "最高気温"), ("tavg", "平均気温"), ("tmin", "最低気温")):
+        mat = hist.matrix(var, obs_start, obs_end)
+        if mat is None:
+            continue
+        ok = mat != FILL
+        valid = ok.sum(axis=1)
+        means = np.where(ok, mat, 0).sum(axis=1) / np.maximum(valid, 1)
+        rows = []
+        for row_i in np.where(valid >= need - 2)[0]:   # 欠測 2 日まで許容
+            code, rec = row_map.get(int(row_i), (None, None))
+            if rec is None or code not in slug_map:
+                continue
+            rows.append((float(means[row_i]), rec, slug_map[code]))
+        rows.sort(key=lambda x: x[0], reverse=True)
+        obs_n_stations = max(obs_n_stations, len(rows))
+        obs_tables.append((label, [
+            {"rank": i, "name": rec["name"], "pref": rec["pref"], "slug": slug,
+             "value": f"{v / 10:.1f}"}
+            for i, (v, rec, slug) in enumerate(rows[:top_n], 1)]))
+    if obs_n_stations:
+        write("Monthly/Latest/index.html", env.get_template("monthly/observed.html").render(
+            page_title=f"{obs_label}の気温ランキング（実測）",
+            nav_active="monthly", build_year=datetime.now().year,
+            obs_label=obs_label, n_stations=obs_n_stations, tables=obs_tables))
+
+    # ハブ
+    write("Monthly/index.html", env.get_template("monthly/index.html").render(
+        page_title="月別の気温ランキング",
+        nav_active="monthly", build_year=datetime.now().year,
+        months=list(range(1, 13)), this_month=date.today().month,
+        obs_label=obs_label if obs_n_stations else None,
+        obs_n_stations=obs_n_stations))
+
+
+# ---------------------------------------------------------------- ページ: 降水量ランキング (Precipitation)
+
+def build_precipitation(env: Environment, stations: dict) -> None:
+    """年降水量（平年値）ランキング。降水量平年値のある全地点。"""
+    rows = []
+    for code, rec, nml, slug in climate_targets(stations):
+        v = nml["monthly"].get("year", {}).get("precip")
+        if v is None:
+            continue
+        prec = rec.get("etrn", {}).get("prec_no", 99)
+        rows.append({"value": v, "name": rec["name"], "pref": rec["pref"],
+                     "slug": slug if rec["elements"].get("temp") else None,
+                     "region": region_of(prec),
+                     "is_kansho": bool(rec.get("intl"))})
+    if not rows:
+        return
+    rows.sort(key=lambda r: r["value"], reverse=True)
+    vmax = rows[0]["value"]
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+        r["disp"] = f"{r['value'] / 10:,.1f}"
+        r["bar"] = round(100 * r["value"] / vmax, 1)
+    write("Precipitation/index.html", env.get_template("precipitation/index.html").render(
+        page_title="年降水量（平年値）ランキング",
+        nav_active="precipitation", build_year=datetime.now().year,
+        region_filters=[(k, n) for k, n, _, _ in REGIONS],
+        top=rows[:3], rows=rows, least=list(reversed(rows[-30:])),
+        n_stations=len(rows)))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clean", action="store_true", help="public/ を作り直す")
@@ -1060,6 +1299,7 @@ def main() -> None:
     today, meta = load_today()
     fc = load_forecast()
     stations = load_stations()
+    climate_targets(stations)   # slug 表を先に確定（station_slug が全ページで使う）
     hist = History()
     try:
         build_highsmain(env, today, meta, fc, stations, hist)
@@ -1068,6 +1308,9 @@ def main() -> None:
         build_rankings(env, today, meta, stations)
         build_season_pages(env, meta, stations, hist)
         build_climate(env, stations)
+        build_stations(env, stations, hist)
+        build_monthly(env, stations, hist)
+        build_precipitation(env, stations)
         build_home(env, today, meta, fc, stations, hist)
     finally:
         hist.close()

@@ -1,0 +1,33 @@
+{#
+  気温観測地点の一覧（都道府県別＋地方フィルタ）。Stations/JP への入口。
+  コンテキスト: groups … [{prec_no, pref, region, stations: [{slug, name, is_kansho}]}]
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .obslist ul { list-style: none; padding-left: 10px; margin: 4px 0 10px; }
+    .obslist li { display: inline-block; margin: 2px 10px 2px 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>気温の観測地点一覧（観測所情報）</h2>
+<p>地点名をクリックすると、観測所の情報（所在地・標高・年間の平年値）と直近 30 日の気温グラフを表示します。
+   * はアメダス観測点です。</p>
+
+{% include "partials/_region_filter.html" %}
+
+{% for g in groups %}
+<div class="pref-group" data-region="{{ g.region }}">
+<h4>{{ g.pref }}</h4>
+<div class="obslist">
+    <ul>
+        {% for s in g.stations %}
+        <li><a href="/Stations/JP/{{ s.slug }}/">{{ s.name }}</a>{{ "" if s.is_kansho else "*" }}</li>
+        {% endfor %}
+    </ul>
+</div>
+</div>
+{% endfor %}
+{% endblock %}

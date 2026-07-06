@@ -168,8 +168,9 @@ def timeseries_svg(title: str, start: date, series: list[dict],
             pts = [(px, y(v)) for px, v in run]
             path = " ".join((f"M{px:.1f},{py:.1f}" if i == 0 else f"L{px:.1f},{py:.1f}")
                             for i, (px, py) in enumerate(pts))
+            dash = f' stroke-dasharray="{s["dash"]}"' if s.get("dash") else ""
             e.append(f'<path d="{path}" fill="none" stroke="{s["color"]}" '
-                     f'stroke-width="{s.get("width", 1.4)}"/>')
+                     f'stroke-width="{s.get("width", 1.4)}"{dash}/>')
             if s.get("r"):
                 for px, v in run:
                     e.append(f'<circle cx="{px:.1f}" cy="{y(v):.1f}" r="{s["r"]}" '

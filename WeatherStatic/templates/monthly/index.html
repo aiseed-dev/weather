@@ -1,0 +1,52 @@
+{#
+  月別気温ランキングのハブ。12 か月のカード + 実測直近月へのリンク。
+  コンテキスト: months(1..12) / this_month / obs_label / obs_n_stations
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .month-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                  gap: 12px; margin: 14px 10px; }
+    .month-card { background: #fff; border: 1px solid var(--border); border-radius: 12px;
+                  padding: 12px 14px; box-shadow: 0 1px 4px rgba(30,60,90,.06); text-align: center; }
+    .month-card.now { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
+    .month-card .m { font-size: 22px; font-weight: 700; color: var(--accent-dark); }
+    .month-card .links { margin-top: 6px; display: flex; gap: 6px; justify-content: center; }
+    .month-card .links a { font-size: 12.5px; padding: 3px 10px; border-radius: 14px;
+                           background: var(--accent-light); }
+    .obs-card { background: linear-gradient(160deg, #fffdf4, #fff7df); border: 1px solid #e8d9a0;
+                border-radius: 12px; padding: 14px 18px; margin: 16px 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>月別の気温ランキング</h2>
+<p>各月の平年値（1991〜2020年）による全国の気温ランキングです。「暑い」で高い順、「寒い」で低い順を表示します。</p>
+
+<div class="month-grid">
+    {% for m in months %}
+    <div class="month-card{{ " now" if m == this_month }}">
+        <div class="m">{{ m }}月</div>
+        <div class="links">
+            <a href="/Monthly/Heinenti{{ "%02d"|format(m) }}">暑い</a>
+            <a href="/Monthly/Heinenti{{ "%02d"|format(m) }}l">寒い</a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if obs_label %}
+<div class="obs-card">
+    <h4 style="margin-top:0">実測ランキング</h4>
+    <p style="margin-bottom:6px">日々の観測値から集計した <a href="/Monthly/Latest"><b>{{ obs_label }}の気温ランキング（実測・{{ obs_n_stations }} 地点）</b></a> も見られます。</p>
+    <p style="color:#897; font-size:12.5px; margin:0">観測データの蓄積に合わせて対象地点が増えていきます。</p>
+</div>
+{% endif %}
+
+<div id="info">
+    <h5>データについての説明</h5>
+    <p>平年値は気象庁の 1991〜2020 年平均です。実測ランキングは当サイトが蓄積している
+       日別観測値から月平均を計算したものです。出典: 気象庁ホームページの公開データを加工して作成。</p>
+</div>
+{% endblock %}

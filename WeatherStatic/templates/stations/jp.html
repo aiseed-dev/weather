@@ -1,0 +1,119 @@
+{#
+  地点別の観測所情報ページ（旧 Stations/JP 相当）。
+  コンテキスト: st(地点情報) / st_svg(直近30日SVG) / has_obs / period_label / kennai
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .st-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 4px 10px 0; }
+    .st-head .kana { color: #789; font-size: 13px; }
+    .st-badge { font-size: 11.5px; padding: 2px 10px; border-radius: 12px;
+                background: var(--accent-light); color: var(--accent-dark); font-weight: 600; }
+    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+                 gap: 12px; margin: 12px 10px; }
+    .info-card { background: #fff; border: 1px solid var(--border); border-radius: 12px;
+                 padding: 12px 16px; box-shadow: 0 1px 4px rgba(30,60,90,.06); }
+    .info-card h5 { margin: 0 0 8px; color: var(--accent-dark); font-weight: 700; }
+    .info-card dl { margin: 0; }
+    .info-card dt { float: left; clear: left; width: 7em; color: #789; font-weight: 400; font-size: 13px; padding: 2px 0; }
+    .info-card dd { margin-left: 7.4em; font-size: 13.5px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+    .chart-card { background: #fff; border: 1px solid var(--border); border-radius: 12px;
+                  padding: 10px 12px; margin: 12px 10px; box-shadow: 0 1px 4px rgba(30,60,90,.06); }
+    .legend { font-size: 12px; color: #567; margin: 2px 6px 6px; }
+    .legend b { font-weight: 600; }
+    .lg-tmax { color: #F92500 } .lg-tavg { color: #008000 } .lg-tmin { color: #0C00CC }
+    .lg-nml { color: #99a; }
+    .kennai-list ul { list-style: none; padding-left: 6px; }
+    .kennai-list li { display: inline-block; margin: 2px 10px 2px 0; }
+    .action-links { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 10px; }
+    .action-links a { padding: 6px 14px; border-radius: 18px; background: var(--accent-light);
+                      color: var(--accent-dark); font-size: 13px; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="st-head">
+    <h2 style="margin:6px 0">{{ st.pref }} {{ st.name }}の気温、降水量、観測所情報</h2>
+</div>
+<div class="st-head">
+    {% if st.kana %}<span class="kana">{{ st.kana }} / {{ st.en }}</span>{% endif %}
+    <span class="st-badge">{{ "気象官署・特別地域気象観測所" if st.is_kansho else "アメダス" }}</span>
+    {% if st.main %}<span class="st-badge">主要都市</span>{% endif %}
+</div>
+
+<div class="info-grid">
+    <div class="info-card">
+        <h5>観測所</h5>
+        <dl>
+            {% if st.intl %}<dt>国際地点番号</dt><dd>{{ st.intl }}</dd>{% endif %}
+            <dt>アメダス番号</dt><dd>{{ st.amedas }}</dd>
+            <dt>緯度・経度</dt><dd>{% if st.gsi_url %}<a href="{{ st.gsi_url }}" target="_blank" rel="noopener">{{ st.lat }}, {{ st.lon }}</a>{% else %}-{% endif %}</dd>
+            <dt>標高</dt><dd>{{ st.alt if st.alt is not none else "-" }} m</dd>
+        </dl>
+    </div>
+    <div class="info-card">
+        <h5>年間の平年値（1991〜2020年）</h5>
+        <dl>
+            <dt>平均気温</dt><dd>{{ st.year_tavg }} ℃</dd>
+            <dt>最高気温</dt><dd>{{ st.year_tmax }} ℃</dd>
+            <dt>最低気温</dt><dd>{{ st.year_tmin }} ℃</dd>
+            <dt>年降水量</dt><dd>{{ st.year_precip }} mm</dd>
+            <dt>年間日照時間</dt><dd>{{ st.year_sun }} 時間</dd>
+        </dl>
+    </div>
+</div>
+
+<div class="chart-card">
+    <h4 style="margin:4px 6px">直近 30 日の気温（{{ period_label }}）</h4>
+    <div class="legend">
+        実線: 実測 <b class="lg-tmax">最高</b> / <b class="lg-tavg">平均</b> / <b class="lg-tmin">最低</b>
+        　点線: <b class="lg-nml">平年値（最高・最低）</b>
+    </div>
+    {% if not has_obs %}
+    <p style="color:#987; font-size:13px; margin:4px 8px">この地点の観測値はまだ蓄積が始まったばかりです。点線（平年値）を目安にご覧ください。</p>
+    {% endif %}
+    {{ st_svg | safe }}
+</div>
+
+<div class="action-links">
+    <a href="/Climate/Chart/{{ st.slug }}/">雨温図（月別の気温と降水量）</a>
+    <a href="{{ st.etrn_url }}" target="_blank" rel="noopener">気象庁の平年値ページ</a>
+    <a href="/Stations/">地点一覧へ</a>
+</div>
+
+<h4 style="margin:14px 10px 4px">月別の平年値</h4>
+<div class="table-responsive">
+<table class="wtable">
+    <tbody>
+        <tr><th>月</th><th>最高気温<br>(℃)</th><th>平均気温<br>(℃)</th><th>最低気温<br>(℃)</th><th>降水量<br>(mm)</th><th>日照時間<br>(h)</th></tr>
+        {% for r in st.monthly_rows %}
+        <tr>
+            <td class="wcenter">{{ r.m }}月</td>
+            <td class="wright">{{ r.tmax }}</td>
+            <td class="wright">{{ r.tavg }}</td>
+            <td class="wright">{{ r.tmin }}</td>
+            <td class="wright">{{ r.precip }}</td>
+            <td class="wright">{{ r.sun }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<h4 style="margin:14px 10px 4px">{{ st.pref }}の観測地点</h4>
+<div class="kennai-list">
+    <ul>
+        {% for s in kennai %}
+        <li>{% if s.slug == st.slug %}<b>{{ s.name }}</b>{% else %}<a href="/Stations/JP/{{ s.slug }}/">{{ s.name }}</a>{% endif %}{{ "" if s.is_kansho else "*" }}</li>
+        {% endfor %}
+    </ul>
+</div>
+
+<div id="info">
+    <h5>データについての説明</h5>
+    <p>平年値は気象庁の 1991〜2020 年の 30 年平均です。直近 30 日の実測値は当サイトが
+       気象庁アメダスの観測から独自に集計したもので、公式統計と異なる場合があります。
+       出典: 気象庁ホームページの公開データを加工して作成。</p>
+</div>
+{% endblock %}

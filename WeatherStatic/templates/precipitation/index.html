@@ -1,0 +1,82 @@
+{#
+  年降水量（平年値）ランキング。全地点（平年値あり）を多い順に一覧。
+  コンテキスト: top(上位3) / rows(全件, rank・disp・bar%・region・slug) / least(少ない順30) / n_stations
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .ptable td.bar-cell { min-width: 180px; }
+    .pbar { display: flex; align-items: center; gap: 8px; }
+    .pbar .track { flex: 1; height: 8px; border-radius: 4px; background: #eef2f6; overflow: hidden; }
+    .pbar .fill { height: 100%; border-radius: 4px;
+                  background: linear-gradient(90deg, #7ec8ff, #1987e5); }
+    .pbar .num { min-width: 5.2em; text-align: right; font-variant-numeric: tabular-nums; }
+    .top-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+                 gap: 14px; margin: 14px 10px; }
+    .top-cards .card { background: #fff; border: 1px solid var(--border); border-radius: 12px;
+                       padding: 14px 16px; box-shadow: 0 1px 4px rgba(30,60,90,.06); }
+    .top-cards .card .place { font-size: 15px; font-weight: 700; margin: 4px 0 2px; }
+    .top-cards .card .val { font-size: 22px; font-weight: 700; color: #1266b3; }
+    .top-cards .card .unit { font-size: 12px; color: #789; }
+    .least-note { color: #789; font-size: 12.5px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>年降水量（平年値）ランキング <a href="#info"><span class="glyphicon glyphicon-info-sign"></span></a></h2>
+<p>全国 {{ n_stations }} 地点の年降水量の平年値（1991〜2020年）を多い順に並べています。</p>
+
+<div class="top-cards">
+    {% for r in top %}
+    <div class="card">
+        <span class="rank-badge r{{ loop.index }}">{{ loop.index }}</span>
+        <div class="place">{{ r.pref }} {% if r.slug %}<a href="/Stations/JP/{{ r.slug }}/">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</div>
+        <div class="val">{{ r.disp }}<span class="unit"> mm/年</span></div>
+    </div>
+    {% endfor %}
+</div>
+
+{% include "partials/_region_filter.html" %}
+
+<div class="table-responsive">
+<table class="wtable ptable">
+    <tbody>
+        <tr><th>順位</th><th>地点</th><th>都道府県</th><th class="bar-cell">年降水量 (mm)</th></tr>
+        {% for r in rows %}
+        <tr class="pref-group" data-region="{{ r.region }}">
+            <td class="wright">{% if r.rank <= 3 %}<span class="rank-badge r{{ r.rank }}">{{ r.rank }}</span>{% else %}{{ r.rank }}{% endif %}</td>
+            <td>{% if r.slug %}<a href="/Stations/JP/{{ r.slug }}/">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}{{ "" if r.is_kansho else "*" }}</td>
+            <td>{{ r.pref }}</td>
+            <td class="bar-cell"><div class="pbar"><div class="track"><div class="fill" style="width:{{ r.bar }}%"></div></div><span class="num">{{ r.disp }}</span></div></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<h3 id="least">少ない順（下位 {{ least|length }} 地点）</h3>
+<p class="least-note">雨の少ない土地の目安です。1 位が全国で最も年降水量が少ない地点。</p>
+<div class="table-responsive">
+<table class="wtable">
+    <tbody>
+        <tr><th>順位</th><th>地点</th><th>都道府県</th><th>年降水量 (mm)</th></tr>
+        {% for r in least %}
+        <tr>
+            <td class="wright">{{ loop.index }}</td>
+            <td>{% if r.slug %}<a href="/Stations/JP/{{ r.slug }}/">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}{{ "" if r.is_kansho else "*" }}</td>
+            <td>{{ r.pref }}</td>
+            <td class="wright">{{ r.disp }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+
+<div id="info">
+    <h5>データについての説明</h5>
+    <p>気象庁の平年値（1991〜2020年の30年平均）による年降水量です。* はアメダス観測点、
+       無印は気象台・特別地域気象観測所です。地点名をクリックすると観測所情報ページへ移動します。
+       出典: 気象庁ホームページの公開データを加工して作成。</p>
+</div>
+{% endblock %}
