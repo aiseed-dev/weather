@@ -74,5 +74,58 @@ def main() -> int:
     return 0
 
 
+
+
+# ---- Cloudflare KV モード（Workers 版ビーコン。workers/vote/worker.js 参照）----
+# 使い方: CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID / VOTES_KV_NAMESPACE_ID を
+# 環境変数か ~/.config/cloudflare/pages.env に置き、`aggregate_votes.py --kv`。
+# キー v:{date}:{code}:{iphash} を votes_raw に INSERT OR IGNORE で取り込む。
+
+def main_kv() -> int:
+    import json
+    import os
+    import urllib.request
+
+    envf = Path.home() / ".config" / "cloudflare" / "pages.env"
+    if envf.is_file():
+        for line in envf.read_text().splitlines():
+            if "=" in line and not line.startswith("#"):
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+    token = os.environ.get("CLOUDFLARE_API_TOKEN")
+    acct = os.environ.get("CLOUDFLARE_ACCOUNT_ID")
+    ns = os.environ.get("VOTES_KV_NAMESPACE_ID")
+    if not (token and acct and ns):
+        print("CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID / VOTES_KV_NAMESPACE_ID が必要")
+        return 1
+    base = f"https://api.cloudflare.com/client/v4/accounts/{acct}/storage/kv/namespaces/{ns}"
+
+    def api(path):
+        req = urllib.request.Request(base + path, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.read().decode()
+
+    conn = open_store(SQLITE)
+    n_new = 0
+    cursor = ""
+    while True:
+        page = json.loads(api(f"/keys?prefix=v%3A&limit=1000&cursor={cursor}"))
+        for k in page["result"]:
+            _, d, code, iph = k["name"].split(":", 3)
+            v = api(f"/values/{k['name']}").strip()
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO votes_raw (ip_hash, date, code, v) VALUES (?,?,?,?)",
+                (iph, d, int(code), int(v)))
+            n_new += cur.rowcount
+        cursor = page.get("result_info", {}).get("cursor") or ""
+        if not cursor:
+            break
+    conn.commit()
+    print(f"KV 取り込み: 新規 {n_new} 票")
+    conn.close()
+    return 0
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    import sys as _s
+    _s.exit(main_kv() if "--kv" in _s.argv else main())

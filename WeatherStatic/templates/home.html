@@ -281,7 +281,7 @@ function markVoted(code) {
 function vote(code, v, el) {
     var key = 'cvote-' + todayStr() + '-' + code;
     try { if (localStorage.getItem(key)) { markVoted(code); return; } } catch (e) {}
-    new Image().src = '/vote.gif?d=' + todayStr() + '&c=' + code + '&v=' + v + '&_=' + Date.now();
+    new Image().src = '{{ vote_url }}?d=' + todayStr() + '&c=' + code + '&v=' + v + '&_=' + Date.now();
     try { localStorage.setItem(key, String(v)); } catch (e) {}
     markVoted(code);
 }

@@ -530,7 +530,9 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         "page_header": "気温と雨量の統計のページ",
         "build_year": now.year,
     }
-    html = env.get_template("home.html").render(**context)
+    import os as _os
+    html = env.get_template("home.html").render(
+        vote_url=_os.environ.get("WEATHER_VOTE_URL", "/vote.gif"),**context)
     write("index.html", html)
 
 
