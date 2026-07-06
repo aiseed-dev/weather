@@ -1,0 +1,110 @@
+{#
+  数値予報チャート（旧 Gfs セクションの後継）。charts/latest.json を 1 回 fetch し、
+  モデル切替（ECMWF 既定 / GFS / アンサンブル降水）＋製品タブ＋ステップスライダー。
+  画像は publish_charts.py が生成（コンテキスト: charts_base）。
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    #model-seg, #product-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 10px 0; }
+    #model-seg a, #product-tabs a { padding: 5px 14px; border-radius: 16px; font-size: 13px;
+        background: #fff; border: 1px solid var(--border); color: var(--accent-dark); cursor: pointer; }
+    #model-seg a.active, #product-tabs a.active { background: var(--accent); color: #fff; font-weight: 600; }
+    #chart-wrap { margin: 12px 10px; background: #fff; border: 1px solid var(--border);
+        border-radius: 12px; padding: 10px; box-shadow: 0 1px 4px rgba(30,60,90,.06); }
+    #chart-img { width: 100%; max-width: 1100px; height: auto; display: block; margin: 0 auto; }
+    #step-bar { display: flex; align-items: center; gap: 10px; margin: 8px 4px; }
+    #step-bar input[type=range] { flex: 1; }
+    #step-label { min-width: 9em; font-variant-numeric: tabular-nums; font-size: 13.5px; }
+    #play { padding: 4px 14px; border-radius: 16px; border: 1px solid var(--border);
+        background: var(--accent-light); cursor: pointer; }
+    #run-info { color: #789; font-size: 12.5px; margin: 4px 12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>数値予報チャート <a href="#info"><span class="glyphicon glyphicon-info-sign"></span></a></h2>
+<p>ECMWF（欧州中期予報センター IFS）と アメリカ GFS の数値予報を切り替えて表示できます。
+   雨量はアンサンブル（ECMWF ENS 51 メンバー）の確率も見られます。</p>
+
+<div id="model-seg"></div>
+<div id="product-tabs"></div>
+<div id="chart-wrap">
+    <div id="step-bar">
+        <button id="play">▶ 再生</button>
+        <input type="range" id="step-slider" min="0" max="0" value="0">
+        <span id="step-label"></span>
+    </div>
+    <img id="chart-img" alt="数値予報チャート">
+    <div id="run-info"></div>
+</div>
+
+<div id="info">
+    <h5>データについての説明</h5>
+    <p>ECMWF Open Data（CC-BY-4.0）と NOAA GFS（パブリックドメイン）から生成しています。
+       アンサンブルは ECMWF ENS 51 メンバーによる 24 時間降水量の平均と閾値超過確率です。
+       画像下部に出典とラン（初期時刻）を表示しています。</p>
+</div>
+
+<script>
+(function () {
+    var BASE = "{{ charts_base }}";
+    var LABELS = {"msl-precip": "気圧・降水", "t2m": "地上気温", "t850": "気温850hPa",
+        "t500": "気温500hPa", "t925": "気温925hPa", "wind10m": "地上風",
+        "wind300": "風300hPa", "wind500": "風500hPa",
+        "t500-polar": "北極500hPa", "t850-polar": "北極850hPa",
+        "ens-tp-mean": "24h降水量(平均)", "ens-tp-prob1": "降水確率≥1mm",
+        "ens-tp-prob30": "大雨確率≥30mm"};
+    var MODELS = [["ecmwf", "ECMWF"], ["gfs", "GFS"], ["ens", "アンサンブル降水"]];
+    var data = null, model = "ecmwf", product = null, idx = 0, timer = null;
+
+    function el(id) { return document.getElementById(id); }
+    function m() { return data.models[model]; }
+    function url() {
+        var s = String(m().steps[idx]).padStart(3, "0");
+        return BASE + "/" + model + "/" + product + "/" + s + ".png";
+    }
+    function draw() {
+        el("chart-img").src = url();
+        var s = m().steps[idx];
+        el("step-label").textContent = (model === "ens" ? "T+" + (s - 24) + "〜" + s + "h" : "T+" + s + "h");
+        el("run-info").textContent = "ラン: " + m().run + " ／ " + m().attribution;
+    }
+    function pick(newModel, newProduct) {
+        model = newModel;
+        var ps = m().products;
+        product = (newProduct && ps.indexOf(newProduct) >= 0) ? newProduct
+                  : (ps.indexOf(product) >= 0 ? product : ps[0]);
+        idx = Math.min(idx, m().steps.length - 1);
+        el("step-slider").max = m().steps.length - 1;
+        el("step-slider").value = idx;
+        el("model-seg").innerHTML = MODELS.filter(function (x) { return data.models[x[0]]; })
+            .map(function (x) { return '<a data-m="' + x[0] + '" class="' + (x[0] === model ? "active" : "") + '">' + x[1] + "</a>"; }).join("");
+        el("product-tabs").innerHTML = ps.map(function (p) {
+            return '<a data-p="' + p + '" class="' + (p === product ? "active" : "") + '">' + (LABELS[p] || p) + "</a>"; }).join("");
+        draw();
+    }
+    document.addEventListener("click", function (e) {
+        if (e.target.dataset && e.target.dataset.m) pick(e.target.dataset.m, null);
+        if (e.target.dataset && e.target.dataset.p) pick(model, e.target.dataset.p);
+    });
+    el("step-slider").addEventListener("input", function () { idx = +this.value; draw(); });
+    el("play").addEventListener("click", function () {
+        if (timer) { clearInterval(timer); timer = null; this.textContent = "▶ 再生"; return; }
+        this.textContent = "⏸ 停止";
+        timer = setInterval(function () {
+            idx = (idx + 1) % m().steps.length;
+            el("step-slider").value = idx; draw();
+        }, 700);
+    });
+    fetch(BASE + "/latest.json").then(function (r) { return r.json(); }).then(function (j) {
+        data = j;
+        if (!data.models.ecmwf) model = data.models.gfs ? "gfs" : "ens";
+        pick(model, null);
+    }).catch(function () {
+        el("run-info").textContent = "チャートデータの読み込みに失敗しました。";
+    });
+})();
+</script>
+{% endblock %}

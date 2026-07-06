@@ -1270,6 +1270,21 @@ def build_precipitation(env: Environment, stations: dict) -> None:
         n_stations=len(rows)))
 
 
+def build_forecast(env: Environment) -> None:
+    """数値予報チャート（旧 Gfs 後継）。画像は weather/tools/publish_charts.py が
+    生成して R2 に置く。ページは latest.json を 1 回 fetch するだけ。"""
+    import os
+    charts_base = os.environ.get("WEATHER_CHARTS_BASE", "/charts")
+    write("Forecast/index.html", env.get_template("forecast/index.html").render(
+        page_title="数値予報チャート（ECMWF・GFS・アンサンブル降水）",
+        nav_active="gfs", build_year=datetime.now().year,
+        charts_base=charts_base))
+    # 旧 URL からの誘導（Cloudflare Pages は _redirects、それ以外は meta refresh）
+    write("Gfs/index.html",
+          '<!doctype html><meta http-equiv="refresh" content="0; url=/Forecast/">'
+          '<a href="/Forecast/">数値予報チャートへ移動</a>')
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clean", action="store_true", help="public/ を作り直す")
@@ -1311,6 +1326,7 @@ def main() -> None:
         build_stations(env, stations, hist)
         build_monthly(env, stations, hist)
         build_precipitation(env, stations)
+        build_forecast(env)
         build_home(env, today, meta, fc, stations, hist)
     finally:
         hist.close()
