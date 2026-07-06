@@ -1287,6 +1287,48 @@ def build_forecast(env: Environment) -> None:
           '<a href="/Forecast/">数値予報チャートへ移動</a>')
 
 
+def build_seo(env: Environment, stations: dict) -> None:
+    """sitemap.xml・_redirects（旧URL誘導）・404.html。Pages 移行のサイトインフラ。"""
+    import os
+    origin = os.environ.get("WEATHER_SITE_ORIGIN", "https://creativeweb.jp")
+
+    urls = ["/", "/Temperature/HighsMain/", "/Temperature/LowsMain/",
+            "/Temperature/HighsList/", "/Temperature/LowsList/",
+            "/Summer/Ranking/", "/Winter/LowestList/", "/Climate/",
+            "/Stations/", "/Monthly/", "/Monthly/Latest/",
+            "/Precipitation/", "/Forecast/"]
+    urls += [f"/Monthly/Heinenti{m:02d}{l}/" for m in range(1, 13) for l in ("", "l")]
+    targets = climate_targets(stations)
+    urls += [f"/Climate/Chart/{s}/" for _, _, _, s in targets]
+    urls += [f"/Stations/JP/{s}/" for _, r, _, s in targets
+             if r["elements"].get("temp")]
+    today = date.today().isoformat()
+    xml = ['<?xml version="1.0" encoding="UTF-8"?>',
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    xml += [f"<url><loc>{origin}{u}</loc><lastmod>{today}</lastmod></url>" for u in urls]
+    xml.append("</urlset>")
+    (PUBLIC / "sitemap.xml").write_text("\n".join(xml), encoding="utf-8")
+    print(f"  [seo] sitemap.xml ({len(urls)} URL)")
+
+    # 旧URL → 新URL。大文字 place（旧 /Stations/JP/Tokyo）は静的に列挙
+    lines = ["/Gfs/* /Forecast/ 301",
+             "/Monthly/Heinenti/:m /Monthly/ 301",
+             "/Monthly/Monthly/* /Monthly/Latest/ 301"]
+    for _, rec, _, slug in targets:
+        old = rec.get("place") or rec.get("en") or ""
+        if old and old != slug:
+            lines.append(f"/Stations/JP/{old} /Stations/JP/{slug}/ 301")
+            lines.append(f"/Climate/Chart/{old} /Climate/Chart/{slug}/ 301")
+    (PUBLIC / "_redirects").write_text("\n".join(lines[:2000]), encoding="utf-8")
+    print(f"  [seo] _redirects ({min(len(lines), 2000)} 行)")
+
+    write("404.html",
+          '<!doctype html><meta charset="utf-8"><title>404</title>'
+          '<body style="font-family:sans-serif;text-align:center;padding:60px">'
+          '<h1>ページが見つかりません</h1>'
+          '<p><a href="/">気温と雨量の統計 トップへ</a></p></body>')
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clean", action="store_true", help="public/ を作り直す")
@@ -1329,6 +1371,7 @@ def main() -> None:
         build_monthly(env, stations, hist)
         build_precipitation(env, stations)
         build_forecast(env)
+        build_seo(env, stations)
         build_home(env, today, meta, fc, stations, hist)
     finally:
         hist.close()
