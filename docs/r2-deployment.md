@@ -94,3 +94,13 @@ mirror_url = "https://<公開URL>/forecast"   # 例 https://data.aiseed.dev/fore
 | 予報 全部 × 2 ラン | 約 25GB | 超過分 約 $0.22/月 |
 
 配信（egress）は何 GB 出ても恒久無料。課金要素はストレージのみ。
+
+### 数値予報チャート（/Forecast/ 用画像）
+
+```bash
+./.venv/bin/python tools/publish_charts.py --out ~/wxpub   # 両モデル+ENS
+rclone sync ~/wxpub/charts r2:weather-forecast/charts
+```
+
+サイトの `WEATHER_CHARTS_BASE`（generate.py の環境変数、既定 /charts）を
+R2 の公開 URL に合わせる。1 ラン約 200MB・最新 1 ランのみ保持。
