@@ -33,16 +33,17 @@ MASTER = BASE / "master"
 STORE_NC = BASE / "store" / "observations.nc"
 PUBLIC = BASE / "public"
 
-# 静的アセットの取得元（旧サイト WeatherCore の wwwroot）。存在すればコピーする。
-# リポジトリ移動に備えて環境変数 WEATHERCORE_WWWROOT で上書き可能。
+# 静的アセットの取得元。旧サイト WeatherCore の wwwroot から取り込んだ
+# WeatherStatic/wwwroot/ を既定にする（2026-07-07 に取り込み済み。旧リポジトリは
+# 削除してよい）。環境変数 WEATHERCORE_WWWROOT で上書き可能。
 import os as _os
 _candidates = [
     Path(_os.environ["WEATHERCORE_WWWROOT"]) if "WEATHERCORE_WWWROOT" in _os.environ else None,
+    BASE / "wwwroot",
     BASE.parent / "WeatherCore" / "WeatherCore" / "wwwroot",
     BASE.parent.parent / "WeatherCore" / "WeatherCore" / "wwwroot",
 ]
-WWWROOT = next((p for p in _candidates if p and p.is_dir()),
-               BASE.parent / "WeatherCore" / "WeatherCore" / "wwwroot")
+WWWROOT = next((p for p in _candidates if p and p.is_dir()), BASE / "wwwroot")
 ASSET_PATHS = ["css", "javascripts", "Images", "favicon.ico", "robots.txt"]
 
 
