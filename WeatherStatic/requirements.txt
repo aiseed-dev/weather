@@ -5,3 +5,4 @@ netCDF4>=1.7
 numpy>=2.0
 pillow>=10        # 推計気象分布タイルのピクセル判定
 openpyxl>=3.1     # 公式コード表（xlsx）との突合
+tzdata>=2024       # IANA tzdb(世界の都市の現地日付集計。システム tzdata の欠落 ID 対策)

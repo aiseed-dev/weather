@@ -331,3 +331,52 @@ correction_log   (logged_at, amedas, date, field, old_value, new_value)
 | data/history_summary.json・rankings/*.json（エクスポート） | **廃止** → 描画層が store/weather.sqlite を読み取り専用で直接参照 |
 | 「描画層は data/ と master/ のみ読む」 | 「＋ store/weather.sqlite（読み取り専用）」に変更 |
 | master/normals.sqlite 案 | 廃止済み → master/normals/{amedas}.json（地点別 JSON） |
+
+## world — worldtime-web(time-j.net)向けの世界の天気配信
+
+fetch_world.py が生成(2026-07-07 追加)。都市マスターは `master/world_cities.json`
+(**worldtime-web 側の tools/export_world_cities.py が生成**。都市の一次管理は worldtime)。
+出力は `data/world/` → `public/data/world/` に同期し、`public/_headers` の
+`/data/world/*` に `Access-Control-Allow-Origin: *` を保証する(www.time-j.net からの fetch 用)。
+
+### data/world/forecast/{place}.json(112都市、ソース中立スキーマ)
+
+```json
+{
+  "place": "Europe/London", "name": "ロンドン",
+  "updated": "…",                  // ソースの発表時刻(UTC)
+  "fetched": "…", "source": "MET Norway (CC BY 4.0)",
+  "hourly": [ {"t": "…Z", "temp": 20.9, "sym": "cloudy", "pre": 0.5,
+               "wind": 2.9, "wdir": 325, "rh": 90}, … ],   // 直近48時間
+  "daily":  [ {"date": "2026-07-08", "tmin": 18.8, "tmax": 30.5,
+               "pre": 0.0, "sym": "clearsky_day"}, … ]     // 現地日付で8日分
+}
+```
+
+- daily は都市のタイムゾーンで集計(tmin/tmax=instant 気温の min/max、pre=next_1h 優先の降水量合計、sym=現地正午に最も近い時点の symbol_code)。
+- ソース差し替え(Open-Meteo 等)をしても worldtime 側が壊れないよう、met.no 固有の構造は持ち込まない(sym は met.no symbol_code 語彙)。
+
+### data/world/metar/{icao}.json(385局)
+
+```json
+{"icao": "RJTT", "time": "…Z", "temp": 23, "dewp": 19, "wdir": 20, "wspd_kt": 10,
+ "wgst_kt": null, "visib": "6+", "wx": "-RA", "clouds": [{"cover": "BKN", "base": 3000}],
+ "flt_cat": "VFR", "raw": "METAR RJTT …", "source": "aviationweather.gov", "fetched": "…"}
+```
+
+- 通報の無い局(3割弱)はファイルを更新しない(前回値を残す)。初回から通報が無い局はファイル自体が無い → 404 は worldtime 側で許容。
+
+### data/world/index.json
+
+`{"forecast": [place…], "forecast_updated": "…", "metar": [icao…], "metar_updated": "…"}`
+
+### 運用
+
+- cron: 既存の日次実行に `fetch_world.py` を追加(全量で約2分30秒、met.no 112リクエスト+aviationweather 4リクエスト)。METAR だけ高頻度にする場合は `--metar-only`。
+- `generate.py --clean` 後は `fetch_world.py --sync-only` で public/ に再同期する。
+
+### data/world/map.json(地図描画用・全都市1ファイル)
+
+`{"updated": "…Z", "cities": [{"p": "Asia/Tokyo", "t": 23, "s": "cloudy"}, …]}`
+(t=METAR 実測気温、s=直近の予報 symbol_code。どちらかがある都市のみ収録。
+fetch_world.py が取得済みファイルから組み立てる。利用者: time-j.net/WorldTime/Map)

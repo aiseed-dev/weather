@@ -268,3 +268,28 @@ CREATE TABLE daily_counts (
   （**既存 DB のダンプが入手できるなら後者を強く推奨**。7 章参照）
 - 配信先ホスティング（rsync 先）: 未定
 - AdSense / Analytics タグを新サイトへ載せるか: 未定
+
+## 世界天気タイル(2026-07-07 計画、ユーザー決定「タイルは weather 側で必要なので作る」)
+
+ECMWF オープンデータ(IFS/AIFS、0.25°格子、CC BY 4.0)から世界の天気の**ラスタータイル**を生成し、
+weather.time-j.net の新しい世界天気ページと、time-j.net の世界地図(/WorldTime/Map)のレイヤーとして配信する。
+
+### 方式(案)
+
+- **要素(v1)**: 2m気温。v2 以降で 降水量・海面更正気圧(等圧線)・風。
+- **タイル形式**: XYZ 256px PNG、z0〜4(世界表示用。z4=16×8タイル)。全ズーム合計 ≒ 340タイル/要素/時刻。
+- **投影**: Web Mercator(標準の slippy 形式。将来 Leaflet 等でも使える)。/WorldTime/Map の正距円筒 SVG に重ねる場合は座標変換が必要な点に注意(Map 側を Mercator に揃える改修も選択肢)。
+- **時刻**: 最新解析+予報 24/48/72h 程度から開始(タイル数を抑える)。
+- **パイプライン**: fetch_tiles.py(ECMWF open data の .index で必要フィールドだけ HTTP Range 取得)
+  → GRIB デコード → 格子を色分け描画 → タイル分割 PNG → public/tiles/{element}/{step}/{z}/{x}/{y}.png
+- **依存**: eccodes(GRIB デコード)は conda-forge が安定(気象系は conda-forge の運用ルールに合致)。
+  既存 .venv とは分離し、タイル生成専用の conda 環境を用意する。
+- **配信**: Cloudflare Pages。タイルは毎回総入替になるため、1要素×4時刻×340タイル ≒ 1,400ファイル/回の
+  デプロイ増となる点を確認(Pages 上限 20,000 に対しては問題なし)。
+- **出典表記**: 「Data: ECMWF open data (CC BY 4.0)」をページ側に明記。
+
+### 未決(実装開始時に確認)
+
+- IFS か AIFS か(AIFS の方が新しいが要素が限られる)
+- 色スケール(気温の配色は /WorldTime/Map の点表示と統一するか)
+- 更新頻度(1日2回=00/12Z で十分か)
