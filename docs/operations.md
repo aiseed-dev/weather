@@ -68,3 +68,16 @@ cd ~/dev/weather/WeatherStatic
 ```
 
 タイルは conda 環境（../.venv、cfgrib 必要）で実行する点に注意。
+
+## rclone の代替（cf-publish 0.2.0 以降）
+
+R2 への同期は `cf-publish r2 sync` でも可能（rclone 設定不要。
+R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / CLOUDFLARE_ACCOUNT_ID を設定）:
+
+```bash
+cf-publish r2 sync ~/wxpub/forecast weather-forecast/forecast --delete
+cf-publish r2 sync ~/wxpub/charts weather-forecast/charts --delete
+cf-publish r2 sync WeatherStatic/dist weather-obs
+```
+
+初回は --dry-run で差分を確認してから。実運用実績がつくまでは rclone も併記のまま残す。
