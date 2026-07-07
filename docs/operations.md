@@ -57,3 +57,14 @@ cd ~/dev/weather/WeatherStatic
 - conda-forge 公開（PyPI 公開後に grayskull → staged-recipes）
 - ERA5 気候値パック（notebooks/06 を Colab で実行）
 - jma_daily の pg_dump が入手できたら backfill_daily.py で 2020 年以前を投入
+
+## 世界天気（worldtime-web 連携）
+
+```cron
+# met.no 予報+METAR → data/world/（時間毎で十分。METARだけ高頻度も可）
+40 * * * *   cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_world.py
+# 世界気温タイル 1日4回（各ランの公開後 ≈ JST 17:30/23:30/5:30/11:30）
+30 17,23,5,11 * * *  cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_tiles.py
+```
+
+タイルは conda 環境（../.venv、cfgrib 必要）で実行する点に注意。
