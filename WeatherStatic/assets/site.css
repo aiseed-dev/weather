@@ -16,6 +16,10 @@
     --text: #26313b;
     --muted: #64748b;
     --radius: 12px;
+    --panel: #f6f9fc;
+    --track: #eef2f6;
+    --th-bg: linear-gradient(180deg, #f2f7fc, #e7f0f9);
+    --th-text: #33475b;
 }
 
 /* ---------- 基礎 ---------- */
@@ -135,7 +139,7 @@ select.form-horizontal {
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 5px 10px;
-    background: #fff;
+    background: var(--card);
     color: var(--text);
 }
 
@@ -146,11 +150,11 @@ select.form-horizontal {
     overflow: hidden;
     box-shadow: 0 0 0 1px var(--border);
     margin: 10px;
-    background: #fff;
+    background: var(--card);
 }
 .weathertable th, .ranktable th {
-    background: linear-gradient(180deg, #f2f7fc, #e7f0f9);
-    color: #33475b;
+    background: var(--th-bg);
+    color: var(--th-text);
     border: 1px solid var(--border) !important;
     font-weight: 600;
 }
@@ -168,7 +172,7 @@ select.form-horizontal {
     display: inline-block;
     min-width: 2.0em;
     text-align: center;
-    background: #fff;
+    background: var(--card);
     border: 1px solid var(--border);
     border-radius: 999px;
     padding: 1px 8px;
@@ -235,7 +239,7 @@ select.form-horizontal {
 #subnav .btn-group { float: none; }
 #subnav .btn {
     border: none; border-right: 1px solid var(--border); border-radius: 0;
-    background: #fff; color: var(--accent-dark); padding: 6px 16px; font-size: 13.5px;
+    background: var(--card); color: var(--accent-dark); padding: 6px 16px; font-size: 13.5px;
 }
 #subnav .btn-group:last-child .btn { border-right: none; }
 #subnav .btn:hover { background: var(--accent-light); }
@@ -249,7 +253,7 @@ select.form-horizontal {
     align-items: start;
 }
 .rank-grid .item {
-    background: #fff;
+    background: var(--card);
     border: 1px solid var(--border);
     border-radius: 10px;
     padding: 12px 10px 10px;
@@ -257,7 +261,7 @@ select.form-horizontal {
 }
 .rank-grid .item h5 { color: var(--accent-dark); font-weight: 700; }
 .wtable { box-shadow: 0 0 0 1px #e7edf4; border-radius: 8px; overflow: hidden; }
-.wtable th { background: linear-gradient(180deg, #f2f7fc, #e7f0f9); color: #33475b; border: 1px solid var(--border); font-weight: 600; }
+.wtable th { background: var(--th-bg); color: var(--th-text); border: 1px solid var(--border); font-weight: 600; }
 .wtable td { border: 1px solid #eef2f7; }
 .wtable tr:hover td { background: #f7fafd; }
 
@@ -273,7 +277,7 @@ select.form-horizontal {
 .rank-badge.r3 { background: linear-gradient(160deg, #d29a6b, #a96a35); }
 
 #info {
-    background: #f6f9fc;
+    background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
     margin: 18px 10px 6px;
@@ -282,3 +286,57 @@ select.form-horizontal {
     color: var(--muted);
 }
 #info h5 { color: var(--text); font-weight: 700; }
+
+/* ---------- ダークモード ----------
+   既定は OS 設定に追従（prefers-color-scheme）。ナビのトグルで
+   <html data-theme="light|dark"> を立てると localStorage で固定される。
+   データ列の色分け（bcolor のパステル背景＋濃色文字のインライン指定）は
+   ライトのまま活かす（可読性はそのまま保たれる）。SVG 図版も図として白背景を維持。 */
+:root[data-theme="dark"] {
+    --accent: #4d9fdd;
+    --accent-dark: #9ecdf2;
+    --accent-light: #1d3450;
+    --sky-from: #0d2c4d;
+    --sky-to: #1c4f7c;
+    --bg: #0f1620;
+    --card: #1a2431;
+    --border: #2b3a4c;
+    --text: #d6dee8;
+    --muted: #8da0b6;
+    --panel: #16202c;
+    --track: #223144;
+    --th-bg: linear-gradient(180deg, #223144, #1b2938);
+    --th-text: #c3d2e2;
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+        --accent: #4d9fdd;
+        --accent-dark: #9ecdf2;
+        --accent-light: #1d3450;
+        --sky-from: #0d2c4d;
+        --sky-to: #1c4f7c;
+        --bg: #0f1620;
+        --card: #1a2431;
+        --border: #2b3a4c;
+        --text: #d6dee8;
+        --muted: #8da0b6;
+        --panel: #16202c;
+        --track: #223144;
+        --th-bg: linear-gradient(180deg, #223144, #1b2938);
+        --th-text: #c3d2e2;
+    }
+}
+
+/* トグルボタン（ナビ右端） */
+#theme-toggle {
+    background: rgba(255,255,255,.15);
+    border: none; border-radius: 16px;
+    color: #fff; font-size: 15px; line-height: 1;
+    padding: 6px 12px; margin: 9px 10px; cursor: pointer; float: right;
+}
+#theme-toggle:hover { background: rgba(255,255,255,.3); }
+
+/* データ列の色分け（bcolor 等のインライン明色背景）はライトのパステルのまま
+   活かすため、文字色だけ常に濃色で固定する（ダークモードの文字色を継承させない） */
+td[style*="background"], th[style*="background"] { color: #26313b; }
+td[style*="background"] a { color: #114a8b; }

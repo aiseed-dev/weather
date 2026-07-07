@@ -8,18 +8,18 @@
 <style>
     .ptable td.bar-cell { min-width: 180px; }
     .pbar { display: flex; align-items: center; gap: 8px; }
-    .pbar .track { flex: 1; height: 8px; border-radius: 4px; background: #eef2f6; overflow: hidden; }
+    .pbar .track { flex: 1; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
     .pbar .fill { height: 100%; border-radius: 4px;
                   background: linear-gradient(90deg, #7ec8ff, #1987e5); }
     .pbar .num { min-width: 5.2em; text-align: right; font-variant-numeric: tabular-nums; }
     .top-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
                  gap: 14px; margin: 14px 10px; }
-    .top-cards .card { background: #fff; border: 1px solid var(--border); border-radius: 12px;
+    .top-cards .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
                        padding: 14px 16px; box-shadow: 0 1px 4px rgba(30,60,90,.06); }
     .top-cards .card .place { font-size: 15px; font-weight: 700; margin: 4px 0 2px; }
     .top-cards .card .val { font-size: 22px; font-weight: 700; color: #1266b3; }
-    .top-cards .card .unit { font-size: 12px; color: #789; }
-    .least-note { color: #789; font-size: 12.5px; }
+    .top-cards .card .unit { font-size: 12px; color: var(--muted); }
+    .least-note { color: var(--muted); font-size: 12.5px; }
 </style>
 {% endblock %}
 

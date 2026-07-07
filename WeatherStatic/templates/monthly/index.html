@@ -8,14 +8,14 @@
 <style>
     .month-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
                   gap: 12px; margin: 14px 10px; }
-    .month-card { background: #fff; border: 1px solid var(--border); border-radius: 12px;
+    .month-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
                   padding: 12px 14px; box-shadow: 0 1px 4px rgba(30,60,90,.06); text-align: center; }
     .month-card.now { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-light); }
     .month-card .m { font-size: 22px; font-weight: 700; color: var(--accent-dark); }
     .month-card .links { margin-top: 6px; display: flex; gap: 6px; justify-content: center; }
     .month-card .links a { font-size: 12.5px; padding: 3px 10px; border-radius: 14px;
                            background: var(--accent-light); }
-    .obs-card { background: linear-gradient(160deg, #fffdf4, #fff7df); border: 1px solid #e8d9a0;
+    .obs-card { background: var(--card); border: 1px solid var(--border); border-left: 4px solid #d9b23c;
                 border-radius: 12px; padding: 14px 18px; margin: 16px 10px; }
 </style>
 {% endblock %}

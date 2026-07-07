@@ -9,9 +9,9 @@
 <style>
     #model-seg, #product-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 10px 0; }
     #model-seg a, #product-tabs a { padding: 5px 14px; border-radius: 16px; font-size: 13px;
-        background: #fff; border: 1px solid var(--border); color: var(--accent-dark); cursor: pointer; }
+        background: var(--card); border: 1px solid var(--border); color: var(--accent-dark); cursor: pointer; }
     #model-seg a.active, #product-tabs a.active { background: var(--accent); color: #fff; font-weight: 600; }
-    #chart-wrap { margin: 12px 10px; background: #fff; border: 1px solid var(--border);
+    #chart-wrap { margin: 12px 10px; background: var(--card); border: 1px solid var(--border);
         border-radius: 12px; padding: 10px; box-shadow: 0 1px 4px rgba(30,60,90,.06); }
     #chart-img { width: 100%; max-width: 1100px; height: auto; display: block; margin: 0 auto; }
     #step-bar { display: flex; align-items: center; gap: 10px; margin: 8px 4px; }
@@ -19,7 +19,7 @@
     #step-label { min-width: 9em; font-variant-numeric: tabular-nums; font-size: 13.5px; }
     #play { padding: 4px 14px; border-radius: 16px; border: 1px solid var(--border);
         background: var(--accent-light); cursor: pointer; }
-    #run-info { color: #789; font-size: 12.5px; margin: 4px 12px; }
+    #run-info { color: var(--muted); font-size: 12.5px; margin: 4px 12px; }
 </style>
 {% endblock %}
 
