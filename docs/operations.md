@@ -33,6 +33,32 @@ r2-deployment.md）を参照。
   帯域が気になる場合は charts の `--out` を forecast と同じにしても安全
 - ENS 降水（アンサンブル）は publish_charts の `--ens`（既定オン）
 
+## 観測データ蓄積基盤（tgsvr、2026-08-26 稼働開始）
+
+観測ストア（store/observations.nc + weather.sqlite）の正本は **tgsvr**
+（`~/.ssh/config` の `tgsvr`、`~/dev/weather/WeatherStatic/store/`）で管理する。
+
+- 初期データ: 旧 WeatherCore の pg_dump（weather.gz）の jma_daily を
+  backfill_daily.py で投入済み（1880-11-01〜2022-03-14、69.1M セル）
+- ダンプ末尾 5 日分（2022-03-10〜14）は速報値だったため etrn から `--force`
+  再取得して置換済み（値訂正 8 件・品質フラグ更新 5 件・欠測補完 10 件を確認）
+- ギャップ（2022-04〜2026-07）は backfill_etrn.py で取得（再開可能・ingest_log 管理）
+- 進行中の月は etrn 対象外のため、月初の穴は毎月 2 日の月次 cron が前月分で埋める
+
+tgsvr の crontab（設置済み）:
+
+```cron
+# 毎正時+10分: アメダス map JSON + mdrr 確定値CSV（7日窓。速報値は毎回再取得し訂正記録）
+10 * * * * cd $HOME/dev/weather/WeatherStatic && flock -w 600 $HOME/dev/weather/store.lock ./.venv/bin/python accumulate.py >> $HOME/dev/weather/logs/accumulate.log 2>&1
+# 毎月2日 03:30: 前月分を etrn 確定値で置換（月次の二重チェック）
+30 3 2 * * cd $HOME/dev/weather/WeatherStatic && flock -w 10800 $HOME/dev/weather/store.lock ./.venv/bin/python backfill_etrn.py --from $(date -d "-1 month" +\%Y-\%m) --to $(date -d "-1 month" +\%Y-\%m) --force >> $HOME/dev/weather/logs/etrn_monthly.log 2>&1
+```
+
+**flock 必須**: accumulate.py と backfill_etrn.py は observations.nc を
+「コピー → 更新 → rename」で置き換えるため、同時実行すると後勝ちで
+書込が失われる。ストアへ書くジョブは必ず `flock $HOME/dev/weather/store.lock`
+を介して直列化する（手動バックフィル実行時も同様）。
+
 ## 過去観測データ（月次で十分）
 
 ```bash
@@ -56,7 +82,6 @@ cd ~/dev/weather/WeatherStatic
 - アプリ（Flet）の mirror ソースを実 R2 URL で最終確認
 - conda-forge 公開（PyPI 公開後に grayskull → staged-recipes）
 - ERA5 気候値パック（notebooks/06 を Colab で実行）
-- jma_daily の pg_dump が入手できたら backfill_daily.py で 2020 年以前を投入
 
 ## 世界天気（worldtime-web 連携）
 
