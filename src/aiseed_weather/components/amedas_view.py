@@ -10,6 +10,8 @@ snow depth.
 
 from __future__ import annotations
 
+import asyncio
+
 import flet as ft
 
 from aiseed_weather.services.jma_amedas_service import JmaAmedasService
@@ -43,7 +45,7 @@ def AmedasView():
             set_error(str(e))
             set_state("error")
 
-    ft.use_effect(lambda: ft.run_task(load), [])
+    ft.use_effect(lambda: asyncio.create_task(load()) and None, [])
 
     if state in ("idle", "loading"):
         return ft.Column(
@@ -61,7 +63,7 @@ def AmedasView():
                 ft.Text(f"Could not fetch AMeDAS: {error}", color=ft.Colors.RED),
                 ft.FilledButton(
                     content=ft.Text("再取得 / Retry"),
-                    on_click=lambda _: ft.run_task(lambda: load(force=True)),
+                    on_click=lambda _: asyncio.create_task(load(force=True)),
                 ),
             ],
         )
@@ -73,7 +75,7 @@ def AmedasView():
                     ft.Text("AMeDAS (JMA)", size=18, weight=ft.FontWeight.BOLD),
                     ft.FilledButton(
                         content=ft.Text("再取得"),
-                        on_click=lambda _: ft.run_task(lambda: load(force=True)),
+                        on_click=lambda _: asyncio.create_task(load(force=True)),
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
