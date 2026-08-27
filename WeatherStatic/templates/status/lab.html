@@ -1,0 +1,178 @@
+{#
+  Python グラフ工房。Pyodide でブラウザ内 Python を動かし、
+  **サーバー側と同じ weatherlib/svgchart.py** で SVG を描く。
+
+  Pyodide の起動はボタンを押したときだけ（本体だけで約 5MB。全訪問者に
+  配るのは筋が悪く、「取得はユーザー操作時のみ」という本プロジェクトの
+  方針にも反する）。numpy は要らない — svgchart.py が外部依存ゼロだから。
+
+  コンテキスト: svgchart_src（svgchart.py の中身）/ pyodide_version
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .lab-head { margin: 0 10px 14px; }
+    .lab-head h2 { margin: 0 0 6px; font-size: 21px; }
+    .lab-head p { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.75; }
+    .lab-sec { margin: 0 10px 20px; }
+    .lab-panel { background: var(--card); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 16px; }
+    .lab-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .lab-controls select { min-width: 12em; }
+    .lab-run { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: bold; }
+    .lab-run:disabled { opacity: .55; cursor: default; }
+    .lab-status { font-size: 13px; color: var(--muted); margin: 10px 0 0; min-height: 1.4em; }
+    .lab-out { margin-top: 14px; min-height: 40px; }
+    .lab-code { background: var(--panel); border: 1px solid var(--border);
+        border-radius: 8px; padding: 12px 14px; overflow-x: auto; margin-top: 12px; }
+    .lab-code pre { margin: 0; background: none; border: none; padding: 0;
+        font-size: 12.5px; line-height: 1.6; color: var(--text); white-space: pre; }
+    .lab-note { font-size: 12.5px; color: var(--muted); line-height: 1.75; margin: 10px 0 0; }
+    .lab-tag { display: inline-block; background: var(--accent-light); color: var(--accent-dark);
+        border-radius: 999px; padding: 2px 11px; font-size: 12px; margin-right: 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% with status_active = "lab" %}{% include "status/_submenu.html" %}{% endwith %}
+
+<div class="lab-head">
+    <h2>Python グラフ工房</h2>
+    <p>
+        このページのグラフは、<strong>あなたのブラウザの中で動く Python</strong> が描いています。
+        サーバーで図を作って送っているのではありません。しかも使っているのは、
+        このサイトの図を生成しているのと<strong>同じ <code>weatherlib/svgchart.py</code></strong> です。
+    </p>
+</div>
+
+<div class="lab-sec">
+    <div class="lab-panel">
+        <div class="lab-controls">
+            <select id="lab-station" disabled><option>Python を起動してください</option></select>
+            <button class="btn lab-run" id="lab-boot" type="button">Python を起動（約 5MB）</button>
+            <button class="btn" id="lab-draw" type="button" disabled>描画</button>
+        </div>
+        <p class="lab-status" id="lab-status">
+            起動すると Pyodide（WebAssembly 版 CPython）を読み込みます。
+            ページを開いただけでは読み込みません。
+        </p>
+        <div class="lab-out" id="lab-out"></div>
+    </div>
+    <p class="lab-note">
+        <span class="lab-tag">10分値</span>アメダスは 10 分ごとに観測しています。
+        気象庁の「気温の状況」ページは毎時 50 分頃の更新ですが、ここでは観測どおりの粒度で描けます。
+        出典: 気象庁ホームページ（編集・加工: AIseed）
+    </p>
+</div>
+
+<div class="lab-sec">
+    <h3 style="font-size:17px; border-left:4px solid var(--accent); padding-left:9px; margin:0 0 10px;">
+        ブラウザで実行しているコード</h3>
+    <div class="lab-code"><pre id="lab-src">読み込み中…</pre></div>
+    <p class="lab-note">
+        このコードがそのまま Pyodide に渡されます。描画本体の <code>intraday_svg()</code> は
+        <a href="https://github.com/aiseed-dev/weather">リポジトリ</a>の
+        <code>WeatherStatic/weatherlib/svgchart.py</code> にあるもので、
+        サーバー側の静的生成でも同じ関数を呼んでいます。matplotlib も numpy も使いません
+        （そのぶん読み込みが軽くなっています）。
+    </p>
+</div>
+
+{% endblock %}
+
+{% block add_script %}
+{#
+  サーバー側と同じ svgchart.py を Pyodide へ渡す。
+  <script type="text/x-python"> に直接置くと、自動エスケープで Python の
+  < や " が実体参照になり、script は raw text 要素なので textContent でも
+  戻らない。JS の文字列（tojson）として渡すのが安全。
+#}
+<script>var SVGCHART_SRC = {{ svgchart_src | tojson }};</script>
+<script type="text/x-python" id="user-src">
+# ブラウザの中で動く Python。取得したデータから SVG を組み立てる。
+import json
+from svgchart import intraday_svg
+
+def draw(raw, amedas):
+    d = json.loads(raw)
+    st = d["stations"][amedas]
+    series = [{"label": st["name"], "color": "#F92500", "values": st["temp"]}]
+    return intraday_svg(
+        f'{st["name"]}（{st["pref"]}）{d["date"]} の気温 10 分値',
+        d["minutes"], series, width=680, height=300)
+</script>
+<script>
+(function () {
+    var PYODIDE = "https://cdn.jsdelivr.net/pyodide/v{{ pyodide_version }}/full/";
+    var statusEl = document.getElementById("lab-status");
+    var outEl = document.getElementById("lab-out");
+    var selEl = document.getElementById("lab-station");
+    var bootEl = document.getElementById("lab-boot");
+    var drawEl = document.getElementById("lab-draw");
+    var userSrc = document.getElementById("user-src").textContent;
+    document.getElementById("lab-src").textContent = userSrc.trim();
+
+    var pyodide = null, raw = null;
+    function say(m) { statusEl.textContent = m; }
+
+    async function boot() {
+        bootEl.disabled = true;
+        try {
+            say("Pyodide を読み込んでいます…（初回のみ。以後はブラウザのキャッシュから）");
+            await new Promise(function (ok, ng) {
+                var s = document.createElement("script");
+                s.src = PYODIDE + "pyodide.js";
+                s.onload = ok; s.onerror = function () { ng(new Error("pyodide.js を読めません")); };
+                document.head.appendChild(s);
+            });
+            pyodide = await loadPyodide({ indexURL: PYODIDE });
+
+            say("観測データを取得しています…");
+            var res = await fetch("/data/amedas-today.json", { cache: "no-store" });
+            if (!res.ok) throw new Error("観測データが取得できません (" + res.status + ")");
+            raw = await res.text();
+
+            // サーバーと同じモジュールを、そのまま Python 側へ置く
+            pyodide.FS.writeFile("svgchart.py", SVGCHART_SRC);
+            pyodide.runPython(userSrc);
+
+            var meta = JSON.parse(raw);
+            var names = Object.keys(meta.stations).map(function (k) {
+                return [k, meta.stations[k].name + "（" + meta.stations[k].pref + "）"];
+            }).sort(function (a, b) { return a[1].localeCompare(b[1], "ja"); });
+            selEl.innerHTML = names.map(function (n) {
+                return '<option value="' + n[0] + '">' + n[1] + "</option>";
+            }).join("");
+            var tokyo = names.find(function (n) { return n[1].indexOf("東京") === 0; });
+            if (tokyo) selEl.value = tokyo[0];
+            selEl.disabled = false;
+            drawEl.disabled = false;
+            bootEl.textContent = "起動済み";
+            say(names.length + " 地点を読み込みました。地点を選んで「描画」を押してください。");
+            render();
+        } catch (e) {
+            bootEl.disabled = false;
+            say("起動に失敗しました: " + e.message);
+        }
+    }
+
+    function render() {
+        if (!pyodide) return;
+        try {
+            var fn = pyodide.globals.get("draw");
+            outEl.innerHTML = fn(raw, selEl.value);
+            fn.destroy();
+            say("描画しました（ブラウザ内の Python が生成した SVG です）。");
+        } catch (e) {
+            say("描画に失敗しました: " + e.message);
+        }
+    }
+
+    bootEl.addEventListener("click", boot);
+    drawEl.addEventListener("click", render);
+    selEl.addEventListener("change", render);
+})();
+</script>
+{% endblock %}

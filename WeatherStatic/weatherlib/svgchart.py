@@ -178,3 +178,62 @@ def timeseries_svg(title: str, start: date, series: list[dict],
     e.append(f'<rect x="{ml}" y="{mt}" width="{pw}" height="{ph}" fill="none" stroke="#c8d2dc"/>')
     e.append("</svg>")
     return "".join(e)
+
+
+def intraday_svg(title: str, minutes: list[int], series: list[dict],
+                 width: int = 640, height: int = 260) -> str:
+    """当日の 10 分値時系列 SVG。
+
+    timeseries_svg が日単位の軸なのに対し、こちらは 0 時からの分で刻む。
+    アメダスは 10 分値まで出ているのに気象庁の「気温の状況」は毎正時しか
+    更新しないので、ここが差になる。
+
+    minutes … 0 時からの分（各点の x）。series と同じ長さ
+    series  … [{label, color, values(×10 or None), width, r}]
+    """
+    ml, mr, mt, mb = 44, 12, 26, 24
+    pw, ph = width - ml - mr, height - mt - mb
+    vals = [v for s in series for v in s["values"] if v is not None]
+    if not vals or not minutes:
+        return ""
+    v_lo = (min(vals) / 10 // 5) * 5 - 5
+    v_hi = (max(vals) / 10 // 5) * 5 + 10
+    m_lo, m_hi = minutes[0], max(minutes[-1], minutes[0] + 1)
+
+    def y(v):
+        return mt + ph * (v_hi - v / 10) / (v_hi - v_lo)
+
+    def x(m):
+        return ml + pw * (m - m_lo) / (m_hi - m_lo)
+
+    e = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+         f'style="max-width:{width}px;width:100%;height:auto" role="img" '
+         f'aria-label="{title}">']
+    t = v_lo
+    while t <= v_hi:
+        yy = mt + ph * (v_hi - t) / (v_hi - v_lo)
+        e.append(f'<line x1="{ml}" y1="{yy:.1f}" x2="{ml + pw}" y2="{yy:.1f}" '
+                 f'stroke="{"#999" if t == 0 else "#e8edf2"}"/>')
+        e.append(f'<text x="{ml - 5}" y="{yy + 4:.1f}" text-anchor="end" font-size="10" '
+                 f'fill="#666" {FONT}>{t:.0f}</text>')
+        t += 5
+    # 3 時間ごとの目盛り。10 分値だと点が多いので目盛りは粗くする
+    for hh in range(0, 25, 3):
+        m = hh * 60
+        if not (m_lo <= m <= m_hi):
+            continue
+        e.append(f'<line x1="{x(m):.1f}" y1="{mt}" x2="{x(m):.1f}" y2="{mt + ph}" '
+                 f'stroke="#f0f3f7"/>')
+        e.append(f'<text x="{x(m):.1f}" y="{mt + ph + 14}" text-anchor="middle" '
+                 f'font-size="10" fill="#666" {FONT}>{hh}時</text>')
+
+    for s in series:
+        for run in _line_runs([x(m) for m in minutes], s["values"]):
+            pts = [(px, y(v)) for px, v in run]
+            path = " ".join((f"M{px:.1f},{py:.1f}" if i == 0 else f"L{px:.1f},{py:.1f}")
+                            for i, (px, py) in enumerate(pts))
+            e.append(f'<path d="{path}" fill="none" stroke="{s["color"]}" '
+                     f'stroke-width="{s.get("width", 1.6)}"/>')
+    e.append(f'<rect x="{ml}" y="{mt}" width="{pw}" height="{ph}" fill="none" stroke="#c8d2dc"/>')
+    e.append("</svg>")
+    return "".join(e)

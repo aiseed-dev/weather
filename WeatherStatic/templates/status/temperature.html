@@ -1,0 +1,142 @@
+{#
+  気温の状況（10 分ごと更新）。generate_status.py が描画する。
+  気象庁の同名ページは毎時 50 分頃の更新なので、更新頻度と 10 分値グラフが差になる。
+  コンテキスト: obs_time / n_stations / highs / lows / rows / region_filters /
+                chart(SVG 文字列) / graph_cities / graph_colors / slot_count
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .st-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin: 0 10px 6px; }
+    .st-head h2 { margin: 0; font-size: 21px; }
+    .st-time { font-size: 13px; color: var(--muted); }
+    .st-badge { background: var(--accent-light); color: var(--accent-dark);
+        border-radius: 999px; padding: 2px 11px; font-size: 12px; font-weight: bold; }
+    .st-sec { margin: 0 10px 22px; }
+    .st-sec h3 { font-size: 17px; border-left: 4px solid var(--accent);
+        padding-left: 9px; margin: 0 0 10px; }
+    .st-two { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    .st-legend { font-size: 12.5px; color: var(--muted); margin: 6px 0 0; }
+    .st-legend span { display: inline-block; margin-right: 12px; }
+    .st-legend i { display: inline-block; width: 20px; height: 3px;
+        vertical-align: middle; margin-right: 4px; }
+    .st-chart { background: var(--card); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 12px; }
+    .st-note { font-size: 12.5px; color: var(--muted); line-height: 1.7; margin: 8px 0 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% with status_active = "temp" %}{% include "status/_submenu.html" %}{% endwith %}
+
+<div class="st-head">
+    <h2>気温の状況</h2>
+    <span class="st-badge">10分ごと更新</span>
+    <span class="st-time">{{ obs_time.month }}月{{ obs_time.day }}日
+        {{ obs_time.hour }}時{{ "%02d" | format(obs_time.minute) }}分現在 ／
+        {{ n_stations }} 地点</span>
+</div>
+
+<div class="st-sec">
+    <div class="st-chart">
+        {{ chart | safe }}
+        <p class="st-legend">
+            {% for name in graph_cities %}
+            <span><i style="background: {{ graph_colors[loop.index0] }}"></i>{{ name }}</span>
+            {% endfor %}
+        </p>
+    </div>
+    <p class="st-note">
+        本日 0 時からの 10 分値をそのまま描いています（{{ slot_count }} 点）。
+        アメダスは 10 分ごとに観測していますが、気象庁の「気温の状況」ページは
+        毎時 50 分頃の更新です。
+    </p>
+</div>
+
+<div class="st-sec">
+    <div class="st-two">
+        <div>
+            <h3>高い順</h3>
+            <div class="table-responsive">
+                <table class="weathertable">
+                    <tr><th>順位</th><th>地点</th><th>都道府県</th><th>気温</th><th>平年差</th></tr>
+                    {% for r in highs %}
+                    <tr>
+                        <td class="wcenter">{{ loop.index }}</td>
+                        <td>{{ r.name }}</td>
+                        <td>{{ r.pref }}</td>
+                        <td class="wright"{% if r.diff is not none %} style="background-color: {{ r.diff | bcolor }}"{% endif %}>{{ r.temp | ondo }}</td>
+                        <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% else %}-{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        <div>
+            <h3>低い順</h3>
+            <div class="table-responsive">
+                <table class="weathertable">
+                    <tr><th>順位</th><th>地点</th><th>都道府県</th><th>気温</th><th>平年差</th></tr>
+                    {% for r in lows %}
+                    <tr>
+                        <td class="wcenter">{{ loop.index }}</td>
+                        <td>{{ r.name }}</td>
+                        <td>{{ r.pref }}</td>
+                        <td class="wright"{% if r.diff is not none %} style="background-color: {{ r.diff | bcolor }}"{% endif %}>{{ r.temp | ondo }}</td>
+                        <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% else %}-{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+    </div>
+    <p class="st-note">
+        平年差は、その日の最高気温平年値と最低気温平年値の中点を基準にした概算です
+        （時刻別の平年値は公開されていないため）。色分けは旧サイトと同じ基準です。
+    </p>
+</div>
+
+<div class="st-sec">
+    <h3>全地点（{{ n_stations }} 地点・気温の高い順）</h3>
+    <div class="region-chips">
+        <a href="javascript:void(0)" class="rchip active" data-region="">全国</a>
+        {% for key, name in region_filters %}
+        <a href="javascript:void(0)" class="rchip" data-region="{{ key }}">{{ name }}</a>
+        {% endfor %}
+    </div>
+    <div class="table-responsive">
+        <table class="weathertable" id="all-table">
+            <tr><th>順位</th><th>地点</th><th>都道府県</th><th>気温</th><th>平年差</th></tr>
+            {% for r in rows %}
+            <tr data-region="{{ r.region }}">
+                <td class="wcenter">{{ loop.index }}</td>
+                <td>{{ r.name }}</td>
+                <td>{{ r.pref }}</td>
+                <td class="wright"{% if r.diff is not none %} style="background-color: {{ r.diff | bcolor }}"{% endif %}>{{ r.temp | ondo }}</td>
+                <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    <p class="st-note">出典: 気象庁ホームページのアメダス観測値を加工して作成しています。</p>
+</div>
+
+{% endblock %}
+
+{% block add_script %}
+<script>
+document.querySelectorAll('.region-chips .rchip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+        var key = chip.dataset.region;
+        document.querySelectorAll('.region-chips .rchip').forEach(function (c) {
+            c.classList.toggle('active', c === chip);
+        });
+        document.querySelectorAll('#all-table tr[data-region]').forEach(function (tr) {
+            tr.style.display = (!key || tr.dataset.region === key) ? '' : 'none';
+        });
+    });
+});
+</script>
+{% endblock %}

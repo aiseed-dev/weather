@@ -1,0 +1,11 @@
+{#
+  状況ページ間の相互リンク。nav_active="status" のページで使う。
+  active 判定は status_active（"temp" / "wind" / "lab"）で渡す。
+#}
+<div class="submenunav">
+  <ul class="pager">
+    <li><a href="/Status/Temperature/"{% if status_active == 'temp' %} class="active"{% endif %}>気温の状況</a></li>
+    <li><a href="/Status/Wind/"{% if status_active == 'wind' %} class="active"{% endif %}>風の状況</a></li>
+    <li><a href="/Status/Lab/"{% if status_active == 'lab' %} class="active"{% endif %}>Python グラフ工房</a></li>
+  </ul>
+</div>

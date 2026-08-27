@@ -11,11 +11,27 @@ r2-deployment.md）を参照。
 10 * * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python accumulate.py
 # 10分毎: 現在値だけ更新（トップページが読む public/data/current.json）
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
+# 10分毎: 実況ページ（気温・風・Python グラフ工房）。fetch_amedas_mirror の後に回す
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && ./.venv/bin/python generate_status.py >> $HOME/dev/weather/logs/status.log 2>&1
 # 毎時50分: 最新CSV・予報・現在天気 → サイト再生成
 52 * * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py && ./.venv/bin/python generate.py
 # 日次: 投票集計（Workers+KV 版。要 VOTES_KV_NAMESPACE_ID）
 15 1 * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python aggregate_votes.py --kv
 ```
+
+### 実況ページ（気象庁より高頻度）
+
+気象庁は元データが 10 分値なのに「気温の状況」「風の状況」を**毎時 50 分頃**しか
+更新していない。10 分値を持っているので、そのまま 6 倍の頻度で出せる。
+
+| ページ | 内容 |
+|---|---|
+| `/Status/Temperature/` | 気温の順位・平年差・当日 10 分値グラフ（サーバー生成 SVG） |
+| `/Status/Wind/` | 風速の順位・当日最大・風向分布。**最大値は 10 分値ベース**で、気象庁の日最大瞬間風速とは別物 |
+| `/Status/Lab/` | ブラウザ内 Python（Pyodide）が `weatherlib/svgchart.py` で描く。起動はボタン押下時のみ |
+
+`generate_status.py` はサイト全体（1,840 ページ）を作り直さず、この 3 ページと
+`public/data/amedas-today.json`（916 地点 × 10 分値、gzip 後 61KB）だけを書く。
 
 **ブラウザから気象庁へは取りに行かない**（2026-08-27 以降）。以前のトップページは
 訪問者ごとに `map/{ts}.json`（245KB）と推計気象分布のタイル（512px PNG 複数）を

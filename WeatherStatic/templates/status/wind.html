@@ -1,0 +1,155 @@
+{#
+  風の状況（10 分ごと更新）。generate_status.py が描画する。
+  気象庁の同名ページは毎時 50 分頃の更新なので、更新頻度が差になる。
+  map JSON に日最大瞬間風速は無いため、最大値は 10 分値ベースであることを明記する。
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .st-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin: 0 10px 6px; }
+    .st-head h2 { margin: 0; font-size: 21px; }
+    .st-time { font-size: 13px; color: var(--muted); }
+    .st-badge { background: var(--accent-light); color: var(--accent-dark);
+        border-radius: 999px; padding: 2px 11px; font-size: 12px; font-weight: bold; }
+    .st-sec { margin: 0 10px 22px; }
+    .st-sec h3 { font-size: 17px; border-left: 4px solid var(--accent);
+        padding-left: 9px; margin: 0 0 10px; }
+    .st-two { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .st-note { font-size: 12.5px; color: var(--muted); line-height: 1.75; margin: 8px 0 0; }
+    .wd-arrow { display: inline-block; font-size: 15px; line-height: 1; }
+    /* 風配図: 16 方位の本数を横棒で */
+    .rose { background: var(--card); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 14px 16px; }
+    .rose table { width: 100%; border-collapse: collapse; }
+    .rose td { padding: 2px 0; font-size: 12.5px; }
+    .rose td:first-child { width: 5.2em; color: var(--muted); white-space: nowrap; }
+    .rose td:last-child { width: 3.2em; text-align: right; color: var(--muted); }
+    .rose .bar { height: 11px; background: var(--accent); border-radius: 3px; min-width: 1px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% with status_active = "wind" %}{% include "status/_submenu.html" %}{% endwith %}
+
+<div class="st-head">
+    <h2>風の状況</h2>
+    <span class="st-badge">10分ごと更新</span>
+    <span class="st-time">{{ obs_time.month }}月{{ obs_time.day }}日
+        {{ obs_time.hour }}時{{ "%02d" | format(obs_time.minute) }}分現在 ／
+        {{ n_stations }} 地点</span>
+</div>
+
+<div class="st-sec">
+    <div class="st-two">
+        <div>
+            <h3>今の風が強い順</h3>
+            <div class="table-responsive">
+                <table class="weathertable">
+                    <tr><th>順位</th><th>地点</th><th>都道府県</th><th>風向</th><th>風速</th></tr>
+                    {% for r in now_top %}
+                    <tr>
+                        <td class="wcenter">{{ loop.index }}</td>
+                        <td>{{ r.name }}</td>
+                        <td>{{ r.pref }}</td>
+                        <td class="wcenter">
+                            {% if r.deg is not none %}<span class="wd-arrow"
+                                style="transform: rotate({{ r.deg }}deg)">&#8595;</span>{% endif %}
+                            {{ r.dir_name }}
+                        </td>
+                        <td class="wright">{{ "%.1f" | format(r.wind / 10) }} m/s</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+        <div>
+            <h3>今日ここまでの最大</h3>
+            <div class="table-responsive">
+                <table class="weathertable">
+                    <tr><th>順位</th><th>地点</th><th>都道府県</th><th>風向</th><th>最大風速</th><th>時刻</th></tr>
+                    {% for r in peak_top %}
+                    <tr>
+                        <td class="wcenter">{{ loop.index }}</td>
+                        <td>{{ r.name }}</td>
+                        <td>{{ r.pref }}</td>
+                        <td class="wcenter">{{ r.peak_dir }}</td>
+                        <td class="wright">{{ "%.1f" | format(r.peak / 10) }} m/s</td>
+                        <td class="wcenter">{{ r.peak_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+        </div>
+    </div>
+    <p class="st-note">
+        <strong>最大風速は 10 分値から求めたものです。</strong>
+        気象庁が公表する日最大風速・日最大瞬間風速とは算出方法が異なります
+        （瞬間風速はこのデータに含まれていません）。本日 0 時から
+        {{ slot_count }} 回の観測を対象にしています。
+    </p>
+</div>
+
+<div class="st-sec">
+    <h3>風向の分布（今）</h3>
+    <div class="rose">
+        <table>
+            {% for name, n in dist %}
+            <tr>
+                <td>{{ name }}</td>
+                <td><div class="bar" style="width: {{ (100 * n / dist_max) | round(1) }}%"></div></td>
+                <td>{{ n }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    <p class="st-note">静穏（風向が定まらない）: {{ calm }} 地点</p>
+</div>
+
+<div class="st-sec">
+    <h3>全地点（{{ n_stations }} 地点・風速の強い順）</h3>
+    <div class="region-chips">
+        <a href="javascript:void(0)" class="rchip active" data-region="">全国</a>
+        {% for key, name in region_filters %}
+        <a href="javascript:void(0)" class="rchip" data-region="{{ key }}">{{ name }}</a>
+        {% endfor %}
+    </div>
+    <div class="table-responsive">
+        <table class="weathertable" id="all-table">
+            <tr><th>順位</th><th>地点</th><th>都道府県</th><th>風向</th><th>風速</th><th>本日最大</th></tr>
+            {% for r in rows %}
+            <tr data-region="{{ r.region }}">
+                <td class="wcenter">{{ loop.index }}</td>
+                <td>{{ r.name }}</td>
+                <td>{{ r.pref }}</td>
+                <td class="wcenter">{{ r.dir_name }}</td>
+                <td class="wright">{{ "%.1f" | format(r.wind / 10) }}</td>
+                <td class="wright">{% if r.peak is not none %}{{ "%.1f" | format(r.peak / 10) }}{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    <p class="st-note">
+        風向は風が吹いてくる方角です（矢印は風の進む向きを指しています）。単位は m/s。
+        出典: 気象庁ホームページのアメダス観測値を加工して作成しています。
+    </p>
+</div>
+
+{% endblock %}
+
+{% block add_script %}
+<script>
+document.querySelectorAll('.region-chips .rchip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+        var key = chip.dataset.region;
+        document.querySelectorAll('.region-chips .rchip').forEach(function (c) {
+            c.classList.toggle('active', c === chip);
+        });
+        document.querySelectorAll('#all-table tr[data-region]').forEach(function (tr) {
+            tr.style.display = (!key || tr.dataset.region === key) ? '' : 'none';
+        });
+    });
+});
+</script>
+{% endblock %}
