@@ -89,6 +89,12 @@ FILL_B = np.int8(-1)
 
 # (map JSON のキー, 格納倍率, 型, 単位) — 倍率は値域が int16 に収まるよう選ぶ。
 # visibility は m のままだと 50,000 で溢れるため 10 m 単位で格納する。
+#
+# 積雪は夏の map JSON には現れない（amedastable.json の elems 6 桁目に
+# 積雪計 336 地点があり、冬季のみ値が入る）。夏のデータだけを見て表を作ると
+# 冬に無言で捨てることになるため、**未知のキーは自動で拾う**ようにしてある
+# （下の unknown_elements と _f4 の扱いを参照）。ここに載っているのは
+# 「int16 で正しく畳める」と分かっているものだけ。
 ELEMENTS = [
     ("temp",             10,   "i2", "degC"),
     ("humidity",          1,   "i2", "%"),
@@ -103,7 +109,16 @@ ELEMENTS = [
     ("wind",             10,   "i2", "m/s"),
     ("windDirection",     1,   "i1", "16-point"),
     ("visibility",        0.1, "i2", "m"),
+    ("snow",              1,   "i2", "cm"),
+    ("snow1h",            1,   "i2", "cm"),
+    ("snow6h",            1,   "i2", "cm"),
+    ("snow12h",           1,   "i2", "cm"),
+    ("snow24h",           1,   "i2", "cm"),
+    # 毎正時のスロットにだけ入る（そのため正時のファイルは約 100KB 大きい）。
+    # 非正時のファイル 1 本だけを見て表を作ると取りこぼす
+    ("weather",           1,   "i2", "JMA weather code"),
 ]
+KNOWN_KEYS = {k for k, _, _, _ in ELEMENTS}
 
 SOURCE = "気象庁ホームページ (https://www.jma.go.jp/)"
 # 生ペイロードの素通しは複製、NetCDF は再構成なので加工表記が要る
@@ -233,22 +248,38 @@ def write_period_netcdf(p: tuple[int, int, int], paths: list[Path], out: Path) -
     by_name = {q.stem: q for q in paths}
 
     found: set[str] = set()
+    seen_keys: set[str] = set()
     for name in names:
         try:
-            found.update(json.loads(by_name[name].read_bytes()))
+            snap = json.loads(by_name[name].read_bytes())
         except ValueError:
             log(f"  {name}: 読めないため除外")
+            continue
+        found.update(snap)
+        for entry in snap.values():
+            seen_keys.update(entry)
     stations = sorted(found)
     sidx = {s: i for i, s in enumerate(stations)}
     n_s, n_t = len(stations), len(names)
 
+    # 表に無いキーも必ず残す。倍率が分からないので float32 で素通しし、警告を出す。
+    # ここで捨てると気づいたときには生 JSON が消えていて回復できない。
+    unknown = sorted(seen_keys - KNOWN_KEYS)
+    if unknown:
+        log(f"  警告: 未知の要素 {unknown} を float32 で保存（ELEMENTS に倍率を追加すべき）")
+    spec = [(k, s, t, u) for k, s, t, u in ELEMENTS if k in seen_keys]
+    spec += [(k, 1, "f4", "unknown") for k in unknown]
+
     start = period_start(p)
     val: dict[str, np.ndarray] = {}
     qual: dict[str, np.ndarray] = {}
-    for key, _scale, typ, _unit in ELEMENTS:
-        i1 = typ == "i1"
-        val[key] = np.full((n_s, n_t), FILL_B if i1 else FILL,
-                           dtype=np.int8 if i1 else np.int16)
+    for key, _scale, typ, _unit in spec:
+        if typ == "f4":
+            val[key] = np.full((n_s, n_t), np.nan, dtype=np.float32)
+        else:
+            i1 = typ == "i1"
+            val[key] = np.full((n_s, n_t), FILL_B if i1 else FILL,
+                               dtype=np.int8 if i1 else np.int16)
         qual[key] = np.full((n_s, n_t), FILL_B, dtype=np.int8)
 
     for j, name in enumerate(names):
@@ -258,11 +289,15 @@ def write_period_netcdf(p: tuple[int, int, int], paths: list[Path], out: Path) -
             continue
         for s, entry in snap.items():
             i = sidx[s]
-            for key, scale, _typ, _unit in ELEMENTS:
+            for key, scale, typ, _unit in spec:
                 e = entry.get(key)
                 if isinstance(e, list) and len(e) >= 2 and e[0] is not None:
-                    val[key][i, j] = int(round(float(e[0]) * scale))
-                    qual[key][i, j] = e[1]
+                    val[key][i, j] = (float(e[0]) if typ == "f4"
+                                      else int(round(float(e[0]) * scale)))
+                    # snow1h 系は品質フラグが null で来ることがある（実測で
+                    # 45,600 件）。欠測扱いにして値だけ残す
+                    if e[1] is not None:
+                        qual[key][i, j] = e[1]
 
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_suffix(".tmp")
@@ -290,15 +325,17 @@ def write_period_netcdf(p: tuple[int, int, int], paths: list[Path], out: Path) -
          for n in names], dtype=np.int32)
 
     chunk = (n_s, min(SLOTS_PER_DAY, n_t))     # 1 日 1 チャンク: 1 日読むのに全体を展開しない
-    for key, scale, typ, unit in ELEMENTS:
-        fill = FILL_B if typ == "i1" else FILL
+    for key, scale, typ, unit in spec:
+        f4 = typ == "f4"
+        fill = np.nan if f4 else (FILL_B if typ == "i1" else FILL)
         var = ds.createVariable(key, typ, ("station", "time"), zlib=True, complevel=9,
                                 shuffle=True, chunksizes=chunk, fill_value=fill)
-        # scale_factor 付きの変数へ代入すると netCDF4 が書き込み時にも値÷scale_factor を
-        # 適用してしまい、こちらで整数化済みの値が再度 ×scale されて int16 を溢れる
-        # (気圧 10037 → 100370 → 折り返して -30702)。素通しで格納する。
-        var.set_auto_scale(False)
-        var.scale_factor = 1.0 / scale
+        if not f4:
+            # scale_factor 付きの変数へ代入すると netCDF4 が書き込み時にも値÷scale_factor を
+            # 適用してしまい、こちらで整数化済みの値が再度 ×scale されて int16 を溢れる
+            # (気圧 10037 → 100370 → 折り返して -30702)。素通しで格納する。
+            var.set_auto_scale(False)
+            var.scale_factor = 1.0 / scale
         var.units = unit
         var[:, :] = val[key]
         qv = ds.createVariable(f"{key}_q", "i1", ("station", "time"), zlib=True, complevel=9,
