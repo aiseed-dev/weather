@@ -1,0 +1,9 @@
+# アメダス地点別取得の子。親から地点リストを受け取り、取得して R2 へ置く。
+# cron は無い（親から呼ばれるだけ）。公開もしない。
+name = "amedas-point-child"
+main = "child.js"
+compatibility_date = "2026-08-28"
+
+[[r2_buckets]]
+binding = "AMEDAS"
+bucket_name = "weather-amedas"

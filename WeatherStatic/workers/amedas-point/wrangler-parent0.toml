@@ -1,0 +1,19 @@
+# アメダス地点別取得の親（担当 0）。cron を 2 個使い、地点を半分ずつ受け持つ。
+# 子はステートレスなので 1 スクリプトを 33 回並列に呼ぶ（Worker を増やさない）。
+name = "amedas-point-p0"
+main = "parent.js"
+compatibility_date = "2026-08-28"
+
+[triggers]
+crons = ["*/10 * * * *"]
+
+[vars]
+HALF = "0"
+
+[[r2_buckets]]
+binding = "AMEDAS"
+bucket_name = "weather-amedas"
+
+[[services]]
+binding = "CHILD"
+service = "amedas-point-child"

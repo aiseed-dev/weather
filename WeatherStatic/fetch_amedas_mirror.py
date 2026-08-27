@@ -64,6 +64,7 @@ from weatherlib import jma
 BASE = Path(__file__).resolve().parent
 OUT = BASE / "public_amedas"
 MAP = OUT / "map"
+MASTER = BASE / "master"
 
 JST = ZoneInfo("Asia/Tokyo")
 SLOT_MINUTES = 10
@@ -374,6 +375,50 @@ def seal_periods(latest: datetime) -> int:
 
 # ---------------------------------------------------------------- 公開メタデータ
 
+def write_station_index() -> None:
+    """地点索引を公開ツリーへ置く（Worker と消費側が読む地点マスタ）。
+
+    正本は tgsvr の master/stations.json。Worker はこれを R2 から読んで
+    担当地点を決めるので、**索引が先に無いと親 Worker は動けない**。
+
+    並びは府県予報区（prec_no）順にする。親が地点を配る単位が地理的に
+    まとまり、障害時にどの地域が欠けたか分かる。
+
+    鍵はアメダス番号（10 分値の一次データがその体系）。統計 code は stat に
+    併記し、observations.nc・平年値との突合はそちらで行う。
+    """
+    src = MASTER / "stations.json"
+    if not src.exists():
+        log("master/stations.json が無いため地点索引を作れない（build_master.py 未実行?）")
+        return
+    st = json.loads(src.read_text(encoding="utf-8"))["stations"]
+    ordered = sorted(st.items(),
+                     key=lambda kv: ((kv[1].get("etrn") or {}).get("prec_no", 99),
+                                     kv[1]["amedas"]))
+    body = {
+        "generated_at": datetime.now(JST).isoformat(timespec="seconds"),
+        "attribution": NOTICE_DERIVED,
+        "note": ("鍵はアメダス番号。統計 code は stat（observations.nc・平年値・"
+                 "etrn はこちらの体系）。アメダス番号は移転や改番で変わりうるため、"
+                 "長期の統計は stat を使うこと。"),
+        "count": len(ordered),
+        "stations": {
+            r["amedas"]: {
+                "stat": code, "intl": r["intl"], "name": r["name"],
+                "kana": r.get("kana"), "pref": r.get("pref") or "",
+                "lat": r["lat"], "lon": r["lon"], "alt": r["alt"],
+                "type": r.get("type"), "elements": r.get("elements"),
+                "prec_no": (r.get("etrn") or {}).get("prec_no"),
+            } for code, r in ordered
+        },
+    }
+    out = OUT / "station" / "index.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(body, ensure_ascii=False, separators=(",", ":")),
+                   encoding="utf-8")
+    log(f"station/index.json ({out.stat().st_size/1024:.0f} KB / {len(ordered)} 地点・府県順)")
+
+
 def write_index(latest: datetime) -> None:
     slots = sorted(p.stem for p in MAP.glob("*.json"))
     archives = []
@@ -451,6 +496,7 @@ def main() -> int:
             latest.replace(tzinfo=JST).isoformat(timespec="seconds"), encoding="utf-8")
 
     sealed = seal_periods(latest)
+    write_station_index()
     write_index(latest)
     write_headers()
 
