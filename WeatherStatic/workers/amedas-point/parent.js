@@ -1,70 +1,84 @@
 /**
- * アメダス地点別データの取得（親）。cron で起き、子を並列に呼ぶだけ。
+ * アメダス地点別データの取得（親）。**tgsvr から呼ばれて**子を並列に起こす。
  *
- * なぜ親子に分けるか: 無料枠は **1 実行あたりサブリクエスト 50 件**。
- * 1,286 地点を 1 実行では取れない。子をステートレス（地点リストを引数で渡す）に
- * すると、**同じ子スクリプトを何回でも並列に呼べる**ので、スクリプトは
- * 親と子の 2 本で済む（Worker を 68 本デプロイする必要はない）。
+ * なぜ cron をやめたか
+ * --------------------
+ * 以前は親自身が cron で起き、日時も地点一覧も自分で決めていた。しかし
+ * 転置・NetCDF 封入・サイト生成は結局 tgsvr でしかできない。**いつ・何を
+ * 取るかを決めるのは tgsvr** に寄せたほうが、日付の切り替わりや取りこぼしの
+ * 追跡が 1 箇所で済む。Worker は「重い取得を肩代わりする手足」に徹する。
  *
- * cron を 2 個使い、親を 2 つ動かして地点を半分ずつ担当する:
- *   親 = 33 サブリクエスト（子の呼び出し）  ≤ 50
- *   子 = 約 20 サブリクエスト（気象庁への取得）≤ 50
- * どちらも上限に余裕がある。cron は 2/5 しか使わない。
+ * それでも Worker を使うのは tgsvr の負荷を下げるため。1,286 地点を
+ * 1 秒間隔で取ると 21 分かかるが、Worker なら並列に走る。
  *
- * 地点の並びは府県予報区（prec_no）順。ブロックが地理的にまとまるので、
- * 障害時にどの地域が欠けたか分かりやすい。
+ * なぜ親子に分けるか
+ * ------------------
+ * 無料枠は **1 実行あたりサブリクエスト 50 件**。1,286 地点を 1 実行では
+ * 取れない。子をステートレス（地点を引数で受ける）にすると、**同じ子を
+ * 何度でも並列に呼べる**ので、スクリプトは親と子の 2 本で済む。
+ *
+ *   親 = 子の呼び出し数（≤ 50）
+ *   子 = 担当地点数（≤ 50）
  *
  * 環境変数:
- *   HALF   "0" or "1"  … 担当する半分
  *   CHILD  Service Binding … 子 Worker
- *   AMEDAS R2 バケット … 地点索引の読み出しに使う
+ *   TOKEN  呼び出しの合言葉（tgsvr だけが起こせるように）
  */
 
-const KIDS = 33;            // 1 親あたりの子呼び出し数（サブリクエスト 50 の内側）
-const PARENTS = 2;
+const KIDS = 33;              // 1 回の呼び出しで起こす子の数（サブリクエスト 50 の内側）
 
-/** 3 時間ブロックのファイル名部（JST）。地点別ファイルは 1 本で 3 時間分を含む */
-function currentBlock(nowMs) {
-  const jst = new Date(nowMs + 9 * 3600 * 1000);
-  const p = (n, w = 2) => String(n).padStart(w, "0");
-  const h = Math.floor(jst.getUTCHours() / 3) * 3;
-  return `${jst.getUTCFullYear()}${p(jst.getUTCMonth() + 1)}${p(jst.getUTCDate())}_${p(h)}`;
-}
-
-async function run(env) {
-  // 地点一覧は R2 から読む（埋め込むと地点の増減のたびに再デプロイになる）。
-  // R2 の読み出しはサブリクエストを消費しない。
-  const obj = await env.AMEDAS.get("station/index.json");
-  if (!obj) throw new Error("station/index.json が無い（tgsvr 側の生成待ち）");
-  const index = await obj.json();
-  const all = Object.keys(index.stations || index).sort();
-
-  const half = Number(env.HALF || 0);
-  const mine = all.filter((_, i) => i % PARENTS === half);
-  const block = currentBlock(Date.now());
-
-  const size = Math.ceil(mine.length / KIDS);
+async function run(env, body) {
+  const { stations, day, hour } = body;
+  const size = Math.ceil(stations.length / KIDS);
   const calls = [];
-  for (let i = 0; i < mine.length; i += size) {
-    const chunk = mine.slice(i, i + size);
+  for (let i = 0; i < stations.length; i += size) {
+    const chunk = stations.slice(i, i + size);
     calls.push(env.CHILD.fetch("https://child/fetch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ stations: chunk, block }),
-    }).then(r => r.json(), e => ({ ok: 0, error: String(e) })));
+      body: JSON.stringify({ stations: chunk, day, hour }),
+    }).then(r => r.json(), e => ({ error: String(e) })));
   }
   const res = await Promise.all(calls);
-  const got = res.reduce((n, r) => n + (r.stored || 0), 0);
-  const failed = res.reduce((n, r) => n + (r.failed || 0), 0);
-  return { half, block, stations: mine.length, children: calls.length, got, failed };
+  const sum = (k) => res.reduce((n, r) => n + (r[k] || 0), 0);
+  return {
+    day, hour, stations: stations.length, children: calls.length,
+    stored: sum("stored"), missing: sum("missing"), failed: sum("error"),
+  };
 }
 
 export default {
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(run(env).then(
-      r => console.log(`point[${r.half}] ${r.block}: ${r.got}/${r.stations} 保存`
-                     + (r.failed ? ` / 失敗 ${r.failed}` : "")),
-      e => console.error(`point[${env.HALF}]: ${e}`),
-    ));
+  /**
+   * tgsvr からの呼び出し口。地点一覧は**呼ぶ側が渡す** — Worker が
+   * station/index.json を読みに行かないので、地点の増減も tgsvr 側の
+   * 一存で反映できる（Worker の再デプロイが要らない）。
+   *
+   *   POST /fetch  {"day":"20260828","hour":"12",
+   *                 "stations":[["11001","011000"], ...]}
+   */
+  async fetch(request, env) {
+    if (request.method !== "POST" || new URL(request.url).pathname !== "/fetch") {
+      return new Response("not found", { status: 404 });
+    }
+    if (!env.TOKEN || request.headers.get("Authorization") !== `Bearer ${env.TOKEN}`) {
+      return new Response("forbidden", { status: 403 });
+    }
+    let body;
+    try {
+      body = await request.json();
+    } catch (_) {
+      return new Response("bad request", { status: 400 });
+    }
+    const { stations, day, hour } = body || {};
+    if (!Array.isArray(stations) || !stations.length
+        || !/^\d{8}$/.test(day || "") || !/^\d{2}$/.test(hour || "")) {
+      return new Response("stations(配列) と day(YYYYMMDD) と hour(HH) が要る",
+                          { status: 400 });
+    }
+    try {
+      return Response.json(await run(env, { stations, day, hour }));
+    } catch (e) {
+      return new Response(String(e), { status: 500 });
+    }
   },
 };

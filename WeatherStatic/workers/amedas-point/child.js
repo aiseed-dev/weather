@@ -11,16 +11,26 @@
  *   - 404 は正常に起こりうる（その 3 時間ブロックがまだ無い等）。再試行しない
  *
  * R2 レイアウト:
- *   point/{アメダス番号}/{YYYYMMDD_HH}.json … 生ペイロード（3 時間分の 10 分値）
+ *   point/{YYYYMMDD}/{area_code}/{アメダス番号}.json
+ *
+ * **日付を最上位に置く。** 半月分を NetCDF へ封入したあと生 JSON を消す運用で、
+ * 日付が上なら 1 階層の削除で済む。area_code（気象庁の予報区。北海道 8・
+ * 鹿児島 2・沖縄 4 に分かれる）で分けるのは、1 ディレクトリ 8〜47 地点に
+ * 収まり、地域の障害を切り分けられるため。
+ *
+ * 3 時間ファイル（{YYYYMMDD}_{HH}.json）は 1 日 8 本あるが、**同じ日の分は
+ * 1 本にまとめて置く**。日をまたがない限り上書きで済み、日別の扱いが単純になる。
  */
 
 const JMA = "https://www.jma.go.jp/bosai/amedas/data/point";
 const UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)";
 const CONCURRENCY = 6;      // Workers の同時接続上限に合わせる
 
-async function fetchOne(env, code, block) {
-  const key = `point/${code}/${block}.json`;
-  const res = await fetch(`${JMA}/${code}/${block}.json`, {
+async function fetchOne(env, st, day, hour) {
+  // st = [アメダス番号, area_code]
+  const [code, area] = st;
+  const key = `point/${day}/${area}/${code}.json`;
+  const res = await fetch(`${JMA}/${code}/${day}_${hour}.json`, {
     headers: { "User-Agent": UA },
   });
   if (!res.ok) return res.status === 404 ? "missing" : "error";
@@ -35,14 +45,14 @@ async function fetchOne(env, code, block) {
   return "stored";
 }
 
-async function handle(env, stations, block) {
+async function handle(env, stations, day, hour) {
   const tally = { stored: 0, missing: 0, error: 0 };
   let i = 0;
   const worker = async () => {
     while (i < stations.length) {
-      const code = stations[i++];
+      const st = stations[i++];
       try {
-        tally[await fetchOne(env, code, block)]++;
+        tally[await fetchOne(env, st, day, hour)]++;
       } catch (_) {
         tally.error++;
       }
@@ -64,11 +74,13 @@ export default {
     } catch (_) {
       return new Response("bad request", { status: 400 });
     }
-    const { stations, block } = body || {};
-    if (!Array.isArray(stations) || !block) {
-      return new Response("stations と block が要る", { status: 400 });
+    const { stations, day, hour } = body || {};
+    if (!Array.isArray(stations) || !/^\d{8}$/.test(day || "")
+        || !/^\d{2}$/.test(hour || "")) {
+      return new Response("stations(配列) と day(YYYYMMDD) と hour(HH) が要る",
+                          { status: 400 });
     }
-    const t = await handle(env, stations, block);
+    const t = await handle(env, stations, day, hour);
     return Response.json({ ok: 1, ...t, failed: t.error });
   },
 };
