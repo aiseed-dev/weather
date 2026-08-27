@@ -111,8 +111,8 @@ machine or integrating with VS Code straightforward.
 
 ```bash
 # Clone the repository
-git clone https://github.com//aiseed-weather.git
-cd aiseed-weather
+git clone https://github.com/aiseed-dev/weather.git
+cd weather
 
 # Create .venv inside the project (Python 3.13 base)
 mamba env create --prefix ./.venv -f environment.yml

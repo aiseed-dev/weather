@@ -40,6 +40,7 @@ import numpy as np
 from weatherlib import jma
 from weatherlib.ncstore import FILL, FILL_B, NcStore, date_index
 from weatherlib.store import open_store
+from weatherlib.storelock import store_lock
 
 BASE = Path(__file__).resolve().parent
 SQLITE = BASE / "store" / "weather.sqlite"
@@ -121,7 +122,12 @@ def main() -> int:
     ap.add_argument("--to", dest="to", required=True, metavar="YYYY-MM")
     ap.add_argument("--main-only", action="store_true", help="主要 57 都市のみ")
     ap.add_argument("--limit", type=int, default=0, help="今回取得する最大ページ数")
-    ap.add_argument("--force", action="store_true", help="既存カバレッジがあっても取得")
+    ap.add_argument("--force", action="store_true",
+                    help="既存カバレッジと取得済みマークを無視して取り直す"
+                         "（速報値を確定値へ置き換える月次バッチ用）")
+    ap.add_argument("--current", action="store_true",
+                    help="進行中の月も取得する。値は速報値なので、"
+                         "確定後に --force で取り直すこと")
     args = ap.parse_args()
 
     stations = json.loads((MASTER / "stations.json").read_text(encoding="utf-8"))["stations"]
@@ -137,6 +143,11 @@ def main() -> int:
         "SELECT key FROM ingest_log WHERE kind = 'etrn_daily'")}
     rowmap = dict(conn.execute("SELECT code, row FROM stations WHERE code IS NOT NULL"))
 
+    # ここから rename までがストアの更新区間。取得ループが長いので copy を先に
+    # 取ってしまうと、その間に他ジョブが書いた分を最後の rename で消してしまう。
+    # 呼び出し側の flock 任せにせず、スクリプト自身がロックを持つ。
+    lock = store_lock(log=log)
+    lock.__enter__()
     work = NC.with_suffix(".nc.work")
     shutil.copy2(NC, work)
     ncs = NcStore(work, conn)
@@ -157,13 +168,15 @@ def main() -> int:
         for y, m in months:
             if stop:
                 break
-            if (y, m) >= (today.year, today.month):
-                continue   # 進行中の月は対象外（確定後に月次で取る）
+            if (y, m) >= (today.year, today.month) and not args.current:
+                continue   # 進行中の月は既定で対象外（確定後に月次で取る）
             j0 = date_index(date(y, m, 1))
             nd = days_in_month(y, m)
             for code, rec in targets:
                 key = f"{code}-{y:04d}{m:02d}"
-                if key in done:
+                # --force は取得済みマークも無視する。ここを素通しにしないと、
+                # 一度取った月は二度と取り直せず、速報値が確定値へ更新されない。
+                if key in done and not args.force:
                     continue
                 row = rowmap.get(code)
                 if row is None:
@@ -216,6 +229,7 @@ def main() -> int:
                      [(k, now) for k in new_marks])
     conn.commit()
     conn.close()
+    lock.__exit__(None, None, None)
     log(f"完了: {n_pages} ページ取得 / {n_cells:,} セル書込 / 充足スキップ {n_skip_cov}")
     return 0
 

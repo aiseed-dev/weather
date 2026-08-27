@@ -54,10 +54,17 @@ tgsvr の crontab（設置済み）:
 30 3 2 * * cd $HOME/dev/weather/WeatherStatic && flock -w 10800 $HOME/dev/weather/store.lock ./.venv/bin/python backfill_etrn.py --from $(date -d "-1 month" +\%Y-\%m) --to $(date -d "-1 month" +\%Y-\%m) --force >> $HOME/dev/weather/logs/etrn_monthly.log 2>&1
 ```
 
-**flock 必須**: accumulate.py と backfill_etrn.py は observations.nc を
-「コピー → 更新 → rename」で置き換えるため、同時実行すると後勝ちで
-書込が失われる。ストアへ書くジョブは必ず `flock $HOME/dev/weather/store.lock`
-を介して直列化する（手動バックフィル実行時も同様）。
+**ロックはスクリプト自身が取る**（2026-08-27 以降）。observations.nc は
+「コピー → 更新 → rename」で置き換えるため、同時実行すると後勝ちで書込が失われる。
+以前は cron 側の `flock` に頼っていたが、手動実行の手順から簡単に抜け落ちるため
+（実際に抜けた）、`weatherlib/storelock.py` を accumulate / backfill_daily /
+backfill_etrn が自前で使うようにした。**cron やコマンドラインで flock を書く必要はない**
+（書いても二重に効くだけで害はない）。
+
+- ロックファイルは `WeatherStatic/store.lock`（`WEATHER_STORE_LOCK` で変更可）
+- accumulate は 40 分待って取れなければ**その回を見送る**（7 日窓なので次回が拾う）。
+  見送りはログに 1 行残る
+- バックフィルは既定 1 時間待つ。長時間走るので、その間 accumulate は見送られる
 
 ## 過去観測データ（月次で十分）
 

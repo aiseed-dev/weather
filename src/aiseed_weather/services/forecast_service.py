@@ -48,6 +48,7 @@ Implementation notes
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import shutil
 import urllib.request
@@ -277,6 +278,7 @@ class ForecastService:
             self._client = Client(source=client_source)
         self._settings = settings
         self._include_ext = include_ext
+        self._manifest_cache: dict[str, dict] = {}
         self._cache_dir = resolved_data_dir(settings) / "ecmwf"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self.client_source = client_source  # for logging / display
@@ -323,22 +325,51 @@ class ForecastService:
                 await asyncio.to_thread(self._download_ext, request, path, name)
         return path
 
-    # ext-tier pack names per kind (mirror only). sol has no ext —
-    # the publisher puts the whole soil hypercube in sol-core.
-    _EXT_PARTS = {"sfc": ("sfc-ext",), "pl": ("pl-ext", "pl-ext-lv")}
+    def _mirror_manifest(self, r: ForecastRequest) -> dict:
+        """Per-run manifest, fetched once and cached. Lists every part
+        filename the publisher wrote for the run."""
+        key = f"{r.run_time:%Y%m%d_%H}z"
+        if key not in self._manifest_cache:
+            url = f"{self._settings.mirror_url}/runs/{key}/manifest.json"
+            req = urllib.request.Request(
+                url, headers={"User-Agent": "aiseed-weather/1.0"})
+            try:
+                with urllib.request.urlopen(req) as resp:
+                    self._manifest_cache[key] = json.loads(resp.read())
+            except Exception:
+                logger.warning("no manifest at %s — assuming pre-split layout", url)
+                self._manifest_cache[key] = {}
+        return self._manifest_cache[key]
+
+    def _mirror_parts(self, r: ForecastRequest, tier: str) -> "list[str]":
+        """Part filenames for one (step, kind, tier) on the mirror.
+
+        A tier is one *or more* files: the publisher splits pressure-level
+        packs per level so every file stays under the 25 MiB per-file limit
+        of the hosting (see tools/publish_forecast.py:split_datasets). The
+        fallback covers mirrors published before that split. sol has no ext —
+        the publisher puts the whole soil hypercube in sol-core.
+        """
+        prefix = f"{r.step_hours:03d}h-{r.kind}-{tier}"
+        steps = self._mirror_manifest(r).get("steps", {})
+        names = sorted(n for n in steps.get(str(r.step_hours), ())
+                       if n.startswith(prefix))
+        if names:
+            return names
+        if tier == "core":
+            return [f"{prefix}.nc"]
+        return [f"{prefix}.nc", f"{prefix}-lv.nc"] if r.kind == "pl" else [f"{prefix}.nc"]
 
     def _missing_ext(self, r: ForecastRequest, core_path: Path) -> "list[str]":
         """Sibling ext filenames still to fetch (empty unless the
         service is a mirror with include_ext on)."""
         if self.client_source != "mirror" or not self._include_ext:
             return []
-        out = []
-        for part in self._EXT_PARTS.get(r.kind, ()):
-            name = f"{r.step_hours:03d}h-{part}.nc"
-            sib = core_path.with_name(name)
-            if not sib.exists() or sib.stat().st_size == 0:
-                out.append(name)
-        return out
+        if r.kind == "sol":
+            return []
+        return [name for name in self._mirror_parts(r, "ext")
+                if not (sib := core_path.with_name(name)).exists()
+                or sib.stat().st_size == 0]
 
     def _download_ext(self, r: ForecastRequest, core_path: Path, name: str) -> None:
         """Fetch one ext sibling. A 404 is tolerated: the mirror may
@@ -419,17 +450,54 @@ class ForecastService:
         ``is_cached`` would mistake for valid.
         """
         if self.client_source == "mirror":
-            url = _mirror_pack_url(self._settings.mirror_url, r)
-        else:
-            url = _bulk_url(self.client_source, r.run_time, r.step_hours)
+            self._download_core_parts(r, target)
+            return
+        url = _bulk_url(self.client_source, r.run_time, r.step_hours)
         tmp = target.with_suffix(target.suffix + ".part")
         logger.info("ECMWF bulk GET %s → %s", url, target.name)
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "aiseed-weather/1.0"},
-        )
-        with urllib.request.urlopen(req) as resp, tmp.open("wb") as f:
-            shutil.copyfileobj(resp, f, 1 << 20)
+        _http_to_file(url, tmp)
         tmp.replace(target)
+
+    def _download_core_parts(self, r: ForecastRequest, target: Path) -> None:
+        """Fetch the core tier from the mirror and leave **one** file at
+        ``target``.
+
+        Distribution is split per pressure level to stay under the hosting's
+        25 MiB per-file limit, but the on-disk cache stays one file per
+        (step, kind) — the contract the renderers and ``is_grib_cached``
+        rely on (see the data-flow skill: no param in the cache filename).
+        """
+        base = f"{self._settings.mirror_url}/runs/{r.run_time:%Y%m%d_%H}z"
+        names = self._mirror_parts(r, "core")
+        tmp = target.with_suffix(target.suffix + ".part")
+
+        if len(names) == 1:
+            logger.info("mirror GET %s → %s", names[0], target.name)
+            _http_to_file(f"{base}/{names[0]}", tmp)
+            tmp.replace(target)
+            return
+
+        logger.info("mirror GET %d parts → %s", len(names), target.name)
+        staged = []
+        try:
+            for name in names:
+                part = target.with_name(f".{name}.part")
+                _http_to_file(f"{base}/{name}", part)
+                staged.append(part)
+            opened = [xr.open_dataset(p) for p in staged]
+            try:
+                # compat="override" would keep only the first part's values and
+                # blank the levels it does not carry; no_conflicts combines the
+                # non-null values instead.
+                merged = xr.merge(opened, compat="no_conflicts", join="outer")
+                merged.to_netcdf(tmp, format="NETCDF4")
+            finally:
+                for d in opened:
+                    d.close()
+            tmp.replace(target)
+        finally:
+            for p in staged:
+                p.unlink(missing_ok=True)
 
     def _decode(self, path: Path, kind: str = "sfc") -> xr.Dataset:
         return _decode_kind(path, kind)
@@ -453,11 +521,14 @@ def _decode_pack(path: Path, kind: str) -> xr.Dataset:
     (core has the chart set, ext the remaining variables/levels)."""
     parts = [xr.open_dataset(path)]
     step_part = path.name.split("-")[0]  # "024h"
-    for tier in ("ext", "ext-lv"):
-        sibling = path.with_name(f"{step_part}-{kind}-{tier}.nc")
-        if sibling.exists():
-            parts.append(xr.open_dataset(sibling))
-    ds = xr.merge(parts, compat="override") if len(parts) > 1 else parts[0]
+    # ext は気圧面ごとに分かれて届くことがある（配信側の 25 MiB 制限）。
+    # 名前を決め打ちせず、その step/kind の ext を全部拾う。
+    for sibling in sorted(path.parent.glob(f"{step_part}-{kind}-ext*.nc")):
+        parts.append(xr.open_dataset(sibling))
+    # compat="override" は先勝ちで、同じ変数が別ファイルの別気圧面に
+    # 分かれている場合に片方を NaN で潰してしまう（gh@500 と gh@700 など）。
+    ds = (xr.merge(parts, compat="no_conflicts", join="outer")
+          if len(parts) > 1 else parts[0])
     if kind == "sfc":
         ds = _restore_grib_shortnames(ds)
     return ds
@@ -556,11 +627,21 @@ def _restore_grib_shortnames(ds: xr.Dataset) -> xr.Dataset:
     return ds
 
 
+def _http_to_file(url: str, target: Path) -> None:
+    """GET into ``target``. Callers write to a ``.part`` sidecar and rename,
+    so a crash mid-download never leaves a half-cached file that
+    ``is_cached`` would mistake for valid."""
+    req = urllib.request.Request(url, headers={"User-Agent": "aiseed-weather/1.0"})
+    with urllib.request.urlopen(req) as resp, target.open("wb") as f:
+        shutil.copyfileobj(resp, f, 1 << 20)
+
+
 def _mirror_pack_url(mirror_url: str, r: ForecastRequest) -> str:
     """URL of one per-(step, kind) core pack on the mirror.
 
-    Layout is fixed by tools/publish_forecast.py:
-    ``runs/{YYYYMMDD}_{HH}z/{step:03d}h-{kind}-core.nc``.
+    Pre-split layout, kept for mirrors published before the per-level split.
+    Current publishers write one file per pressure level; the service
+    resolves those from the run manifest (``_mirror_parts``).
     """
     return (
         f"{mirror_url}/runs/{r.run_time:%Y%m%d_%H}z/"

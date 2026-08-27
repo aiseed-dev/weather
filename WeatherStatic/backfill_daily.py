@@ -38,6 +38,7 @@ import numpy as np
 
 from weatherlib.ncstore import FILL, FILL_B, NcStore, date_index
 from weatherlib.store import open_store
+from weatherlib.storelock import store_lock
 
 BASE = Path(__file__).resolve().parent
 SQLITE = BASE / "store" / "weather.sqlite"
@@ -159,7 +160,10 @@ def main() -> int:
         return 0
 
     # 2. 行割当と nc 書き込み（コピー → 更新 → rename）
+    # copy から rename までは他ジョブと排他にする（重なると片方の書き込みが消える）
     conn = open_store(SQLITE)
+    lock = store_lock(log=log)
+    lock.__enter__()
     work = NC.with_suffix(".nc.work")
     if NC.exists():
         shutil.copy2(NC, work)
@@ -202,7 +206,13 @@ def main() -> int:
                 for var, (vcol, qcol) in FIELD_MAP.items():
                     v = to_int(r.get(vcol))
                     q = to_int(r.get(qcol))
-                    if v is None or v == -999 or (q is not None and q < 1):
+                    # 欠測センチネルはこのダンプでは ×10 整数の -9999 / -32768 /
+                    # int32 最小値が混在する（-999 だけを見ていたため -999.9℃ が
+                    # 本物の値として 3.7 万セル入り込んでいた）。気温の世界記録は
+                    # -89.2℃、降水量は負にならないので、この閾値で安全に落とせる。
+                    if v is None or v <= -999 or (q is not None and q < 1):
+                        continue
+                    if var == "precip" and v < 0:
                         continue
                     if blocks[var][row, dj] != FILL:
                         n_keep += 1          # 既存値（現行蓄積）を優先
@@ -224,6 +234,7 @@ def main() -> int:
         conn.close()
 
     work.replace(NC)
+    lock.__exit__(None, None, None)
     import os
     log(f"完了: 値 {n_write:,} セルを追加（既存優先でスキップ {n_keep:,}）、"
         f"observations.nc = {os.path.getsize(NC) / 1e6:.1f} MB "

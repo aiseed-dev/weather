@@ -240,11 +240,17 @@ def make_env() -> Environment:
         lstrip_blocks=True,
     )
     env.filters.update(FILTERS)
-    # CSS のキャッシュバスティング（内容ハッシュを ?v= に付ける）
-    import hashlib
-    css = BASE / "assets" / "site.css"
-    env.globals["css_version"] = (
-        hashlib.md5(css.read_bytes()).hexdigest()[:10] if css.exists() else "0")
+    # CSS のキャッシュバスティング（内容ハッシュを ?v= に付ける）。
+    # モダン版は site-base.css も読むので、両方を混ぜたハッシュにする
+    import hashlib, os
+    h = hashlib.md5()
+    for name in ("site.css", "site-base.css"):
+        p = BASE / "assets" / name
+        if p.exists():
+            h.update(p.read_bytes())
+    env.globals["css_version"] = h.hexdigest()[:10]
+    # 旧 Bootstrap 3 レイアウトへ戻す非常口（_layout.html が参照する）
+    env.globals["legacy_layout"] = os.environ.get("WEATHER_LEGACY_LAYOUT") == "1"
     return env
 
 
@@ -1288,6 +1294,14 @@ def build_forecast(env: Environment) -> None:
           '<a href="/Forecast/">数値予報チャートへ移動</a>')
 
 
+def build_app(env: Environment) -> None:
+    """AIseed Weather（Flet アプリ）の紹介ページ。観測データを使わないので
+    fetch 層に依存せず、テンプレートだけで描ける。"""
+    write("App/index.html", env.get_template("app/index.html").render(
+        page_title="AIseed Weather — 天気図スタジオ",
+        nav_active="app", build_year=datetime.now().year))
+
+
 def build_seo(env: Environment, stations: dict) -> None:
     """sitemap.xml・_redirects（旧URL誘導）・404.html。Pages 移行のサイトインフラ。"""
     import os
@@ -1297,7 +1311,7 @@ def build_seo(env: Environment, stations: dict) -> None:
             "/Temperature/HighsList/", "/Temperature/LowsList/",
             "/Summer/Ranking/", "/Winter/LowestList/", "/Climate/",
             "/Stations/", "/Monthly/", "/Monthly/Latest/",
-            "/Precipitation/", "/Forecast/"]
+            "/Precipitation/", "/Forecast/", "/App/"]
     urls += [f"/Monthly/Heinenti{m:02d}{l}/" for m in range(1, 13) for l in ("", "l")]
     targets = climate_targets(stations)
     urls += [f"/Climate/Chart/{s}/" for _, _, _, s in targets]
@@ -1372,6 +1386,7 @@ def main() -> None:
         build_monthly(env, stations, hist)
         build_precipitation(env, stations)
         build_forecast(env)
+        build_app(env)
         build_seo(env, stations)
         build_home(env, today, meta, fc, stations, hist)
     finally:

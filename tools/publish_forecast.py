@@ -56,6 +56,10 @@ CORE_SFC = ["msl", "t2m", "u10", "v10", "tp", "tcc"]
 CORE_PL_VARS = ["gh", "t", "u", "v", "r", "w"]
 CORE_PL_LEVELS = [250.0, 300.0, 500.0, 700.0, 850.0]
 
+# 1 ファイルに入れるサーフェス変数の上限。Cloudflare Pages の 25 MiB 制限に対し、
+# 0.25° 全球 1 フィールド ≈ 0.93MB（int16+zlib 実測）なので 16 変数で約 15MB。
+MAX_FIELDS_PER_PART = 16
+
 ATTRIBUTION = "Data: ECMWF Open Data. CC-BY-4.0. https://www.ecmwf.int/en/forecasts/datasets/open-data"
 
 
@@ -131,15 +135,61 @@ def pack_encoding(ds: xr.Dataset) -> dict:
     return enc
 
 
+def _chunked(items: "list[str]", size: int) -> "list[list[str]]":
+    return [items[i:i + size] for i in range(0, len(items), size)]
+
+
+def split_datasets(sfc: "xr.Dataset | None", pl: "xr.Dataset | None",
+                   sol: "xr.Dataset | None") -> "dict[str, xr.Dataset]":
+    """kind 別 Dataset を配信単位へ割る。GRIB decode と切り離してある（テスト用）。
+
+    配信単位は **1 ファイル 25 MiB 以下**に収める必要がある（Cloudflare Pages の
+    ハード上限。有料プランでも変わらない）。0.25° 全球の 1 フィールドは
+    int16+zlib で約 0.93MB なので、気圧面は面ごとに、サーフェスの ext は
+    MAX_FIELDS_PER_PART 変数ずつに割る。
+
+    - sfc-core          : 定番 6 変数（約 7MB）
+    - sfc-ext-{n}       : 残りのサーフェス変数（各 MAX_FIELDS_PER_PART 変数まで）
+    - pl-core-{level}   : 定番面の定番変数（各約 7MB）
+    - pl-ext-{level}    : 定番面は残り変数のみ（約 4MB）、定番外の面は
+                          全変数まとめて（約 10MB。旧 pl-ext-lv 相当を含む）
+    - sol-core          : 土壌層（あれば）。アプリの取得ループは
+                          kind = sfc/pl/sol を常に取る（_ACTIVE_KINDS）ので
+                          mirror では sol も core 必須。約 7MB/步と小さい
+
+    名前は `{kind}-{tier}[-{suffix}]` の形を保つこと。publish_run の tier 振り分けと
+    再開判定が 2 番目のトークンを tier として読むため、崩すと両方が壊れる。
+    """
+    out: dict[str, xr.Dataset] = {}
+
+    if sfc is not None:
+        core = [v for v in CORE_SFC if v in sfc.data_vars]
+        out["sfc-core"] = sfc[core]
+        ext = [v for v in sfc.data_vars if v not in core]
+        for n, group in enumerate(_chunked(ext, MAX_FIELDS_PER_PART), start=1):
+            out[f"sfc-ext-{n}"] = sfc[group]
+
+    if pl is not None:
+        core_vars = [v for v in CORE_PL_VARS if v in pl.data_vars]
+        ext_vars = [v for v in pl.data_vars if v not in core_vars]
+        for level in [float(l) for l in pl.isobaricInhPa.values]:
+            at = pl.sel(isobaricInhPa=[level])      # 面次元は残す（結合時に揃える）
+            tag = str(int(level))
+            if level in CORE_PL_LEVELS:
+                if core_vars:
+                    out[f"pl-core-{tag}"] = at[core_vars]
+                if ext_vars:
+                    out[f"pl-ext-{tag}"] = at[ext_vars]
+            elif len(at.data_vars):
+                out[f"pl-ext-{tag}"] = at
+
+    if sol is not None:
+        out["sol-core"] = sol
+    return out
+
+
 def split_tiers(path: Path) -> "dict[str, xr.Dataset]":
     """bulk GRIB を {ファイル名部: Dataset} に分割する。
-
-    - sfc-core / sfc-ext : サーフェス（core は定番 6 変数、ext は残り全部）
-    - pl-core / pl-ext   : 気圧面（core は定番変数×定番面、ext は残り全部。
-                           定番変数の残り面は pl-ext-lv）
-    - sol-core           : 土壌層（あれば）。アプリの取得ループは
-                           kind = sfc/pl/sol を常に取る（_ACTIVE_KINDS）ので
-                           mirror では sol も core 必須。約 7MB/步と小さい
 
     cfgrib.open_datasets（150MB の decode。ここが一番重い）は 1 回だけ呼び、
     kind への振り分けは forecast_service._decode_kind と同じ規則で行う。
@@ -160,31 +210,8 @@ def split_tiers(path: Path) -> "dict[str, xr.Dataset]":
         else:
             sfc_parts.append(d)
 
-    out: dict[str, xr.Dataset] = {}
-
-    if sfc_parts:
-        sfc = xr.merge(sfc_parts, compat="override")
-        core = [v for v in CORE_SFC if v in sfc.data_vars]
-        out["sfc-core"] = sfc[core]
-        ext = [v for v in sfc.data_vars if v not in core]
-        if ext:
-            out["sfc-ext"] = sfc[ext]
-
-    if pl is not None:
-        core_vars = [v for v in CORE_PL_VARS if v in pl.data_vars]
-        core_levels = [l for l in CORE_PL_LEVELS if l in pl.isobaricInhPa.values]
-        out["pl-core"] = pl[core_vars].sel(isobaricInhPa=core_levels)
-        ext_vars = [v for v in pl.data_vars if v not in core_vars]
-        if ext_vars:
-            out["pl-ext"] = pl[ext_vars]
-        other_levels = [float(l) for l in pl.isobaricInhPa.values
-                        if l not in core_levels]
-        if core_vars and other_levels:
-            out["pl-ext-lv"] = pl[core_vars].sel(isobaricInhPa=other_levels)
-
-    if sol is not None:
-        out["sol-core"] = sol
-    return out
+    sfc = xr.merge(sfc_parts, compat="override") if sfc_parts else None
+    return split_datasets(sfc, pl, sol)
 
 
 def write_pack(ds: xr.Dataset, target: Path, run: datetime, step: int) -> None:

@@ -228,3 +228,10 @@ WeatherStatic/public/
 WeatherStatic/master/
 WeatherStatic/logs/
 WeatherStatic/dist/
+WeatherStatic/public_amedas/
+WeatherStatic/store.lock
+
+# 旧 WeatherCore の PostgreSQL ダンプ（157MB）。backfill_daily.py の入力で、
+# 一度取り込めば再取得の必要がない。git に入れる大きさではない
+weather.gz
+*.dump

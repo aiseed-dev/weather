@@ -112,8 +112,8 @@ AIseed Weather は**プロジェクトディレクトリ内に `.venv` として
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com//aiseed-weather.git
-cd aiseed-weather
+git clone https://github.com/aiseed-dev/weather.git
+cd weather
 
 # プロジェクト内に .venv を作成 (Python 3.13 ベース)
 mamba env create --prefix ./.venv -f environment.yml

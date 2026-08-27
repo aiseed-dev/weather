@@ -30,6 +30,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)  # netCDF4×numpy
 from weatherlib import jma
 from weatherlib.ncstore import NcStore
 from weatherlib.store import open_store
+from weatherlib.storelock import store_lock
 
 BASE = Path(__file__).resolve().parent
 STORE_DIR = BASE / "store"
@@ -40,6 +41,8 @@ JST = ZoneInfo("Asia/Tokyo")
 WINDOW_DAYS = 7
 MAP_INTERVAL = 0.3
 CSV_INTERVAL = 0.3
+# バックフィルの書き込みを待つ上限。毎時実行なので、次の起動までに諦める
+LOCK_TIMEOUT = 2400.0
 
 
 def log(msg: str) -> None:
@@ -210,6 +213,19 @@ def migrate_from_sqlite(conn, ncs: NcStore) -> bool:
 
 
 def main() -> int:
+    # ストアを書く区間はロックで直列化する。cron 側の flock に頼ると手動実行で
+    # 簡単に外れ、rename が競合して片方の書き込みが黙って消える。
+    # バックフィルは数時間動くことがあるので、待ちきれなければ諦めて終わる。
+    # 7 日窓で動くため 1 回飛ばしても欠測にはならない（次回がまとめて拾う）。
+    try:
+        with store_lock(timeout=LOCK_TIMEOUT, log=log):
+            return _run()
+    except TimeoutError as exc:
+        log(f"{exc} — 今回は見送る（7 日窓なので次回がまとめて取り込む）")
+        return 0
+
+
+def _run() -> int:
     started = time.monotonic()
     STORE_DIR.mkdir(parents=True, exist_ok=True)
     conn = open_store(SQLITE)

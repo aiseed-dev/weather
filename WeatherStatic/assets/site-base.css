@@ -1,0 +1,173 @@
+/*
+  土台スタイル。Bootstrap 3（bootstrap-pc.min.css / style03pc.min.css / bootstrap.min.js）と
+  jQuery を外すために、旧サイトが Bootstrap から借りていたクラスだけを自前で実装したもの。
+
+  読み込み順は site-base.css → site.css。配色とコンポーネントの見た目は site.css の
+  CSS 変数が持ち、こちらは「Bootstrap が提供していた土台」だけを担当する。
+  そのため既存 20 ページのテンプレートは 1 行も変更せずに済む。
+
+  Bootstrap から引き継いだクラス:
+    .container / .container-outside / .row / .col-xs-*  … 配置
+    .table-responsive                                    … 横スクロール
+    .btn / .btn-default / .btn-group                     … ボタン
+    .form-group / .form-horizontal                       … フォーム
+    .hidden-xs / .visible-xs / .sr-only                  … 表示切替
+    .navbar 一式 / .icon-bar                             … ヘッダ（開閉は CSS のみ、JS 不要）
+    .glyphicon                                           … アイコン（絵文字で代替）
+    .pager / .nav / .active                              … ナビ部品
+*/
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+img { max-width: 100%; height: auto; }
+
+/* ---------------------------------------------------------------- 配置 */
+
+.container, .container-outside, .centerpage {
+    width: 100%;
+    max-width: 1180px;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: 14px;
+    padding-right: 14px;
+}
+
+.maincontainer { min-height: 100vh; display: flex; flex-direction: column; }
+.maincontainer > #footer { margin-top: auto; }
+
+.row { display: flex; flex-wrap: wrap; margin-left: -10px; margin-right: -10px; }
+.row > [class*="col-"] { padding-left: 10px; padding-right: 10px; }
+
+.col-xs-3  { flex: 0 0 25%;  max-width: 25%; }
+.col-xs-4  { flex: 0 0 33.3333%; max-width: 33.3333%; }
+.col-xs-6  { flex: 0 0 50%;  max-width: 50%; }
+.col-xs-12 { flex: 0 0 100%; max-width: 100%; }
+
+/* 旧サイトは col-xs-* を PC 幅の 4 分割に使っていた。狭い画面では 2 列に落とす */
+@media (max-width: 700px) {
+    .col-xs-3 { flex: 0 0 50%; max-width: 50%; }
+}
+@media (max-width: 420px) {
+    .col-xs-3 { flex: 0 0 100%; max-width: 100%; }
+}
+
+.clearfix { clear: both; }
+.sidebar:empty { display: none; }
+
+/* ---------------------------------------------------------------- 表 */
+
+.table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* ---------------------------------------------------------------- ボタン・フォーム */
+
+.btn {
+    display: inline-block;
+    padding: 6px 14px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text);
+    cursor: pointer;
+    text-decoration: none;
+    transition: background .15s, border-color .15s, color .15s;
+}
+.btn:hover, .btn:focus { text-decoration: none; border-color: var(--accent); color: var(--accent); }
+.btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.btn-group { display: inline-flex; flex-wrap: wrap; vertical-align: middle; }
+.btn-group > .btn { border-radius: 0; margin-left: -1px; }
+.btn-group > .btn:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.btn-group > .btn:last-child  { border-radius: 0 8px 8px 0; }
+.btn-group > .btn:only-child  { border-radius: 8px; }
+
+.form-group { margin-bottom: 12px; }
+.form-horizontal { display: inline-block; }
+
+select, input[type="text"] {
+    padding: 6px 10px;
+    font-size: 13.5px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--text);
+}
+select:focus, input[type="text"]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* ---------------------------------------------------------------- 表示切替 */
+
+.sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+}
+.visible-xs { display: none; }
+@media (max-width: 767px) {
+    .hidden-xs { display: none !important; }
+    .visible-xs { display: block; }
+}
+
+/* ---------------------------------------------------------------- ナビ部品 */
+
+.nav { list-style: none; margin: 0; padding: 0; }
+.pager { list-style: none; margin: 0; padding: 0; }
+.pager li { display: inline-block; }
+
+/*
+  ヘッダ。開閉は checkbox のみで行う（bootstrap.min.js と jQuery を外すため）。
+  チェックボックスは navbar-toggle の直前に置く前提。
+*/
+.navbar { position: relative; margin: 0 0 10px; }
+.navbar-header { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+.navbar-brand { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+.navbar-brand:hover { text-decoration: none; }
+
+.nav-toggle-state { display: none; }
+
+.navbar-toggle {
+    display: none;
+    margin-left: auto;
+    padding: 7px 9px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+}
+.navbar-toggle .icon-bar {
+    display: block; width: 20px; height: 2px; margin: 4px 0;
+    background: currentColor; border-radius: 1px;
+}
+
+.navbar-collapse { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; }
+
+@media (max-width: 900px) {
+    .navbar-toggle { display: block; }
+    .navbar-collapse { display: none; width: 100%; flex-direction: column; align-items: stretch; }
+    /* トグルの checkbox が入ると開く */
+    .nav-toggle-state:checked ~ #navbar { display: flex; }
+    .navbar-collapse .nav { display: flex; flex-direction: column; }
+    .navbar-collapse .nav > li > a { display: block; padding: 9px 4px; }
+}
+
+/* ---------------------------------------------------------------- アイコン */
+
+/* 旧サイトの glyphicon をフォント無しで置き換える（意味のあるものだけ） */
+.glyphicon { display: inline-block; font-style: normal; line-height: 1; }
+.glyphicon-info-sign::before  { content: "\24D8"; }   /* ⓘ */
+.glyphicon-arrow-right::before { content: "\2192"; }  /* → */
+.glyphicon-arrow-left::before  { content: "\2190"; }
+.glyphicon-arrow-up::before    { content: "\2191"; }
+.glyphicon-arrow-down::before  { content: "\2193"; }
+.glyphicon-chevron-right::before { content: "\203A"; }
+.glyphicon-chevron-left::before  { content: "\2039"; }
+
+/* ---------------------------------------------------------------- 印刷 */
+
+@media print {
+    .navbar, #footer, .submenunav, #cse-search-box, #theme-toggle { display: none; }
+    .container, .container-outside, .centerpage { max-width: none; padding: 0; }
+    a { text-decoration: none; color: inherit; }
+}

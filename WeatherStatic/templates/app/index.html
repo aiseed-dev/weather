@@ -1,0 +1,214 @@
+{#
+  AIseed Weather（Flet デスクトップアプリ）の紹介ページ。
+  データは持たないので generate.py の build_app() が文脈なしで描画する。
+  色は site.css の CSS 変数だけを使う（ダークモードに自動追従させるため）。
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .app-hero { background: linear-gradient(135deg, var(--sky-from), var(--sky-to));
+        color: #fff; border-radius: var(--radius); padding: 32px 28px; margin: 12px 10px 22px; }
+    .app-hero h2 { margin: 0 0 10px; font-size: 26px; line-height: 1.35; }
+    .app-hero p { margin: 0 0 6px; font-size: 15px; opacity: .95; max-width: 46em; }
+    .app-hero .lede { font-size: 17px; opacity: 1; }
+    .app-sec { margin: 0 10px 26px; }
+    .app-sec h3 { font-size: 19px; border-left: 4px solid var(--accent);
+        padding-left: 10px; margin: 0 0 12px; }
+    .app-grid { display: grid; gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .app-card { background: var(--card); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 16px 18px; }
+    .app-card h4 { margin: 0 0 6px; font-size: 15px; color: var(--accent-dark); }
+    .app-card p { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.65; }
+    .app-table { width: 100%; border-collapse: collapse; background: var(--card);
+        border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .app-table th, .app-table td { border-bottom: 1px solid var(--border);
+        padding: 9px 12px; font-size: 13.5px; text-align: left; vertical-align: top; }
+    .app-table th { background: var(--th-bg); color: var(--th-text); white-space: nowrap; }
+    .app-table tr:last-child td { border-bottom: none; }
+    .app-note { background: var(--panel); border: 1px solid var(--border);
+        border-left: 4px solid var(--accent); border-radius: 8px;
+        padding: 12px 16px; font-size: 13.5px; color: var(--muted); line-height: 1.7; }
+    .app-code { background: var(--panel); border: 1px solid var(--border);
+        border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+    .app-code pre { margin: 0; background: none; border: none; padding: 0;
+        font-size: 13px; color: var(--text); white-space: pre; }
+    .app-flow { width: 100%; height: auto; max-width: 760px; display: block; margin: 0 auto; }
+    .app-links a { display: inline-block; margin: 0 14px 8px 0; font-size: 14px; }
+    .app-badge { display: inline-block; background: var(--accent-light); color: var(--accent-dark);
+        border-radius: 999px; padding: 2px 11px; font-size: 12px; margin-right: 6px; }
+    @media (max-width: 600px) { .app-hero { padding: 24px 18px; } .app-hero h2 { font-size: 21px; } }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="app-hero">
+    <h2>AIseed Weather — 天気図スタジオ</h2>
+    <p class="lede">ECMWF・ERA5・気象庁・Open-Meteo のデータから、出版品質の天気図を作って共有するデスクトップアプリです。</p>
+    <p>気圧配置図、500 hPa 高度図、平年差（アノマリ）— 見たい図を、見たい変数で、自分で作れます。</p>
+</div>
+
+<div class="app-sec">
+    <h3>このサイトとの関係</h3>
+    <p style="font-size:14px; line-height:1.8;">
+        このサイト「気温と雨量の統計」は、気象庁の観測データを<strong>誰でもすぐ読める形</strong>にまとめたものです。
+        一方 AIseed Weather は、<strong>自分の手で天気図を作りたい人</strong>のための道具です。
+        既製のチャートでは変数や見た目が物足りない、現況を過去の気候値と比べたい、
+        注釈をつけて誰かに説明したい — そういう用途のために作っています。
+    </p>
+</div>
+
+<div class="app-sec">
+    <h3>4 つのデータ層</h3>
+    <p style="font-size:14px; margin-bottom:14px;">
+        役割の違うデータを 1 つのワークフローに束ねている点が、このアプリの中心的な価値です。
+    </p>
+    <svg class="app-flow" viewBox="0 0 760 250" role="img"
+         aria-label="ECMWF・ERA5・気象庁・Open-Meteo の 4 層が AIseed Weather に入り、帰属情報つきの図として出力される流れ">
+        <g font-family="sans-serif" font-size="12">
+            {% for box in [
+                {'y': 10,  't': 'ECMWF Open Data',  's': '予報グリッド / 未来'},
+                {'y': 66,  't': 'ERA5',             's': '気候値・アノマリ / 1940年〜'},
+                {'y': 122, 't': '気象庁',            's': 'レーダー・AMeDAS / 現況'},
+                {'y': 178, 't': 'Open-Meteo',       's': '地点予報 / 補助'}] %}
+            <rect x="6" y="{{ box.y }}" width="196" height="46" rx="8"
+                  fill="var(--card)" stroke="var(--border)"/>
+            <text x="18" y="{{ box.y + 20 }}" fill="var(--text)" font-weight="bold">{{ box.t }}</text>
+            <text x="18" y="{{ box.y + 36 }}" fill="var(--muted)" font-size="11">{{ box.s }}</text>
+            <path d="M202 {{ box.y + 23 }} H 268" stroke="var(--border)" stroke-width="2" fill="none"/>
+            {% endfor %}
+            <rect x="270" y="66" width="188" height="102" rx="10"
+                  fill="var(--accent-light)" stroke="var(--accent)" stroke-width="2"/>
+            <text x="364" y="106" fill="var(--accent-dark)" font-weight="bold"
+                  text-anchor="middle" font-size="14">AIseed Weather</text>
+            <text x="364" y="128" fill="var(--accent-dark)" text-anchor="middle" font-size="11">重ね描き・注釈</text>
+            <text x="364" y="146" fill="var(--accent-dark)" text-anchor="middle" font-size="11">matplotlib + cartopy</text>
+            <path d="M458 117 H 524" stroke="var(--border)" stroke-width="2" fill="none"/>
+            <rect x="526" y="70" width="226" height="94" rx="10"
+                  fill="var(--card)" stroke="var(--border)"/>
+            <text x="639" y="100" fill="var(--text)" text-anchor="middle" font-weight="bold">PNG / PDF</text>
+            <text x="639" y="122" fill="var(--muted)" text-anchor="middle" font-size="11">出典・ラン時刻・ライセンスを</text>
+            <text x="639" y="138" fill="var(--muted)" text-anchor="middle" font-size="11">図とメタデータに自動で埋め込み</text>
+        </g>
+    </svg>
+</div>
+
+<div class="app-sec">
+    <h3>できること</h3>
+    <div class="app-grid">
+        <div class="app-card">
+            <h4>全球予報図</h4>
+            <p>ECMWF Open Data（IFS / AIFS）から、海面気圧・500 hPa 高度・850 hPa 気温・ジェット気流などを描きます。</p>
+        </div>
+        <div class="app-card">
+            <h4>気候値とアノマリ</h4>
+            <p>ERA5（1940 年〜）を基準に、現況が平年からどれだけ離れているかを図にします。ここがこのアプリの差別化点です。</p>
+        </div>
+        <div class="app-card">
+            <h4>日本の現況</h4>
+            <p>気象庁のレーダー雨量ナウキャストと AMeDAS 約 1,300 地点の地上観測を、「いまの日本」の層として重ねます。</p>
+        </div>
+        <div class="app-card">
+            <h4>注釈と重ね描き</h4>
+            <p>等圧線・気温場・風・降水・任意の気圧面のジオポテンシャルを重ね、テキストや矢印で現象を説明できます。</p>
+        </div>
+        <div class="app-card">
+            <h4>エクスポート</h4>
+            <p>PNG / PDF に出力すると、出典・ラン識別子・ライセンスが図とメタデータに必ず入ります。</p>
+        </div>
+        <div class="app-card">
+            <h4>アニメーション</h4>
+            <p>予報ステップの連続表示や、過去の日付範囲の再生ができます。</p>
+        </div>
+    </div>
+</div>
+
+<div class="app-sec">
+    <h3>知っておくべき 2 つの設計原則</h3>
+    <div class="app-grid">
+        <div class="app-card">
+            <h4>1. データソースはあなたが選ぶ</h4>
+            <p>どのミラーを使うか、ERA5 にどう接続するかは <code>~/.config/aiseed-weather/config.toml</code> で決めます。
+               アプリが勝手に選ぶことも、設定ウィザードを出すこともありません。</p>
+        </div>
+        <div class="app-card">
+            <h4>2. 取得はあなたの操作時だけ</h4>
+            <p>ビューを開く・更新を押す・パラメータを変える。この 3 つ以外で通信しません。
+               バックグラウンドポーリングも自動更新も先読みもありません。</p>
+        </div>
+    </div>
+    <p class="app-note" style="margin-top:14px;">
+        これは思想であると同時に、データ提供元への礼儀でもあります。キャッシュを効かせ、必要なときだけ取得し、
+        User-Agent でアプリ名を正直に名乗ります。
+    </p>
+</div>
+
+<div class="app-sec">
+    <h3>想定している利用者</h3>
+    <p style="font-size:14px; line-height:1.8;">
+        MSL、ジオポテンシャル高度、アノマリが何を指すかをご存じの方に向けた道具です。
+        用語を噛み砕いたり、単位を「やさしく」言い換えたりはしません。ラベル・単位・図法は、
+        あなたが既に読み慣れた慣例に従います。<strong>入門のしやすさではなく、専門ワークフローの最適化</strong>が設計方針です。
+    </p>
+</div>
+
+<div class="app-sec">
+    <h3>データソースとライセンス</h3>
+    <table class="app-table">
+        <thead><tr><th>層</th><th>ソース</th><th>役割</th><th>ライセンス・出典</th></tr></thead>
+        <tbody>
+            <tr><td>予報グリッド</td><td>ECMWF Open Data</td><td>未来 / 地図表示</td><td>CC-BY-4.0</td></tr>
+            <tr><td>気候値・アノマリ</td><td>ERA5</td><td>過去の文脈</td><td>CC-BY-4.0</td></tr>
+            <tr><td>日本の現況</td><td>気象庁 レーダー・AMeDAS</td><td>いまの日本</td><td>出典: 気象庁ホームページ</td></tr>
+            <tr><td>地点予報</td><td>Open-Meteo</td><td>補助的な地点表示</td><td>CC-BY-4.0</td></tr>
+        </tbody>
+    </table>
+    <p class="app-note" style="margin-top:14px;">
+        <strong>帰属は省略できません。</strong>
+        エクスポートした図には、データの出典・ラン時刻・図法・（アノマリなら）基準期間が必ず入ります。
+        図を共有した相手から「これは何のデータ?」と聞かれたとき、図そのものが答えられる状態にしてあります。
+        気象庁データを合成・加工した場合は、その旨と編集責任の所在も併記されます。
+    </p>
+</div>
+
+<div class="app-sec">
+    <h3>導入</h3>
+    <p style="font-size:14px; line-height:1.8;">
+        cartopy・cfgrib・eccodes が C ライブラリ（PROJ / GEOS / eccodes）に依存するため、
+        pip ではなく <strong>Miniforge（conda-forge）</strong>を使います。環境はリポジトリ内に
+        <code>./.venv</code> として作るので、グローバル環境を汚しません。
+    </p>
+    <div class="app-code" style="margin-top:12px;"><pre>git clone https://github.com/aiseed-dev/weather.git
+cd weather
+mamba env create --prefix ./.venv -f environment.yml
+mamba activate ./.venv
+pip install -e .
+flet run</pre></div>
+    <p style="font-size:13.5px; color:var(--muted); margin-top:10px;">
+        <span class="app-badge">Linux</span>公式サポート・動作確認環境
+        <span class="app-badge">macOS</span>同じ手順で動作
+        <span class="app-badge">Windows</span>動作可能性あり・公式サポート外
+    </p>
+    <p style="font-size:13.5px; color:var(--muted);">
+        解析用のサンプル Jupyter ノートブック（ECMWF GRIB2 の直接読み込み、AMeDAS スナップショット、
+        ERA5 気候値など）も同梱しています。
+    </p>
+</div>
+
+<div class="app-sec">
+    <h3>リンク</h3>
+    <p class="app-links">
+        <a href="https://github.com/aiseed-dev/weather">GitHub リポジトリ</a>
+        <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF Open Data</a>
+        <a href="https://www.jma.go.jp/">気象庁</a>
+        <a href="https://open-meteo.com/">Open-Meteo</a>
+    </p>
+    <p style="font-size:13.5px; color:var(--muted);">
+        コードは AGPL-3.0-or-later で公開しています。
+        本ツールは公開されている気象データを可視化するもので、独自の予報を生成・配信するものではありません。
+    </p>
+</div>
+
+{% endblock %}
