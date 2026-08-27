@@ -74,42 +74,47 @@ backfill_etrn が自前で使うようにした。**cron やコマンドライ�
   見送りはログに 1 行残る
 - バックフィルは既定 1 時間待つ。長時間走るので、その間 accumulate は見送られる
 
-## アメダス現況ミラー（tgsvr をオリジンに、Cloudflare プロキシ経由で公開）
+## アメダス 10 分値の収集とアーカイブ
 
-**目的**: トップページは訪問者のブラウザから気象庁へ直接 `latest_time.txt` と
-`map/{ts}.json`（245KB）を `no-store` で取りに行っていた。つまり**ページビュー
-ごとに気象庁へアクセス**していた。ミラーを挟むと、気象庁への取得は **10 分に 1 回**
-だけになり、非公式エンドポイントの仕様変更・CORS・障害からもサイトが切り離される。
+10 分値は**約 10 日で気象庁から消える**（実測: 10 日前 200 / 11 日前 404）。
+etrn から後追いできるのは日別の気温と降水だけで、湿度・気圧・視程・風・10 分降水は
+二度と取れない。取り逃しが回復不能なので、収集は tgsvr の死活から切り離す。
+
+### 役割分担
+
+| | 担当 | 内容 |
+|---|---|---|
+| 収集 | **Cloudflare Worker** | 10 分ごとに気象庁から取得し、**加工せずそのまま** R2 へ置く |
+| 配信 | **R2** | 独自ドメインで公開（egress 無料）。Worker は配信に使わない |
+| 封入 | **tgsvr** | R2 から拾って半月 NetCDF へ。netCDF4/numpy を使う処理はすべてここ |
+
+Worker を配信に使わないのは、無料枠の **10 万リクエスト/日**を訪問者が食い潰すため。
+重い処理を Worker に載せないのは、無料枠の **CPU 10ms・メモリ 128MB** に収まらないため。
+この分担なら **tgsvr を公開する必要がない**（アウトバウンドのみ）。
+
+### Worker のデプロイ（ユーザー実行）
+
+```bash
+cd WeatherStatic/workers/amedas
+wrangler r2 bucket create weather-amedas
+wrangler deploy
+wrangler tail                    # cron の実行ログ
+```
+
+公開する場合は R2 バケットに独自ドメイン（例 `amedas.time-j.net`）を割り当てる。
+
+### tgsvr 側の cron
 
 ```cron
-# 10分毎: アメダス 10 分値を取得（ミラー + 半月 NetCDF アーカイブ）
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_amedas_mirror.py >> $HOME/dev/weather/logs/amedas_mirror.log 2>&1
+# 10分毎: R2 から拾って NetCDF へ封入（AMEDAS_R2_BASE 未設定なら気象庁から直接取る）
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && AMEDAS_R2_BASE=https://amedas.time-j.net ./.venv/bin/python fetch_amedas_mirror.py >> $HOME/dev/weather/logs/amedas_mirror.log 2>&1
 ```
 
 ストアには触らないので `store.lock` とは無関係（accumulate と並行して安全）。
 
-### 公開手順（外部操作はユーザーが行う）
-
-1. Cloudflare で `amedas.time-j.net` を**プロキシ有効**で tgsvr のグローバル IP へ向ける
-2. Cloudflare Origin CA 証明書を発行し `/etc/caddy/certs/time-j-net.{crt,key}` に置く
-3. `WeatherStatic/deploy/caddy-amedas.conf` を `/etc/caddy/Caddyfile` に追記して
-   `sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy`
-4. 疎通確認: `curl -sI https://amedas.time-j.net/latest_time.txt`
-5. サイト側を切り替える（**この環境変数を設定するまで従来どおり気象庁を直接見る**）:
-
-```cron
-52 * * * *  cd $HOME/dev/weather/WeatherStatic && WEATHER_AMEDAS_BASE=https://amedas.time-j.net ./.venv/bin/python fetch_data.py && ./.venv/bin/python generate.py
-```
-
-切り戻しは環境変数を外して再生成するだけ。
-
-### オリジンを晒さないための注意
-
-- caddy-amedas.conf は **Cloudflare の IP 以外を 403** にしている。オリジン IP が
-  知られてもプロキシを迂回されない（IP 範囲が変わったら追記すること）
-- 80/443 を公開すると **Caddyfile の全 vhost が外から到達可能になる**。
-  `kobo.aiseed.page` のように IP 制限のない vhost は、公開前に制限を足すか
-  Host が一致しない要求を落とす既定 vhost を用意する
+**R2 に無いスロットは気象庁へ退避する。** Worker が黙って止まっていた場合に
+欠測が確定してしまうのを防ぐため。退避した件数はログに出るので、
+`うち気象庁へ退避` が恒常的に出るなら Worker が動いていない合図。
 
 ## 過去観測データ（月次で十分）
 

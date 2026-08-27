@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""アメダス 10 分値のミラー＆アーカイブ。Cloudflare Pages 用の公開ツリーを作る。
+"""アメダス 10 分値のアーカイブ化。生の JSON を NetCDF-4 へ封入する。
+
+役割分担:
+    収集 … workers/amedas/worker.js（Cloudflare Worker）が 10 分ごとに
+           気象庁から取得し、**加工せずそのまま** R2 へ置く
+    封入 … このスクリプト（tgsvr）が R2 から拾って NetCDF へまとめる。
+           netCDF4 / numpy を使う処理は Workers の CPU 10ms・メモリ 128MB に
+           載らないので、重い側はすべてここで行う
+
 
 気象庁の map JSON は **約 10 日で消える**（実測: 10 日前 200 / 11 日前 404）。
 etrn から後追いできるのは日別・時別の気温と降水だけで、湿度・気圧・視程・風・
@@ -41,6 +49,7 @@ from __future__ import annotations
 
 import calendar
 import json
+import os
 import shutil
 import sys
 from datetime import date, datetime, timedelta
@@ -68,6 +77,11 @@ PAGES_FILE_LIMIT = 25 * 1024 * 1024
 SIZE_WARN = int(PAGES_FILE_LIMIT * 0.8)
 
 URL_LATEST_TIME = "https://www.jma.go.jp/bosai/amedas/data/latest_time.txt"
+
+# 収集 Worker が置いた R2 の公開ベース URL（例 https://amedas.time-j.net）。
+# 設定すると取得元がここになり、気象庁への往復は Worker の 10 分に 1 回だけになる。
+# 未設定なら従来どおり気象庁から直接取る。
+R2_BASE = os.environ.get("AMEDAS_R2_BASE", "").rstrip("/")
 
 # 欠測値は store/observations.nc と同じ規約（値 int16 / 品質 int8）
 FILL = np.int16(-32768)
@@ -153,7 +167,28 @@ def wanted_slots(latest: datetime) -> list[datetime]:
     return out
 
 
-def fetch_missing(latest: datetime, dry: bool) -> int:
+def fetch_slot(name: str) -> tuple[bytes | None, str]:
+    """1 スロットを取る。R2（Worker が収集済み）を先に見て、無ければ気象庁へ。
+
+    R2 を優先するのは、収集を Worker に寄せて気象庁への往復を 1 系統に保つため。
+    気象庁へ退避するのは、Worker が黙って止まっていた場合に**取り返しのつかない
+    欠測**になるのを防ぐため（10 分値は 10 日で消える）。
+    戻り値は (本文, 取得元)。取れなければ (None, 理由)。
+    """
+    if R2_BASE:
+        try:
+            # retry=0 が要る。R2 の 404 は「Worker がまだ集めていない」という
+            # 正常な状態で、既定のリトライだと 1 件ごとに 2 秒待たされる
+            return jma.http_get(f"{R2_BASE}/map/{name}.json", retry=0), "R2"
+        except Exception:
+            pass                                        # 未収集スロット → 気象庁で拾う
+    try:
+        return jma.http_get(jma.URL_AMEDAS_MAP.format(ts=name)), "JMA"
+    except Exception as exc:                            # 欠番スロットは正常に起こりうる
+        return None, str(exc)
+
+
+def fetch_missing(latest: datetime, dry: bool) -> tuple[int, int]:
     """未取得スロットを新しい順に埋める。取り逃しは次回以降の実行で自然に回復する。"""
     MAP.mkdir(parents=True, exist_ok=True)
 
@@ -164,16 +199,16 @@ def fetch_missing(latest: datetime, dry: bool) -> int:
         log(f"未取得 {len(missing)} スロットのうち新しい {MAX_FETCH_PER_RUN} 件のみ取得（残りは次回）")
         missing = missing[:MAX_FETCH_PER_RUN]
     if dry:
-        log(f"[dry-run] 取得対象 {len(missing)} スロット")
-        return 0
+        log(f"[dry-run] 取得対象 {len(missing)} スロット"
+            + (f"（取得元 {R2_BASE}）" if R2_BASE else "（取得元 気象庁）"))
+        return 0, 0
 
-    got = 0
+    got = from_jma = 0
     for ts in missing:
         name = slot_name(ts)
-        try:
-            payload = jma.http_get(jma.URL_AMEDAS_MAP.format(ts=name))
-        except Exception as exc:                       # 欠番スロットは正常に起こりうる
-            log(f"  {name}: 取得できず（{exc}）")
+        payload, origin = fetch_slot(name)
+        if payload is None:
+            log(f"  {name}: 取得できず（{origin}）")
             continue
         try:
             json.loads(payload)                        # 壊れた応答を配信しない
@@ -182,7 +217,8 @@ def fetch_missing(latest: datetime, dry: bool) -> int:
             continue
         (MAP / f"{name}.json").write_bytes(payload)
         got += 1
-    return got
+        from_jma += origin == "JMA"
+    return got, from_jma
 
 
 # ---------------------------------------------------------------- 封入
@@ -365,7 +401,7 @@ def main() -> int:
         return 1
     log(f"最新スロット: {slot_name(latest)}")
 
-    got = fetch_missing(latest, dry)
+    got, from_jma = fetch_missing(latest, dry)
     if dry:
         return 0
 
@@ -383,7 +419,11 @@ def main() -> int:
 
     slots = len(list(MAP.glob("*.json")))
     periods = len(list((OUT / "archive").glob("*/*.nc")))
-    log(f"取得 {got} スロット / 公開中の生 JSON {slots} / アーカイブ {periods} 期間"
+    # 気象庁へ退避した件数は目に見えるようにする。恒常的に出るなら
+    # 収集 Worker が止まっている合図（黙って欠測させないため）
+    log(f"取得 {got} スロット"
+        + (f"（うち気象庁へ退避 {from_jma}）" if from_jma else "")
+        + f" / 公開中の生 JSON {slots} / アーカイブ {periods} 期間"
         + (f" / 新規封入 {sealed} 期間" if sealed else ""))
     return 0
 
