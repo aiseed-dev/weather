@@ -1,0 +1,144 @@
+{#
+  観測史上1位の更新状況。generate_status.py が描画する。
+  記録値は気象庁 mdrr CSV の公式値（観測史上1位・各月1位）。
+  10 分値ベースの記録は扱わない — ここで比べるのは日別統計だけ。
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .st-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin: 0 10px 6px; }
+    .st-head h2 { margin: 0; font-size: 21px; }
+    .st-time { font-size: 13px; color: var(--muted); }
+    .st-sec { margin: 0 10px 22px; }
+    .st-sec h3 { font-size: 17px; border-left: 4px solid var(--accent);
+        padding-left: 9px; margin: 0 0 10px; }
+    .st-two { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+    .st-note { font-size: 12.5px; color: var(--muted); line-height: 1.75; margin: 8px 0 0; }
+    .rec-none { background: var(--panel); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 16px; font-size: 14px; color: var(--muted); }
+    .rec-hit { background: linear-gradient(135deg, #c62828, #ef5350); color: #fff;
+        border-radius: var(--radius); padding: 14px 18px; margin-bottom: 12px; }
+    .rec-hit h4 { margin: 0 0 4px; font-size: 16px; }
+    .rec-hit p { margin: 0; font-size: 13.5px; opacity: .95; }
+    .tag-tie { display: inline-block; background: var(--panel); color: var(--muted);
+        border: 1px solid var(--border); border-radius: 999px;
+        padding: 1px 8px; font-size: 11px; margin-left: 5px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% with status_active = "records" %}{% include "status/_submenu.html" %}{% endwith %}
+
+<div class="st-head">
+    <h2>観測史上1位の更新状況</h2>
+    <span class="st-time">{{ now.month }}月{{ now.day }}日
+        {{ now.hour }}時{{ "%02d" | format(now.minute) }}分現在 ／ {{ n_stations }} 地点</span>
+</div>
+
+<div class="st-sec">
+    <h3>観測史上1位を更新</h3>
+    {% if hot_all or cold_all %}
+        {% for r in hot_all %}
+        <div class="rec-hit">
+            <h4>{{ r.name }}（{{ r.pref }}）{{ "%.1f" | format(r.value / 10) }}℃
+                {% if r.tie %}<span class="tag-tie">タイ記録</span>{% endif %}</h4>
+            <p>これまでの記録 {{ "%.1f" | format(r.old / 10) }}℃（{{ r.old_date }}）／
+               {{ r.at }} に観測</p>
+        </div>
+        {% endfor %}
+        {% for r in cold_all %}
+        <div class="rec-hit" style="background: linear-gradient(135deg, #1565c0, #42a5f5)">
+            <h4>{{ r.name }}（{{ r.pref }}）{{ "%.1f" | format(r.value / 10) }}℃（最低）
+                {% if r.tie %}<span class="tag-tie">タイ記録</span>{% endif %}</h4>
+            <p>これまでの記録 {{ "%.1f" | format(r.old / 10) }}℃（{{ r.old_date }}）／
+               {{ r.at }} に観測</p>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="rec-none">
+            本日、観測史上1位を更新した地点はありません。
+            観測史上1位は数十年に一度の記録なので、更新のない日がほとんどです。
+        </div>
+    {% endif %}
+</div>
+
+<div class="st-sec">
+    <h3>各月の1位を更新（高い方 {{ n_hot_mon }} 地点・低い方 {{ n_cold_mon }} 地点）</h3>
+    <div class="st-two">
+        <div>
+            <h3 style="font-size:15px; border:none; padding:0; color:var(--muted);">最高気温</h3>
+            {% if hot_mon %}
+            <div class="table-responsive">
+                <table class="weathertable">
+                    <tr><th>地点</th><th>都道府県</th><th>今日</th><th>これまでの記録</th><th>起日</th></tr>
+                    {% for r in hot_mon %}
+                    <tr>
+                        <td>{{ r.name }}{% if r.tie %}<span class="tag-tie">タイ</span>{% endif %}</td>
+                        <td>{{ r.pref }}</td>
+                        <td class="wright">{{ "%.1f" | format(r.value / 10) }}℃</td>
+                        <td class="wright">{{ "%.1f" | format(r.old / 10) }}℃</td>
+                        <td class="wcenter">{{ r.old_date }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            {% else %}<div class="rec-none">更新はありません。</div>{% endif %}
+        </div>
+        <div>
+            <h3 style="font-size:15px; border:none; padding:0; color:var(--muted);">最低気温</h3>
+            {% if cold_mon %}
+            <div class="table-responsive">
+                <table class="weathertable">
+                    <tr><th>地点</th><th>都道府県</th><th>今日</th><th>これまでの記録</th><th>起日</th></tr>
+                    {% for r in cold_mon %}
+                    <tr>
+                        <td>{{ r.name }}{% if r.tie %}<span class="tag-tie">タイ</span>{% endif %}</td>
+                        <td>{{ r.pref }}</td>
+                        <td class="wright">{{ "%.1f" | format(r.value / 10) }}℃</td>
+                        <td class="wright">{{ "%.1f" | format(r.old / 10) }}℃</td>
+                        <td class="wcenter">{{ r.old_date }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            {% else %}<div class="rec-none">更新はありません。</div>{% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="st-sec">
+    <h3>観測史上1位に迫った地点（1.0℃ 以内）</h3>
+    {% if near %}
+    <div class="table-responsive">
+        <table class="weathertable">
+            <tr><th>地点</th><th>都道府県</th><th>今日</th><th>観測史上1位</th><th>起日</th><th>差</th></tr>
+            {% for r in near %}
+            <tr>
+                <td>{{ r.name }}</td>
+                <td>{{ r.pref }}</td>
+                <td class="wright">{{ "%.1f" | format(r.value / 10) }}℃</td>
+                <td class="wright">{{ "%.1f" | format(r.old / 10) }}℃</td>
+                <td class="wcenter">{{ r.old_date }}</td>
+                <td class="wright">あと {{ "%.1f" | format(r.gap / 10) }}℃</td>
+            </tr>
+            {% endfor %}
+        </table>
+    </div>
+    {% else %}<div class="rec-none">記録に迫った地点はありません。</div>{% endif %}
+</div>
+
+<div class="st-sec">
+    <p class="st-note">
+        記録値は気象庁が公表する「観測史上1位の値」「各月の1位の値」です。
+        統計期間は地点ごとに異なります（明治期から続く官署もあれば、
+        近年設置されたアメダス地点もあります）。<br>
+        本日の値には速報値が含まれます。気象庁の確定処理により後日変更されることがあります。
+        比較対象は日別統計（日最高気温・日最低気温）で、
+        1 時間降水量や最大瞬間風速などの記録は扱っていません。<br>
+        出典: 気象庁ホームページのデータを加工して作成しています。
+    </p>
+</div>
+
+{% endblock %}

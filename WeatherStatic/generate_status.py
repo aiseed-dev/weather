@@ -236,6 +236,85 @@ def build_wind(env: Environment, stations: dict) -> None:
         f"{obs_time:%H:%M} 現在 / 最大 {by_peak[0]['peak']/10 if by_peak else 0} m/s")
 
 
+def build_records(env: Environment, stations: dict) -> None:
+    """観測史上1位・各月1位の更新状況。
+
+    記録値は data/today.csv に入っている**気象庁 mdrr CSV の公式値**を使う
+    （自前で observations.nc から求めるより正確で、統計期間の扱いも気象庁に従える）。
+    10 分値ベースの記録は扱わない。ここで比べるのは日別統計だけ。
+
+    今日の値が記録と等しい場合を「タイ」として拾う。mdrr の記録欄が当日値を
+    含むかは気象庁側の都合で変わりうるので、超過（>）だけを見ると取りこぼす。
+    """
+    src = BASE / "data" / "today.csv"
+    if not src.exists():
+        log("data/today.csv が無いため記録更新は生成しない（fetch_data.py が未実行?）")
+        return
+    import csv
+
+    st = stations["stations"]
+    now = datetime.now(JST).replace(tzinfo=None)
+
+    def num(s: str) -> int | None:
+        try:
+            v = int(s)
+        except (TypeError, ValueError):
+            return None
+        return None if v <= -999 else v
+
+    hot_all, hot_mon, cold_all, cold_mon, near = [], [], [], [], []
+    n_rows = 0
+    with src.open(encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            n_rows += 1
+            rec = st.get(r["code"])
+            if rec is None:
+                continue
+            base = {"name": rec["name"], "pref": rec.get("pref") or "",
+                    "region": region_of((rec.get("etrn") or {}).get("prec_no"))}
+            tmax, tmin = num(r["tmax"]), num(r["tmin"])
+
+            for val, key, dkey, bucket, higher in (
+                    (tmax, "record_tmax", "record_tmax_date", hot_all, True),
+                    (tmax, "month_tmax", "month_tmax_date", hot_mon, True),
+                    (tmin, "record_tmin", "record_tmin_date", cold_all, False),
+                    (tmin, "month_tmin", "month_tmin_date", cold_mon, False)):
+                old = num(r[key])
+                if val is None or old is None:
+                    continue
+                hit = val >= old if higher else val <= old
+                if hit:
+                    bucket.append({**base, "value": val, "old": old,
+                                   "old_date": r[dkey],
+                                   "tie": val == old,
+                                   "at": r["tmax_at" if higher else "tmin_at"],
+                                   "q": r["tmax_q" if higher else "tmin_q"]})
+
+            # 記録に迫った地点（1.0℃ 以内）。更新がゼロの日でもページが死なないように
+            old = num(r["record_tmax"])
+            if tmax is not None and old is not None and 0 < old - tmax <= 10:
+                near.append({**base, "value": tmax, "old": old,
+                             "old_date": r["record_tmax_date"], "gap": old - tmax})
+
+    for b in (hot_all, hot_mon, cold_all, cold_mon):
+        b.sort(key=lambda x: x["value"] - x["old"], reverse=True)
+    near.sort(key=lambda x: x["gap"])
+
+    html = env.get_template("status/records.html").render(
+        page_title="観測史上1位の更新状況", nav_active="status",
+        build_year=now.year, now=now, n_stations=n_rows,
+        hot_all=hot_all, hot_mon=hot_mon[:RANK_N],
+        cold_all=cold_all, cold_mon=cold_mon[:RANK_N],
+        near=near[:RANK_N],
+        n_hot_mon=len(hot_mon), n_cold_mon=len(cold_mon))
+    out = PUBLIC / "Status" / "Records" / "index.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    log(f"Status/Records/index.html ({len(html):,} bytes) / {n_rows} 地点 / "
+        f"史上1位 高 {len(hot_all)}・低 {len(cold_all)} / "
+        f"月1位 高 {len(hot_mon)}・低 {len(cold_mon)}")
+
+
 def build_lab(env: Environment) -> None:
     """ブラウザ内 Python でグラフを描くページ。
 
@@ -315,6 +394,8 @@ def main() -> int:
         build_temperature(env, stations)
     if only in (None, "wind"):
         build_wind(env, stations)
+    if only in (None, "records"):
+        build_records(env, stations)
     if only in (None, "lab"):
         build_today_json(stations)
         build_lab(env)
