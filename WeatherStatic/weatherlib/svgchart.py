@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 
 C_TMAX, C_TAVG, C_TMIN, C_PRECIP = "#F92500", "#008000", "#0C00CC", "#1987E5"
@@ -180,43 +181,74 @@ def timeseries_svg(title: str, start: date, series: list[dict],
     return "".join(e)
 
 
+def _nice_step(lo: float, hi: float, target: int = 6) -> float:
+    """目盛り間隔を値域から決める。要素ごとに単位も桁も違うため固定にできない。
+
+    桁は log10 で取る。文字列で数えると raw < 1 のときに指数を取り違え、
+    1e-9 のような極小の刻みを返してしまう（目盛りループが数十億回まわる）。
+    """
+    # 全値が同一の地点（無風・湿度 100% 続きなど）は span が 0 になる。
+    # そのまま計算すると刻みが極小になるので、値の大きさに応じた下限を敷く。
+    span = hi - lo
+    if span <= 0:
+        span = max(abs(hi) * 0.02, 1.0)
+    raw = span / target
+    mag = 10.0 ** math.floor(math.log10(raw))
+    for m in (1, 2, 2.5, 5, 10):
+        if raw <= mag * m:
+            return mag * m
+    return mag * 10
+
+
 def intraday_svg(title: str, minutes: list[int], series: list[dict],
-                 width: int = 640, height: int = 260) -> str:
+                 width: int = 640, height: int = 260, scale: int = 10,
+                 unit: str = "", kind: str = "line") -> str:
     """当日の 10 分値時系列 SVG。
 
     timeseries_svg が日単位の軸なのに対し、こちらは 0 時からの分で刻む。
     アメダスは 10 分値まで出ているのに気象庁の「気温の状況」は毎正時しか
     更新しないので、ここが差になる。
 
-    minutes … 0 時からの分（各点の x）。series と同じ長さ
-    series  … [{label, color, values(×10 or None), width, r}]
+    minutes … 0 時からの分（各点の x）。series の values と同じ長さ
+    series  … [{label, color, values(整数 or None), width}]
+    scale   … values を実単位に戻す倍率（気温 10、湿度 1 など）
+    kind    … "line"（気温・気圧など）/ "bar"（降水量・日照など積算量）
     """
-    ml, mr, mt, mb = 44, 12, 26, 24
+    ml, mr, mt, mb = 52, 12, 26, 24
     pw, ph = width - ml - mr, height - mt - mb
-    vals = [v for s in series for v in s["values"] if v is not None]
+    vals = [v / scale for s in series for v in s["values"] if v is not None]
     if not vals or not minutes:
         return ""
-    v_lo = (min(vals) / 10 // 5) * 5 - 5
-    v_hi = (max(vals) / 10 // 5) * 5 + 10
+    lo_v, hi_v = min(vals), max(vals)
+    if kind == "bar":
+        lo_v = 0                       # 積算量は 0 起点でないと大小を誤読する
+    step = _nice_step(lo_v, hi_v)
+    v_lo = (lo_v // step) * step - (step if kind != "bar" else 0)
+    v_hi = (hi_v // step) * step + step
+    if v_hi <= v_lo:
+        v_hi = v_lo + step
     m_lo, m_hi = minutes[0], max(minutes[-1], minutes[0] + 1)
 
     def y(v):
-        return mt + ph * (v_hi - v / 10) / (v_hi - v_lo)
+        return mt + ph * (v_hi - v / scale) / (v_hi - v_lo)
 
     def x(m):
         return ml + pw * (m - m_lo) / (m_hi - m_lo)
 
+    fmt = "{:.0f}" if step >= 1 else "{:.1f}"
     e = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
          f'style="max-width:{width}px;width:100%;height:auto" role="img" '
          f'aria-label="{title}">']
     t = v_lo
-    while t <= v_hi:
+    guard = 0
+    while t <= v_hi + 1e-9 and guard < 40:   # 刻みが狂っても固まらせない
+        guard += 1
         yy = mt + ph * (v_hi - t) / (v_hi - v_lo)
         e.append(f'<line x1="{ml}" y1="{yy:.1f}" x2="{ml + pw}" y2="{yy:.1f}" '
-                 f'stroke="{"#999" if t == 0 else "#e8edf2"}"/>')
+                 f'stroke="{"#999" if abs(t) < 1e-9 else "#e8edf2"}"/>')
         e.append(f'<text x="{ml - 5}" y="{yy + 4:.1f}" text-anchor="end" font-size="10" '
-                 f'fill="#666" {FONT}>{t:.0f}</text>')
-        t += 5
+                 f'fill="#666" {FONT}>{fmt.format(t)}</text>')
+        t += step
     # 3 時間ごとの目盛り。10 分値だと点が多いので目盛りは粗くする
     for hh in range(0, 25, 3):
         m = hh * 60
@@ -226,14 +258,27 @@ def intraday_svg(title: str, minutes: list[int], series: list[dict],
                  f'stroke="#f0f3f7"/>')
         e.append(f'<text x="{x(m):.1f}" y="{mt + ph + 14}" text-anchor="middle" '
                  f'font-size="10" fill="#666" {FONT}>{hh}時</text>')
+    if unit:
+        e.append(f'<text x="{ml - 5}" y="{mt - 8}" text-anchor="end" font-size="10" '
+                 f'fill="#666" {FONT}>{unit}</text>')
 
-    for s in series:
-        for run in _line_runs([x(m) for m in minutes], s["values"]):
-            pts = [(px, y(v)) for px, v in run]
-            path = " ".join((f"M{px:.1f},{py:.1f}" if i == 0 else f"L{px:.1f},{py:.1f}")
-                            for i, (px, py) in enumerate(pts))
-            e.append(f'<path d="{path}" fill="none" stroke="{s["color"]}" '
-                     f'stroke-width="{s.get("width", 1.6)}"/>')
+    if kind == "bar":
+        bw = max(pw / max(len(minutes), 1) * 0.8, 1.0)
+        s0 = series[0]
+        for m, v in zip(minutes, s0["values"]):
+            if v is None or v <= 0:
+                continue
+            top = y(v)
+            e.append(f'<rect x="{x(m) - bw / 2:.1f}" y="{top:.1f}" width="{bw:.1f}" '
+                     f'height="{mt + ph - top:.1f}" fill="{s0["color"]}"/>')
+    else:
+        for s in series:
+            for run in _line_runs([x(m) for m in minutes], s["values"]):
+                pts = [(px, y(v)) for px, v in run]
+                path = " ".join((f"M{px:.1f},{py:.1f}" if i == 0 else f"L{px:.1f},{py:.1f}")
+                                for i, (px, py) in enumerate(pts))
+                e.append(f'<path d="{path}" fill="none" stroke="{s["color"]}" '
+                         f'stroke-width="{s.get("width", 1.6)}"/>')
     e.append(f'<rect x="{ml}" y="{mt}" width="{pw}" height="{ph}" fill="none" stroke="#c8d2dc"/>')
     e.append("</svg>")
     return "".join(e)

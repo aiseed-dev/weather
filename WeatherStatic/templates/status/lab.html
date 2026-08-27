@@ -50,6 +50,7 @@
 <div class="lab-sec">
     <div class="lab-panel">
         <div class="lab-controls">
+            <select id="lab-element" disabled><option>要素</option></select>
             <select id="lab-station" disabled><option>Python を起動してください</option></select>
             <button class="btn lab-run" id="lab-boot" type="button">Python を起動（約 5MB）</button>
             <button class="btn" id="lab-draw" type="button" disabled>描画</button>
@@ -92,30 +93,68 @@
 <script>var SVGCHART_SRC = {{ svgchart_src | tojson }};</script>
 <script type="text/x-python" id="user-src">
 # ブラウザの中で動く Python。取得したデータから SVG を組み立てる。
+# 要素ごとに単位も倍率もグラフ種別も違うので、データ側のメタ情報に従う。
 import json
 from svgchart import intraday_svg
 
 def draw(raw, amedas):
     d = json.loads(raw)
     st = d["stations"][amedas]
-    series = [{"label": st["name"], "color": "#F92500", "values": st["temp"]}]
+    color = "#1987E5" if d["kind"] == "bar" else "#F92500"
+    series = [{"label": st["name"], "color": color, "values": st["v"]}]
     return intraday_svg(
-        f'{st["name"]}（{st["pref"]}）{d["date"]} の気温 10 分値',
-        d["minutes"], series, width=680, height=300)
+        f'{st["name"]}（{st["pref"]}）{d["date"]} の{d["label"]} 10 分値',
+        d["minutes"], series, width=680, height=300,
+        scale=d["scale"], unit=d["unit"], kind=d["kind"])
+
+def stations(raw):
+    d = json.loads(raw)
+    return json.dumps(sorted(
+        ([k, f'{v["name"]}（{v["pref"]}）'] for k, v in d["stations"].items()),
+        key=lambda x: x[1]))
 </script>
 <script>
 (function () {
     var PYODIDE = "https://cdn.jsdelivr.net/pyodide/v{{ pyodide_version }}/full/";
     var statusEl = document.getElementById("lab-status");
     var outEl = document.getElementById("lab-out");
+    var elemEl = document.getElementById("lab-element");
     var selEl = document.getElementById("lab-station");
     var bootEl = document.getElementById("lab-boot");
     var drawEl = document.getElementById("lab-draw");
     var userSrc = document.getElementById("user-src").textContent;
     document.getElementById("lab-src").textContent = userSrc.trim();
 
-    var pyodide = null, raw = null;
+    var pyodide = null, raw = null, cache = {};
     function say(m) { statusEl.textContent = m; }
+
+    async function loadElement(key, keepStation) {
+        say("観測データを取得しています…");
+        if (!cache[key]) {
+            var res = await fetch("/data/amedas-today-" + key + ".json", { cache: "no-store" });
+            if (!res.ok) throw new Error("観測データが取得できません (" + res.status + ")");
+            cache[key] = await res.text();
+        }
+        raw = cache[key];
+        // 地点一覧も Python 側で作る（並べ替えまで Python の仕事にする）
+        var fn = pyodide.globals.get("stations");
+        var names = JSON.parse(fn(raw));
+        fn.destroy();
+        var prev = keepStation ? selEl.value : null;
+        selEl.innerHTML = names.map(function (n) {
+            return '<option value="' + n[0] + '">' + n[1] + "</option>";
+        }).join("");
+        if (prev && names.some(function (n) { return n[0] === prev; })) {
+            selEl.value = prev;
+        } else {
+            var tokyo = names.find(function (n) { return n[1].indexOf("東京") === 0; });
+            if (tokyo) selEl.value = tokyo[0];
+        }
+        selEl.disabled = false;
+        drawEl.disabled = false;
+        say(names.length + " 地点を読み込みました。");
+        render();
+    }
 
     async function boot() {
         bootEl.disabled = true;
@@ -129,29 +168,18 @@ def draw(raw, amedas):
             });
             pyodide = await loadPyodide({ indexURL: PYODIDE });
 
-            say("観測データを取得しています…");
-            var res = await fetch("/data/amedas-today.json", { cache: "no-store" });
-            if (!res.ok) throw new Error("観測データが取得できません (" + res.status + ")");
-            raw = await res.text();
-
             // サーバーと同じモジュールを、そのまま Python 側へ置く
             pyodide.FS.writeFile("svgchart.py", SVGCHART_SRC);
             pyodide.runPython(userSrc);
 
-            var meta = JSON.parse(raw);
-            var names = Object.keys(meta.stations).map(function (k) {
-                return [k, meta.stations[k].name + "（" + meta.stations[k].pref + "）"];
-            }).sort(function (a, b) { return a[1].localeCompare(b[1], "ja"); });
-            selEl.innerHTML = names.map(function (n) {
-                return '<option value="' + n[0] + '">' + n[1] + "</option>";
+            var idx = await (await fetch("/data/amedas-today.json", { cache: "no-store" })).json();
+            elemEl.innerHTML = idx.elements.map(function (e) {
+                return '<option value="' + e.element + '">' + e.label
+                     + "（" + e.stations + "地点）</option>";
             }).join("");
-            var tokyo = names.find(function (n) { return n[1].indexOf("東京") === 0; });
-            if (tokyo) selEl.value = tokyo[0];
-            selEl.disabled = false;
-            drawEl.disabled = false;
+            elemEl.disabled = false;
             bootEl.textContent = "起動済み";
-            say(names.length + " 地点を読み込みました。地点を選んで「描画」を押してください。");
-            render();
+            await loadElement(idx.elements[0].element, false);
         } catch (e) {
             bootEl.disabled = false;
             say("起動に失敗しました: " + e.message);
@@ -159,7 +187,7 @@ def draw(raw, amedas):
     }
 
     function render() {
-        if (!pyodide) return;
+        if (!pyodide || !raw) return;
         try {
             var fn = pyodide.globals.get("draw");
             outEl.innerHTML = fn(raw, selEl.value);
@@ -173,6 +201,9 @@ def draw(raw, amedas):
     bootEl.addEventListener("click", boot);
     drawEl.addEventListener("click", render);
     selEl.addEventListener("change", render);
+    elemEl.addEventListener("change", function () {
+        loadElement(elemEl.value, true).catch(function (e) { say("失敗: " + e.message); });
+    });
 })();
 </script>
 {% endblock %}

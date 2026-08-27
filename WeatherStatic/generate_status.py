@@ -335,49 +335,84 @@ def build_lab(env: Environment) -> None:
     log(f"Status/Lab/index.html ({len(html):,} bytes / svgchart.py {len(src):,} 文字を同梱)")
 
 
-def build_today_json(stations: dict) -> None:
-    """当日の 10 分値を 1 ファイルにまとめる（ブラウザ側のグラフ用）。
+# 工房で選べる要素。(map JSON のキー, 表示名, 倍率, 単位, グラフ種別)
+# 単位も値域も要素ごとに違うので、倍率と種別をここで一元管理する。
+# 積算量（降水・日照）を折れ線にすると誤読するため棒グラフにする。
+LAB_ELEMENTS = [
+    ("temp",             "気温",       10, "℃",   "line"),
+    ("humidity",         "湿度",        1, "%",    "line"),
+    ("pressure",         "現地気圧",    10, "hPa",  "line"),
+    ("normalPressure",   "海面気圧",    10, "hPa",  "line"),
+    ("wind",             "風速",       10, "m/s",  "line"),
+    ("precipitation10m", "10分降水量", 10, "mm",   "bar"),
+    ("precipitation1h",  "1時間降水量", 10, "mm",   "bar"),
+    ("sun10m",           "10分日照",    1, "分",   "bar"),
+    ("snow",             "積雪深",      1, "cm",   "line"),
+]
 
-    生の map JSON を 144 本取らせると 35MB になる。必要なのは地点ごとの
-    時系列だけなので、転置して 1 ファイルにする（gzip 後およそ 200KB）。
+
+def build_today_json(stations: dict) -> None:
+    """当日の 10 分値を**要素ごとに**ファイル分けして出す（ブラウザのグラフ用）。
+
+    生の map JSON を 144 本取らせると 35MB になる。かといって全要素を 1 本に
+    まとめると数 MB になり、初回表示が重い。要素ごとに分ければブラウザは
+    選ばれた 1 要素だけを取ればよい（1 ファイル gzip 後およそ 60KB）。
     """
     now = datetime.now(JST).replace(tzinfo=None)
-    day = now.date()
-    slots = load_slots(day) or load_slots(day - timedelta(days=1))
+    slots = load_slots(now.date()) or load_slots(now.date() - timedelta(days=1))
     if not slots:
         return
     day = slot_date(slots[-1])
     st = stations["stations"]
     a2c = stations["index"]["amedas_to_code"]
+    minutes = [slot_minutes(s) for s in slots]
 
-    out: dict[str, dict] = {}
+    # 1 周だけ読んで全要素を同時に振り分ける（144 回 × 要素数の再読込を避ける）
+    acc: dict[str, dict[str, dict]] = {k: {} for k, _, _, _, _ in LAB_ELEMENTS}
     for j, s in enumerate(slots):
         snap = json.loads((MIRROR / f"{s}.json").read_bytes())
         for amedas, entry in snap.items():
-            e = entry.get("temp")
-            if not (isinstance(e, list) and len(e) >= 2
-                    and e[0] is not None and e[1] == 0):
-                continue
-            rec = out.get(amedas)
-            if rec is None:
-                code = a2c.get(amedas)
-                m = st.get(str(code)) if code else None
-                if m is None:
+            m = None
+            for key, _label, mul, _unit, _kind in LAB_ELEMENTS:
+                e = entry.get(key)
+                if not (isinstance(e, list) and len(e) >= 2
+                        and e[0] is not None and e[1] == 0):
                     continue
-                rec = out[amedas] = {"name": m["name"], "pref": m.get("pref") or "",
-                                     "temp": [None] * len(slots)}
-            rec["temp"][j] = int(round(float(e[0]) * 10))
+                rec = acc[key].get(amedas)
+                if rec is None:
+                    if m is None:
+                        code = a2c.get(amedas)
+                        m = st.get(str(code)) if code else False
+                    if not m:
+                        continue
+                    rec = acc[key][amedas] = {
+                        "name": m["name"], "pref": m.get("pref") or "",
+                        "v": [None] * len(slots)}
+                rec["v"][j] = int(round(float(e[0]) * mul))
 
-    body = {"date": day.isoformat(),
-            "minutes": [slot_minutes(s) for s in slots],
-            "attribution": "出典: 気象庁ホームページ（編集・加工: AIseed）",
-            "stations": out}
-    p = PUBLIC / "data" / "amedas-today.json"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(body, ensure_ascii=False, separators=(",", ":")),
-                 encoding="utf-8")
-    log(f"data/amedas-today.json ({p.stat().st_size/1024:.0f} KB) "
-        f"/ {len(out)} 地点 × {len(slots)} スロット")
+    index = []
+    out_dir = PUBLIC / "data"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for key, label, mul, unit, kind in LAB_ELEMENTS:
+        data = acc[key]
+        if not data:
+            continue                      # 夏の積雪など、その日に観測が無い要素は出さない
+        body = {"date": day.isoformat(), "element": key, "label": label,
+                "scale": mul, "unit": unit, "kind": kind, "minutes": minutes,
+                "attribution": "出典: 気象庁ホームページ（編集・加工: AIseed）",
+                "stations": data}
+        p = out_dir / f"amedas-today-{key}.json"
+        p.write_text(json.dumps(body, ensure_ascii=False, separators=(",", ":")),
+                     encoding="utf-8")
+        index.append({"element": key, "label": label, "unit": unit, "kind": kind,
+                      "stations": len(data), "bytes": p.stat().st_size})
+    (out_dir / "amedas-today.json").write_text(
+        json.dumps({"date": day.isoformat(), "slots": len(slots),
+                    "elements": index}, ensure_ascii=False, indent=1),
+        encoding="utf-8")
+    log("data/amedas-today-*.json: "
+        + " / ".join(f"{i['label']} {i['stations']}地点 {i['bytes']//1024}KB"
+                     for i in index))
 
 
 def main() -> int:
