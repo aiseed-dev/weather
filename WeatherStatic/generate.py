@@ -538,8 +538,14 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         "build_year": now.year,
     }
     import os as _os
+    # 現況アメダスの取得先。既定は気象庁を直接見る（従来どおり）。
+    # 自前ミラー（fetch_amedas_mirror.py）を公開したらそのベース URL を渡す。
+    # そうすると訪問者ごとの気象庁アクセスが 10 分に 1 回の取得へ置き換わる。
     html = env.get_template("home.html").render(
-        vote_url=_os.environ.get("WEATHER_VOTE_URL", "/vote.gif"),**context)
+        vote_url=_os.environ.get("WEATHER_VOTE_URL", "/vote.gif"),
+        amedas_base=_os.environ.get("WEATHER_AMEDAS_BASE",
+                                    "https://www.jma.go.jp/bosai/amedas/data"),
+        **context)
     write("index.html", html)
 
 

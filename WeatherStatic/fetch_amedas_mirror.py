@@ -5,7 +5,8 @@
 etrn から後追いできるのは日別・時別の気温と降水だけで、湿度・気圧・視程・風・
 10 分降水は失われる。取り逃した分は二度と取れないため 10 分毎に保存する。
 
-出力（public_amedas/ = 既存サイトとは別の Pages プロジェクト）:
+出力（public_amedas/）:
+    latest_time.txt              … 最新スロットの時刻（気象庁と同じ形式）
     latest.json                  … 最新スロット（気象庁の生ペイロードそのまま）
     map/{ts}.json                … 生ペイロード。気象庁と同じパス構造なので、
                                    参照先ホストを差し替えるだけで既存コードが動く
@@ -371,6 +372,10 @@ def main() -> int:
     newest = MAP / f"{slot_name(latest)}.json"
     if newest.exists():
         shutil.copyfile(newest, OUT / "latest.json")
+        # 気象庁と同じ latest_time.txt も置く。これがあると消費側は
+        # ベース URL を差し替えるだけでよく、取得コードを変えずに済む
+        (OUT / "latest_time.txt").write_text(
+            latest.replace(tzinfo=JST).isoformat(timespec="seconds"), encoding="utf-8")
 
     sealed = seal_periods(latest)
     write_index(latest)

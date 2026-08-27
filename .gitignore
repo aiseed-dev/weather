@@ -229,6 +229,7 @@ WeatherStatic/master/
 WeatherStatic/logs/
 WeatherStatic/dist/
 WeatherStatic/public_amedas/
+WeatherStatic/preview/
 WeatherStatic/store.lock
 
 # 旧 WeatherCore の PostgreSQL ダンプ（157MB）。backfill_daily.py の入力で、

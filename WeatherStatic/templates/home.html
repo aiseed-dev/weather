@@ -332,8 +332,12 @@ function tileOf(lat, lon) {
     return { x: Math.floor(xf / TS), y: Math.floor(yf / TS),
              px: Math.floor(xf % TS), py: Math.floor(yf % TS) };
 }
+// 現況アメダスの取得先。既定は気象庁だが、自前ミラーを公開したら
+// WEATHER_AMEDAS_BASE で差し替える（訪問者ごとの気象庁アクセスをなくすため）。
+var AMEDAS_BASE = {{ amedas_base | default('https://www.jma.go.jp/bosai/amedas/data', true) | tojson }};
+
 function updateTemps() {
-    return fetch('https://www.jma.go.jp/bosai/amedas/data/latest_time.txt', { cache: 'no-store' })
+    return fetch(AMEDAS_BASE + '/latest_time.txt', { cache: 'no-store' })
         .then(function (r) { return r.text(); })
         .then(function (ts) {
             var key = ts.replace(/[^0-9]/g, '').slice(0, 12) + '00';
@@ -341,7 +345,7 @@ function updateTemps() {
             var el = document.getElementById('cur-time');
             if (el) el.textContent = '(' + (d.getMonth() + 1) + '月' + d.getDate() + '日'
                 + d.getHours() + '時' + String(d.getMinutes()).padStart(2, '0') + '分現在)';
-            return fetch('https://www.jma.go.jp/bosai/amedas/data/map/' + key + '.json',
+            return fetch(AMEDAS_BASE + '/map/' + key + '.json',
                          { cache: 'no-store' }).then(function (r) { return r.json(); });
         })
         .then(function (map) {
