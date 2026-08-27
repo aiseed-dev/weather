@@ -9,11 +9,19 @@ r2-deployment.md）を参照。
 ```cron
 # 毎正時+10分: アメダス map JSON を蓄積（日平均の材料）
 10 * * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python accumulate.py
+# 10分毎: 現在値だけ更新（トップページが読む public/data/current.json）
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
 # 毎時50分: 最新CSV・予報・現在天気 → サイト再生成
 52 * * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py && ./.venv/bin/python generate.py
 # 日次: 投票集計（Workers+KV 版。要 VOTES_KV_NAMESPACE_ID）
 15 1 * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python aggregate_votes.py --kv
 ```
+
+**ブラウザから気象庁へは取りに行かない**（2026-08-27 以降）。以前のトップページは
+訪問者ごとに `map/{ts}.json`（245KB）と推計気象分布のタイル（512px PNG 複数）を
+気象庁から直接取得し、ブラウザ内でピクセル判定して天気を出していた。同じ計算は
+`fetch_data.py` が既に行っているので、ページは `public/data/current.json`（4KB）
+だけを読む。気象庁への取得はサーバー側の 10 分に 1 回に集約される。
 
 - サイト生成の環境変数（本番時）: `WEATHER_CHARTS_BASE`（チャート画像の公開URL、
   既定 /charts）、`WEATHER_VOTE_URL`（Worker の vote.gif、既定 /vote.gif）

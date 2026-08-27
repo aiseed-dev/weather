@@ -28,6 +28,7 @@ from weatherlib import jma
 BASE = Path(__file__).resolve().parent
 DATA = BASE / "data"
 MASTER = BASE / "master"
+PUBLIC = BASE / "public"
 
 FETCH_INTERVAL = 0.2
 
@@ -220,9 +221,36 @@ def build_current(stations: dict) -> dict:
     }
 
 
+def publish_current(cur: dict) -> None:
+    """current.json を data/ と公開ツリーの両方へ置く。
+
+    トップページは 10 分ごとにこれを読んで現在値を差し替える。サイト全体の
+    再生成は毎時なので、公開側へ直接置かないと 10 分更新が届かない。
+    """
+    body = json.dumps(cur, ensure_ascii=False, indent=1)
+    write_atomic(DATA / "current.json", body)
+    if PUBLIC.is_dir():
+        (PUBLIC / "data").mkdir(parents=True, exist_ok=True)
+        write_atomic(PUBLIC / "data" / "current.json", body)
+
+
 def main() -> int:
     started = time.monotonic()
     stations = load_stations()
+
+    # 現在値だけを更新する軽量モード（10 分ごとの cron 用）。
+    # 確定値 CSV と予報 JSON（55 office）は毎時で十分なので回さない。
+    if "--current-only" in sys.argv:
+        try:
+            cur = build_current(stations)
+        except Exception as e:
+            log(f"警告: 現在値の取得に失敗（前回の current.json を維持）: {e}")
+            return 1
+        publish_current(cur)
+        log(f"data/current.json を更新（{len(cur['stations'])} 都市, "
+            f"{time.monotonic() - started:.1f} 秒）")
+        return 0
+
     a2c = stations["index"]["amedas_to_code"]
 
     rows, meta = build_today(a2c)
@@ -245,7 +273,7 @@ def main() -> int:
 
     try:
         cur = build_current(stations)
-        write_atomic(DATA / "current.json", json.dumps(cur, ensure_ascii=False, indent=1))
+        publish_current(cur)
         log(f"data/current.json を出力（{len(cur['stations'])} 都市, "
             f"{time.monotonic() - started:.1f} 秒）")
     except Exception as e:
