@@ -65,7 +65,7 @@
                     {% for r in highs %}
                     <tr>
                         <td class="wcenter">{{ loop.index }}</td>
-                        <td>{{ r.name }}</td>
+                        <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>
                         <td class="wright"{% if r.diff is not none %} style="background-color: {{ r.diff | bcolor }}"{% endif %}>{{ r.temp | ondo }}</td>
                         <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% else %}-{% endif %}</td>
@@ -82,7 +82,7 @@
                     {% for r in lows %}
                     <tr>
                         <td class="wcenter">{{ loop.index }}</td>
-                        <td>{{ r.name }}</td>
+                        <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>
                         <td class="wright"{% if r.diff is not none %} style="background-color: {{ r.diff | bcolor }}"{% endif %}>{{ r.temp | ondo }}</td>
                         <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% else %}-{% endif %}</td>
@@ -112,7 +112,7 @@
             {% for r in rows %}
             <tr data-region="{{ r.region }}">
                 <td class="wcenter">{{ loop.index }}</td>
-                <td>{{ r.name }}</td>
+                <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                 <td>{{ r.pref }}</td>
                 <td class="wright"{% if r.diff is not none %} style="background-color: {{ r.diff | bcolor }}"{% endif %}>{{ r.temp | ondo }}</td>
                 <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% else %}-{% endif %}</td>

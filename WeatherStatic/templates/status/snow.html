@@ -1,0 +1,68 @@
+{#
+  降水の状況（10 分ごと更新）。generate_status.py の _rank_page が描画する。
+  コンテキスト: ranks(要素別ランキング) / rows(全地点) / cols / obs_time
+#}
+{% extends "_layout.html" %}
+{% block head_extra %}
+<style>
+    .st-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin: 0 10px 6px; }
+    .st-head h2 { margin: 0; font-size: 21px; }
+    .st-time { font-size: 13px; color: var(--muted); }
+    .st-badge { background: var(--accent-light); color: var(--accent-dark);
+        border-radius: 999px; padding: 2px 11px; font-size: 12px; font-weight: bold; }
+    .st-sec { margin: 0 10px 22px; }
+    .st-sec h3 { font-size: 17px; border-left: 4px solid var(--accent);
+        padding-left: 9px; margin: 0 0 10px; }
+    .st-three { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    .st-note { font-size: 12.5px; color: var(--muted); line-height: 1.75; margin: 8px 0 0; }
+    .st-none { background: var(--panel); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 14px; font-size: 13.5px; color: var(--muted); }
+</style>
+{% endblock %}
+{% block content %}
+{% with status_active = "snow" %}{% include "status/_submenu.html" %}{% endwith %}
+
+<div class="st-head">
+    <h2>雪の状況</h2>
+    <span class="st-badge">10分ごと更新</span>
+    <span class="st-time">{{ obs_time.month }}月{{ obs_time.day }}日
+        {{ obs_time.hour }}時{{ "%02d" | format(obs_time.minute) }}分現在 ／ {{ n_stations }} 地点</span>
+</div>
+
+<div class="st-sec">
+    <div class="st-three">
+        {% for rk in ranks %}
+        <div>
+            <h3>{{ rk.label }}</h3>
+            {% if rk.rows %}
+            <div class="table-responsive">
+                <table class="weathertable">
+                    <tr><th>順位</th><th>地点</th><th>都道府県</th><th>{{ rk.label }}</th></tr>
+                    {% for r in rk.rows %}
+                    <tr>
+                        <td class="wcenter">{{ loop.index }}</td>
+                        <td><a href="{{ r.url }}">{{ r.name }}</a></td>
+                        <td>{{ r.pref }}</td>
+                        <td class="wright">{{ "%.1f" | format(r[rk.key] / rk.scale) }} {{ rk.unit }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            </div>
+            <p class="st-note">観測のある {{ rk.n_active }} 地点中の上位</p>
+            {% else %}
+            <div class="st-none">{{ rk.label }}の観測値はありません（積雪ゼロ、または未観測）。</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    <p class="st-note">
+        <strong>気象庁の「雪の状況」は 11 月頃から 5 月上旬までの運用ですが、
+        このページは通年で出しています。</strong>10 分値を年間を通して保存しているためです。<br>
+        {% if suspended %}現在 <strong>{{ suspended }} 地点</strong>の積雪計が
+        観測休止中（品質フラグが正常以外）です。積雪計は無雪期に運用を止めるため、
+        夏季はこの状態になります。冬季になると正常値が入り、ここに順位が並びます。<br>{% endif %}
+        アメダスの 10 分値をそのまま集計しています。値は品質が正常なもののみ。
+        出典: 気象庁ホームページのアメダス観測値を加工して作成しています。
+    </p>
+</div>
+{% endblock %}

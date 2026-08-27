@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from weatherlib.filters import FILTERS
-from weatherlib.svgchart import intraday_svg
+from weatherlib.svgchart import intraday_svg, trend_svg
 # 平年値の読み方（daily は月キー・日は月内添字）は generate.py に正しい実装がある
 from generate import normal_daily, climate_targets, station_slug
 
@@ -46,6 +46,8 @@ SLOT_MINUTES = 10
 GRAPH_CITIES = [("札幌", "14163"), ("東京", "44132"), ("大阪", "62078"), ("福岡", "82182")]
 GRAPH_COLORS = ["#F92500", "#008000", "#0C00CC", "#B8860B"]
 RANK_N = 20
+# 地点ページに出す過去の日数（窓には 10〜26 日分あるが、全部読むと重い）
+TREND_DAYS = 3
 
 # 風向コード。0=静穏、1=北北東 … 16=北（時計回り）。回転を間違えると
 # 全地点の風向が狂うので、根室・那覇の卓越風で妥当性を確認済み。
@@ -86,6 +88,18 @@ def region_of(prec_no: int | None) -> str:
     return ""
 
 
+_SLUG_CACHE: dict[str, str] = {}
+
+
+def station_url(stations: dict, rec: dict, amedas: str) -> str:
+    """地点ページの URL。既存 /Stations/JP と同じ slug を使い、
+    平年値を持たない地点はアメダス番号にする（build_station_pages と同じ規則）。"""
+    if not _SLUG_CACHE:
+        for _c, r, _n, sl in climate_targets(stations):
+            _SLUG_CACHE[str(r.get("amedas"))] = sl
+    return f"/Status/Station/{_SLUG_CACHE.get(amedas) or amedas}/"
+
+
 def normal_tmax_tmin(code: int, d: date) -> tuple[int | None, int | None]:
     """その日の最高・最低の平年値。daily は月ごとのキーで日は月内の添字。"""
     return normal_daily(code, "tmax", d), normal_daily(code, "tmin", d)
@@ -123,7 +137,7 @@ def build_temperature(env: Environment, stations: dict) -> None:
                 (rec.get("etrn") or {}).get("prec_no")),
             "temp": t, "normal_mid": mid,
             "diff": (t - mid) if mid is not None else None,
-            "place": rec.get("place") or "",
+            "url": station_url(stations, rec, amedas),
         })
     rows.sort(key=lambda r: r["temp"], reverse=True)
 
@@ -206,6 +220,7 @@ def build_wind(env: Environment, stations: dict) -> None:
         rows.append({
             "name": rec["name"], "pref": rec.get("pref") or "",
             "region": region_of((rec.get("etrn") or {}).get("prec_no")),
+            "url": station_url(stations, rec, amedas),
             "wind": int(round(float(e[0]) * 10)),
             "dir": dv, "dir_name": WDIR[dv], "deg": WDIR_DEG.get(dv),
             "peak": pk[0] if pk else None,
@@ -234,6 +249,95 @@ def build_wind(env: Environment, stations: dict) -> None:
     out.write_text(html, encoding="utf-8")
     log(f"Status/Wind/index.html ({len(html):,} bytes) / {len(rows)} 地点 / "
         f"{obs_time:%H:%M} 現在 / 最大 {by_peak[0]['peak']/10 if by_peak else 0} m/s")
+
+
+def _rank_page(env, stations, kind: str) -> None:
+    """降水・雪の状況。最新スロットから各要素のランキングを作る。
+
+    気象庁の「雪の状況」は 11 月〜5 月上旬しか運用していないが、こちらは
+    10 分値を通年で保存しているので夏も出せる（積雪ゼロならその旨を出す）。
+    """
+    now = datetime.now(JST).replace(tzinfo=None)
+    slots = load_slots(now.date()) or load_slots(now.date() - timedelta(days=1))
+    if not slots:
+        log(f"10 分値が無いため{kind}の状況は生成しない")
+        return
+    st = stations["stations"]
+    a2c = stations["index"]["amedas_to_code"]
+
+    if kind == "precip":
+        cols = [("precipitation24h", "24時間", 10, "mm"),
+                ("precipitation1h", "1時間", 10, "mm"),
+                ("precipitation10m", "10分", 10, "mm")]
+        title, out_name, tmpl = "降水の状況", "Precipitation", "status/precip.html"
+    else:
+        cols = [("snow", "積雪深", 1, "cm"), ("snow24h", "24時間降雪", 1, "cm"),
+                ("snow6h", "6時間降雪", 1, "cm")]
+        title, out_name, tmpl = "雪の状況", "Snow", "status/snow.html"
+
+    # 積雪は**毎正時のスロットにしか入らない**（実測: 毎正時 335 地点、
+    # それ以外 0 地点）。最新スロットだけを見ると冬でも 6 回に 5 回は空になる。
+    # 主要素を持つ直近のスロットまで遡る。
+    latest, snap = None, None
+    for name in reversed(slots[-7:]):
+        d = json.loads((MIRROR / f"{name}.json").read_bytes())
+        if any(cols[0][0] in e for e in d.values()):
+            latest, snap = name, d
+            break
+    if snap is None:
+        latest = slots[-1]
+        snap = json.loads((MIRROR / f"{latest}.json").read_bytes())
+    obs_time = datetime(*map(int, (latest[:4], latest[4:6], latest[6:8],
+                                   latest[8:10], latest[10:12])))
+
+    rows = []
+    # 品質が正常でない地点数も数える。夏季の積雪は品質 5（観測休止）で
+    # 値 0 が来るので、単に「0 地点」と出すと壊れているように見える
+    suspended = 0
+    for amedas, entry in snap.items():
+        vals = {}
+        for key, _lab, mul, _u in cols:
+            e = entry.get(key)
+            if not (isinstance(e, list) and len(e) >= 2 and e[0] is not None):
+                continue
+            if e[1] == 0:
+                vals[key] = int(round(float(e[0]) * mul))
+            elif key == cols[0][0]:
+                suspended += 1
+        if not vals:
+            continue
+        code = a2c.get(amedas)
+        rec = st.get(str(code)) if code else None
+        if rec is None:
+            continue
+        rows.append({"name": rec["name"], "pref": rec.get("pref") or "",
+                     "region": region_of((rec.get("etrn") or {}).get("prec_no")),
+                     "url": station_url(stations, rec, amedas), **vals})
+
+    ranks = []
+    for key, lab, mul, unit in cols:
+        top = sorted((r for r in rows if r.get(key)), key=lambda r: -r[key])
+        ranks.append({"key": key, "label": lab, "unit": unit, "scale": mul,
+                      "rows": top[:RANK_N], "n_active": len(top)})
+
+    html = env.get_template(tmpl).render(
+        page_title=f"{title}（10 分ごと更新）", nav_active="status",
+        build_year=now.year, obs_time=obs_time, n_stations=len(rows),
+        ranks=ranks, rows=rows, cols=cols, suspended=suspended,
+        region_filters=[(k, n) for k, n, _, _ in REGIONS])
+    out = PUBLIC / "Status" / out_name / "index.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(html, encoding="utf-8")
+    log(f"Status/{out_name}/index.html ({len(html):,} bytes) / {len(rows)} 地点 / "
+        + " ".join(f"{r['label']}{r['n_active']}" for r in ranks))
+
+
+def build_precip(env, stations):
+    _rank_page(env, stations, "precip")
+
+
+def build_snow(env, stations):
+    _rank_page(env, stations, "snow")
 
 
 def build_records(env: Environment, stations: dict) -> None:
@@ -547,6 +651,10 @@ def main() -> int:
         build_wind(env, stations)
     if only in (None, "station"):
         build_station_pages(env, stations)
+    if only in (None, "precip"):
+        build_precip(env, stations)
+    if only in (None, "snow"):
+        build_snow(env, stations)
     if only in (None, "records"):
         build_records(env, stations)
     if only in (None, "lab"):

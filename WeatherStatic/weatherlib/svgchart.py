@@ -315,3 +315,74 @@ def intraday_svg(title: str, minutes: list[int], series: list[dict],
     e.append(f'<rect x="{ml}" y="{mt}" width="{pw}" height="{ph}" fill="none" stroke="#c8d2dc"/>')
     e.append("</svg>")
     return "".join(e)
+
+
+def trend_svg(title: str, stamps: list[int], labels: dict, series: list[dict],
+              width: int = 680, height: int = 200, scale: int = 10,
+              unit: str = "", kind: str = "line") -> str:
+    """複数日の 10 分値。intraday_svg が 0〜24 時の軸なのに対し、こちらは
+    窓の先頭からの通し分で刻み、日付境界に目盛りを置く。
+
+    stamps … 窓の先頭からの分（各点の x）
+    labels … {分: 目盛り文字} 日付境界だけ渡す（10 分値は点が多いので粗くする）
+    """
+    ml, mr, mt, mb = 52, 12, 22, 22
+    pw, ph = width - ml - mr, height - mt - mb
+    vals = [v / scale for s in series for v in s["values"] if v is not None]
+    if not vals or not stamps:
+        return ""
+    lo_v, hi_v = (0 if kind == "bar" else min(vals)), max(vals)
+    step = _nice_step(lo_v, hi_v)
+    v_lo = (lo_v // step) * step - (step if kind != "bar" else 0)
+    v_hi = (hi_v // step) * step + step
+    m_lo, m_hi = stamps[0], max(stamps[-1], stamps[0] + 1)
+
+    def y(v):
+        return mt + ph * (v_hi - v / scale) / (v_hi - v_lo)
+
+    def x(m):
+        return ml + pw * (m - m_lo) / (m_hi - m_lo)
+
+    fmt = "{:.0f}" if step >= 1 else "{:.1f}"
+    e = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+         f'style="max-width:{width}px;width:100%;height:auto" role="img" '
+         f'aria-label="{title}">']
+    t, guard = v_lo, 0
+    while t <= v_hi + 1e-9 and guard < 40:
+        guard += 1
+        yy = mt + ph * (v_hi - t) / (v_hi - v_lo)
+        e.append(f'<line x1="{ml}" y1="{yy:.1f}" x2="{ml + pw}" y2="{yy:.1f}" '
+                 f'stroke="{"#999" if abs(t) < 1e-9 else "#e8edf2"}"/>')
+        e.append(f'<text x="{ml - 5}" y="{yy + 4:.1f}" text-anchor="end" font-size="10" '
+                 f'fill="#666" {FONT}>{fmt.format(t)}</text>')
+        t += step
+    for m, lab in sorted(labels.items()):
+        if not (m_lo <= m <= m_hi):
+            continue
+        e.append(f'<line x1="{x(m):.1f}" y1="{mt}" x2="{x(m):.1f}" y2="{mt + ph}" '
+                 f'stroke="#dde5ee"/>')
+        e.append(f'<text x="{x(m) + 3:.1f}" y="{mt + ph + 13}" font-size="10" '
+                 f'fill="#666" {FONT}>{lab}</text>')
+    if unit:
+        e.append(f'<text x="{ml - 5}" y="{mt - 6}" text-anchor="end" font-size="10" '
+                 f'fill="#666" {FONT}>{unit}</text>')
+
+    if kind == "bar":
+        bw = max(pw / max(len(stamps), 1) * 0.9, 0.7)
+        s0 = series[0]
+        for m, v in zip(stamps, s0["values"]):
+            if v is None or v <= 0:
+                continue
+            top = y(v)
+            e.append(f'<rect x="{x(m) - bw / 2:.1f}" y="{top:.1f}" width="{bw:.1f}" '
+                     f'height="{mt + ph - top:.1f}" fill="{s0["color"]}"/>')
+    else:
+        for s in series:
+            for run in _line_runs([x(m) for m in stamps], s["values"]):
+                path = " ".join((f"M{px:.1f},{y(v):.1f}" if i == 0 else f"L{px:.1f},{y(v):.1f}")
+                                for i, (px, v) in enumerate(run))
+                e.append(f'<path d="{path}" fill="none" stroke="{s["color"]}" '
+                         f'stroke-width="{s.get("width", 1.2)}"/>')
+    e.append(f'<rect x="{ml}" y="{mt}" width="{pw}" height="{ph}" fill="none" stroke="#c8d2dc"/>')
+    e.append("</svg>")
+    return "".join(e)

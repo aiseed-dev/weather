@@ -51,7 +51,7 @@
                     {% for r in now_top %}
                     <tr>
                         <td class="wcenter">{{ loop.index }}</td>
-                        <td>{{ r.name }}</td>
+                        <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>
                         <td class="wcenter">
                             {% if r.deg is not none %}<span class="wd-arrow"
@@ -72,7 +72,7 @@
                     {% for r in peak_top %}
                     <tr>
                         <td class="wcenter">{{ loop.index }}</td>
-                        <td>{{ r.name }}</td>
+                        <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>
                         <td class="wcenter">{{ r.peak_dir }}</td>
                         <td class="wright">{{ "%.1f" | format(r.peak / 10) }} m/s</td>
@@ -121,7 +121,7 @@
             {% for r in rows %}
             <tr data-region="{{ r.region }}">
                 <td class="wcenter">{{ loop.index }}</td>
-                <td>{{ r.name }}</td>
+                <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                 <td>{{ r.pref }}</td>
                 <td class="wcenter">{{ r.dir_name }}</td>
                 <td class="wright">{{ "%.1f" | format(r.wind / 10) }}</td>
