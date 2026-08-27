@@ -533,8 +533,8 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         "wthr_time": (datetime.fromisoformat(current["wthr_time"])
                       if current.get("wthr_time") else None),
         "nav_active": "home",
-        "page_title": "気温と雨量の統計のページ",
-        "page_header": "気温と雨量の統計のページ",
+        "page_title": "個人開発気象統計",
+        "page_header": "個人開発気象統計",
         "build_year": now.year,
     }
     import os as _os
@@ -1311,6 +1311,13 @@ def build_app(env: Environment) -> None:
         nav_active="app", build_year=datetime.now().year))
 
 
+def build_about(env: Environment) -> None:
+    """このサイトについて。非公式であること・防災情報を扱わないことを明示する。"""
+    write("About/index.html", env.get_template("about.html").render(
+        page_title="このサイトについて — 個人開発気象統計",
+        nav_active="about", build_year=datetime.now().year))
+
+
 def build_seo(env: Environment, stations: dict) -> None:
     """sitemap.xml・_redirects（旧URL誘導）・404.html。Pages 移行のサイトインフラ。"""
     import os
@@ -1320,7 +1327,7 @@ def build_seo(env: Environment, stations: dict) -> None:
             "/Temperature/HighsList/", "/Temperature/LowsList/",
             "/Summer/Ranking/", "/Winter/LowestList/", "/Climate/",
             "/Stations/", "/Monthly/", "/Monthly/Latest/",
-            "/Precipitation/", "/Forecast/", "/App/"]
+            "/Precipitation/", "/App/", "/About/"]
     urls += [f"/Monthly/Heinenti{m:02d}{l}/" for m in range(1, 13) for l in ("", "l")]
     targets = climate_targets(stations)
     urls += [f"/Climate/Chart/{s}/" for _, _, _, s in targets]
@@ -1350,7 +1357,7 @@ def build_seo(env: Environment, stations: dict) -> None:
           '<!doctype html><meta charset="utf-8"><title>404</title>'
           '<body style="font-family:sans-serif;text-align:center;padding:60px">'
           '<h1>ページが見つかりません</h1>'
-          '<p><a href="/">気温と雨量の統計 トップへ</a></p></body>')
+          '<p><a href="/">個人開発気象統計 トップへ</a></p></body>')
 
 
 def main() -> None:
@@ -1394,8 +1401,8 @@ def main() -> None:
         build_stations(env, stations, hist)
         build_monthly(env, stations, hist)
         build_precipitation(env, stations)
-        build_forecast(env)
         build_app(env)
+        build_about(env)
         build_seo(env, stations)
         build_home(env, today, meta, fc, stations, hist)
     finally:

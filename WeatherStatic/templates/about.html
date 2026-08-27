@@ -1,0 +1,94 @@
+{#
+  このサイトについて。位置づけ・扱う範囲・扱わない範囲を明示する。
+  免責を全ページに出すと邪魔なので、常時表示はサイト名とフッター 1 行に留め、
+  詳細はここに集約する。
+#}
+{% extends "_layout.html" %}
+{% block head_extra %}
+<style>
+    .ab { margin: 0 10px 24px; max-width: 46em; }
+    .ab h2 { font-size: 22px; margin: 6px 0 14px; }
+    .ab h3 { font-size: 17px; border-left: 4px solid var(--accent);
+        padding-left: 9px; margin: 24px 0 10px; }
+    .ab p, .ab li { font-size: 14px; line-height: 1.85; }
+    .ab-warn { background: var(--panel); border: 1px solid var(--border);
+        border-left: 4px solid #c62828; border-radius: 8px; padding: 14px 16px; }
+    .ab-warn strong { color: #c62828; }
+    .ab table { width: 100%; border-collapse: collapse; background: var(--card);
+        border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .ab th, .ab td { border-bottom: 1px solid var(--border); padding: 9px 12px;
+        font-size: 13.5px; text-align: left; vertical-align: top; }
+    .ab th { background: var(--th-bg); color: var(--th-text); white-space: nowrap; }
+    .ab tr:last-child td { border-bottom: none; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="ab">
+    <h2>このサイトについて</h2>
+
+    <p>
+        個人が開発・運用している<strong>非公式</strong>のサイトです。気象庁とは関係がありません。
+        掲載しているのは気象庁が公開している観測データを加工したもので、
+        独自の観測や予報は行っていません。
+    </p>
+
+    <div class="ab-warn">
+        <p style="margin:0">
+            <strong>防災情報は扱っていません。</strong>
+            警報・注意報、台風情報、土砂災害警戒情報、記録的短時間大雨情報などは
+            このサイトにはありません。気象状況が悪化しているときは、必ず
+            <a href="//www.jma.go.jp/bosai/">気象庁の防災情報</a>をご確認ください。
+        </p>
+    </div>
+
+    <h3>扱うもの・扱わないもの</h3>
+    <table>
+        <tr><th>扱う</th><td>気象庁のアメダス観測値（気温・降水・風・湿度・気圧・日照・積雪など）、
+            日別統計、平年値、観測史上の記録</td></tr>
+        <tr><th>扱わない</th><td>警報・注意報などの防災情報、独自の予報、
+            気象庁以外のデータ</td></tr>
+    </table>
+    <p>
+        「統計」と名乗っているのは、扱う範囲を観測値と統計に限っているためです。
+        予報業務は気象業務法により許可制であり、このサイトは予報を行いません。
+    </p>
+
+    <h3>なぜ作っているか</h3>
+    <p>
+        気象庁のサイトは、災害時にも落ちてはならず、全国からの同時アクセスに耐え、
+        情報が人命に関わるという条件のもとで運用されています。更新間隔や表示の
+        作りには、その責任に見合った制約があります。
+    </p>
+    <p>
+        こちらにはその責任がありません。落ちても誰も困らず、見る人も限られています。
+        だからこそ<strong>やらなくてよいことができます</strong>。
+    </p>
+    <ul>
+        <li>アメダスは 10 分ごとに観測しているので、10 分ごとに表示する</li>
+        <li>積雪の観測が休止する夏も、ページを止めずに出す</li>
+        <li>1880 年からの日別記録と突き合わせる</li>
+        <li>全 1,286 地点それぞれに個別ページを持たせる</li>
+        <li>グラフの描画をブラウザの中の Python にやらせる</li>
+    </ul>
+
+    <h3>データについて</h3>
+    <p>
+        出典は<a href="//www.jma.go.jp/">気象庁ホームページ</a>です。
+        気象庁のデータを編集・加工しており、その責任は当サイトにあります。
+        観測値には速報値が含まれ、気象庁の確定処理により後日変更されることがあります。
+        統計期間は地点ごとに異なります。
+    </p>
+    <p>
+        取得は気象庁のサーバーに負担をかけないよう、更新間隔に合わせて必要な回数だけ
+        行っています。訪問者のブラウザから気象庁へ直接アクセスすることはありません。
+    </p>
+
+    <h3>ソフトウェア</h3>
+    <p>
+        サイトの生成プログラムは
+        <a href="https://github.com/aiseed-dev/weather">GitHub</a> で公開しています（AGPL-3.0-or-later）。
+        自分で天気図を作りたい方向けに、デスクトップ用の
+        <a href="/App/">個人開発気象ツール</a>も開発しています。
+    </p>
+</div>
+{% endblock %}
