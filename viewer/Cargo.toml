@@ -1,0 +1,23 @@
+# 数値予報の GPU ビューア。
+#
+# **Flutter も gpui も持たない。** winit(窓と入力)と wgpu(描画)だけを借り、
+# 表示は自分で書く。借りる層を薄くしたのは、必要なのが「格子をテクスチャに
+# 載せてパン・ズームする」ことだけだからで、汎用ウィジェット一式は要らない。
+#
+# IME は検索欄でしか使わないので winit の set_ime_allowed で足りる
+# (文書編集のように本文へ入れるなら gpui の ElementInputHandler が要る)。
+#
+# Python との境界: 1 ステップにつき 1 回、AWGP 形式のファイルを読むだけ。
+# 取得・GRIB 復号・投影・配色の決定は Python(src/aiseed_weather)に残す。
+# パン・ズームはこちらで完結するので、毎フレームの往復が起きない。
+[package]
+name = "viewer"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+winit = "0.30"
+wgpu = "22"
+pollster = "0.3"      # 初期化だけ同期で待つ。常駐の async ランタイムは要らない
+bytemuck = { version = "1", features = ["derive"] }

@@ -236,3 +236,6 @@ WeatherStatic/store.lock
 # 一度取り込めば再取得の必要がない。git に入れる大きさではない
 weather.gz
 *.dump
+
+# Rust ビューアのビルド成果物
+viewer/target/
