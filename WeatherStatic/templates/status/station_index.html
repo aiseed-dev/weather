@@ -1,0 +1,70 @@
+{#
+  地点別 10 分値観測の一覧。generate_status.py が描画する。
+  コンテキスト: rows(slug/name/pref/region/elements) / day / region_filters
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .si-head { margin: 0 10px 10px; }
+    .si-head h2 { margin: 0 0 4px; font-size: 21px; }
+    .si-head p { margin: 0; font-size: 13px; color: var(--muted); }
+    .si-sec { margin: 0 10px 20px; }
+    .si-grid { display: grid; gap: 8px;
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+    .si-item { background: var(--card); border: 1px solid var(--border);
+        border-radius: 8px; padding: 8px 11px; font-size: 13.5px; }
+    .si-item a { text-decoration: none; font-weight: bold; }
+    .si-item span { display: block; font-size: 11.5px; color: var(--muted); }
+    .si-note { font-size: 12.5px; color: var(--muted); line-height: 1.75; margin: 10px 0 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% with status_active = "station" %}{% include "status/_submenu.html" %}{% endwith %}
+
+<div class="si-head">
+    <h2>地点別の10分値観測</h2>
+    <p>{{ rows | length }} 地点 ／ {{ day }} の観測</p>
+</div>
+
+<div class="si-sec">
+    <div class="region-chips">
+        <a href="javascript:void(0)" class="rchip active" data-region="">全国</a>
+        {% for key, name in region_filters %}
+        <a href="javascript:void(0)" class="rchip" data-region="{{ key }}">{{ name }}</a>
+        {% endfor %}
+    </div>
+    <div class="si-grid" id="si-grid">
+        {% for r in rows %}
+        <div class="si-item" data-region="{{ r.region }}">
+            <a href="/Status/Station/{{ r.slug }}/">{{ r.name }}</a>
+            <span>{{ r.pref }} ／ {{ r.elements }} 要素</span>
+        </div>
+        {% endfor %}
+    </div>
+    <p class="si-note">
+        アメダスは 10 分ごとに観測しています。地点によって観測している要素が異なります
+        （気温だけの地点、気圧や視程まで測る官署など）。<br>
+        気候値・平年値・30 日推移は<a href="/Stations/">観測地点一覧</a>から。
+    </p>
+</div>
+
+{% endblock %}
+
+{% block add_script %}
+<script>
+document.querySelectorAll('.region-chips .rchip').forEach(function (chip) {
+    chip.addEventListener('click', function () {
+        var key = chip.dataset.region;
+        document.querySelectorAll('.region-chips .rchip').forEach(function (c) {
+            c.classList.toggle('active', c === chip);
+        });
+        document.querySelectorAll('#si-grid .si-item').forEach(function (el) {
+            el.style.display = (!key || el.dataset.region === key) ? '' : 'none';
+        });
+    });
+});
+</script>
+{% endblock %}

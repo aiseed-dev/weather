@@ -33,7 +33,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weatherlib.filters import FILTERS
 from weatherlib.svgchart import intraday_svg
 # 平年値の読み方（daily は月キー・日は月内添字）は generate.py に正しい実装がある
-from generate import normal_daily
+from generate import normal_daily, climate_targets, station_slug
 
 BASE = Path(__file__).resolve().parent
 MIRROR = BASE / "public_amedas" / "map"
@@ -315,6 +315,94 @@ def build_records(env: Environment, stations: dict) -> None:
         f"月1位 高 {len(hot_mon)}・低 {len(cold_mon)}")
 
 
+def build_station_pages(env: Environment, stations: dict) -> None:
+    """地点ごとの実況ページ（当日の 10 分値をすべての観測要素で）。
+
+    既存の /Stations/JP/{slug} は気候値・30 日推移・平年値を扱う（毎時生成）。
+    こちらは**当日の 10 分値**に絞る（10 分ごと生成）。役割を分けて相互リンクする。
+
+    URL は既存ページと同じ slug を使う。slug が無い地点（平年値を持たない
+    アメダス単独点など）はアメダス番号にする — リンク先が無い地点を
+    取りこぼさないため。
+    """
+    now = datetime.now(JST).replace(tzinfo=None)
+    slots = load_slots(now.date()) or load_slots(now.date() - timedelta(days=1))
+    if not slots:
+        log("10 分値が無いため地点ページは生成しない")
+        return
+    day = slot_date(slots[-1])
+    minutes = [slot_minutes(s) for s in slots]
+    st = stations["stations"]
+    a2c = stations["index"]["amedas_to_code"]
+
+    climate_targets(stations)          # slug 表を確定させる（副作用で登録される）
+    has_climate = {str(rec.get("amedas")) for _c, rec, _n, _s in climate_targets(stations)}
+
+    # 1 周だけ読んで、地点 × 要素の系列に組み替える
+    series: dict[str, dict[str, list]] = {}
+    for j, s_name in enumerate(slots):
+        snap = json.loads((MIRROR / f"{s_name}.json").read_bytes())
+        for amedas, entry in snap.items():
+            per = series.setdefault(amedas, {})
+            for key, _label, mul, _unit, _kind in LAB_ELEMENTS:
+                e = entry.get(key)
+                if not (isinstance(e, list) and len(e) >= 2
+                        and e[0] is not None and e[1] == 0):
+                    continue
+                vals = per.get(key)
+                if vals is None:
+                    vals = per[key] = [None] * len(slots)
+                vals[j] = int(round(float(e[0]) * mul))
+
+    out_dir = PUBLIC / "Status" / "Station"
+    n = 0
+    index = []
+    for amedas, per in series.items():
+        code = a2c.get(amedas)
+        rec = st.get(str(code)) if code else None
+        if rec is None or not per:
+            continue
+        slug = station_slug(rec) if amedas in has_climate else amedas
+        if not slug:
+            slug = amedas
+        charts = []
+        for key, label, mul, unit, kind in LAB_ELEMENTS:
+            vals = per.get(key)
+            if not vals or all(v is None for v in vals):
+                continue
+            good = [v for v in vals if v is not None]
+            color = "#1987E5" if kind == "bar" else "#F92500"
+            charts.append({
+                "label": label, "unit": unit,
+                "now": vals[-1] if vals[-1] is not None else good[-1],
+                "max": max(good), "min": min(good), "scale": mul, "kind": kind,
+                "svg": intraday_svg(f"{rec['name']} {day} の{label}", minutes,
+                                    [{"label": label, "color": color, "values": vals}],
+                                    width=680, height=240, scale=mul,
+                                    unit=unit, kind=kind),
+            })
+        html = env.get_template("status/station.html").render(
+            page_title=f"{rec['name']}（{rec.get('pref') or ''}）の10分値観測",
+            nav_active="station", build_year=now.year, day=day, now=now,
+            st=rec, amedas=amedas, charts=charts, slot_count=len(slots),
+            climate_slug=station_slug(rec) if amedas in has_climate else None)
+        out = out_dir / slug / "index.html"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(html, encoding="utf-8")
+        index.append({"slug": slug, "name": rec["name"], "pref": rec.get("pref") or "",
+                      "region": region_of((rec.get("etrn") or {}).get("prec_no")),
+                      "elements": len(charts)})
+        n += 1
+
+    index.sort(key=lambda r: (r["region"], r["name"]))
+    write_html = env.get_template("status/station_index.html").render(
+        page_title="地点別の10分値観測（アメダス）", nav_active="station",
+        build_year=now.year, day=day, rows=index,
+        region_filters=[(k, nm) for k, nm, _, _ in REGIONS])
+    (out_dir / "index.html").write_text(write_html, encoding="utf-8")
+    log(f"Status/Station/: {n} 地点ページ + 一覧")
+
+
 def build_lab(env: Environment) -> None:
     """ブラウザ内 Python でグラフを描くページ。
 
@@ -429,6 +517,8 @@ def main() -> int:
         build_temperature(env, stations)
     if only in (None, "wind"):
         build_wind(env, stations)
+    if only in (None, "station"):
+        build_station_pages(env, stations)
     if only in (None, "records"):
         build_records(env, stations)
     if only in (None, "lab"):

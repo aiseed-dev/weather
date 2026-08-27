@@ -1,0 +1,78 @@
+{#
+  地点別の 10 分値観測。generate_status.py が描画する（10 分ごと）。
+  既存の /Stations/JP/{slug} は気候値・30 日推移・平年値（毎時生成）なので、
+  こちらは当日の 10 分値に徹して相互リンクする。
+  コンテキスト: st(地点マスタ) / amedas / charts / day / slot_count / climate_slug
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .sp-head { margin: 0 10px 10px; }
+    .sp-head h2 { margin: 0 0 6px; font-size: 21px; }
+    .sp-meta { font-size: 13px; color: var(--muted); line-height: 1.9; }
+    .sp-meta span { margin-right: 14px; white-space: nowrap; }
+    .sp-sec { margin: 0 10px 18px; }
+    .sp-card { background: var(--card); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+    .sp-card h3 { margin: 0 0 4px; font-size: 16px; }
+    .sp-vals { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+    .sp-vals b { color: var(--text); font-size: 15px; }
+    .sp-vals span { margin-right: 14px; }
+    .sp-note { font-size: 12.5px; color: var(--muted); line-height: 1.75; margin: 8px 0 0; }
+    .sp-links a { display: inline-block; margin-right: 14px; font-size: 14px; }
+    .sp-none { background: var(--panel); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 16px; font-size: 14px; color: var(--muted); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{% with status_active = "station" %}{% include "status/_submenu.html" %}{% endwith %}
+
+<div class="sp-head">
+    <h2>{{ st.name }}（{{ st.pref }}）の10分値観測</h2>
+    <p class="sp-meta">
+        <span>アメダス番号 {{ amedas }}</span>
+        {% if st.intl %}<span>国際地点番号 {{ st.intl }}</span>{% endif %}
+        <span>{{ "%.3f" | format(st.lat) }}°N {{ "%.3f" | format(st.lon) }}°E</span>
+        <span>標高 {{ st.alt }} m</span>
+        <span>{{ "官署" if st.intl else "アメダス" }}</span>
+    </p>
+    <p class="sp-links">
+        {% if climate_slug %}
+        <a href="/Stations/JP/{{ climate_slug }}">平年値・30日推移を見る</a>
+        {% endif %}
+        <a href="/Status/Lab/">グラフを自分で描く（Python グラフ工房）</a>
+        <a href="/Status/Station/">他の地点</a>
+    </p>
+</div>
+
+<div class="sp-sec">
+    {% if charts %}
+    {% for c in charts %}
+    <div class="sp-card">
+        <h3>{{ c.label }}</h3>
+        <p class="sp-vals">
+            <span>現在 <b>{{ "%.1f" | format(c.now / c.scale) if c.scale > 1 else c.now }}{{ c.unit }}</b></span>
+            {% if c.kind == 'line' %}
+            <span>最高 {{ "%.1f" | format(c.max / c.scale) if c.scale > 1 else c.max }}{{ c.unit }}</span>
+            <span>最低 {{ "%.1f" | format(c.min / c.scale) if c.scale > 1 else c.min }}{{ c.unit }}</span>
+            {% else %}
+            <span>最大 {{ "%.1f" | format(c.max / c.scale) if c.scale > 1 else c.max }}{{ c.unit }}</span>
+            {% endif %}
+        </p>
+        {{ c.svg | safe }}
+    </div>
+    {% endfor %}
+    <p class="sp-note">
+        {{ day }} の 0 時からの観測値（{{ slot_count }} 回）をそのまま描いています。
+        値は品質が正常なもののみ。降水量と日照は積算量なので棒グラフです。<br>
+        出典: 気象庁ホームページのアメダス観測値を加工して作成しています。
+    </p>
+    {% else %}
+    <div class="sp-none">本日の観測値がまだありません。</div>
+    {% endif %}
+</div>
+
+{% endblock %}
