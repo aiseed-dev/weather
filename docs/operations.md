@@ -108,16 +108,26 @@ Worker を配信に使わないのは、無料枠の **10 万リクエスト/日
 重い処理を Worker に載せないのは、無料枠の **CPU 10ms・メモリ 128MB** に収まらないため。
 この分担なら **tgsvr を公開する必要がない**（アウトバウンドのみ）。
 
-### Worker のデプロイ（ユーザー実行）
+### デプロイ（cf-publish を使う。wrangler は使わない）
 
-```bash
-cd WeatherStatic/workers/amedas
-wrangler r2 bucket create weather-amedas
-wrangler deploy
-wrangler tail                    # cron の実行ログ
-```
+| 対象 | コマンド |
+|---|---|
+| サイト | `cf-publish public/ --project <名前>` |
+| アメダスミラー | `cf-publish r2 sync WeatherStatic/public_amedas weather-amedas` |
+| 予報パック | `cf-publish r2 sync ~/wxpub/forecast weather-forecast/forecast --delete` |
 
-公開する場合は R2 バケットに独自ドメイン（例 `amedas.time-j.net`）を割り当てる。
+R2 バケットの作成と独自ドメイン（例 `amedas.time-j.net`）の割当は
+ダッシュボードで行う。CORS もバケット側の設定。
+
+**収集 Worker（`workers/amedas/`）は cf-publish の対象外**（Pages 配信と
+R2 同期のみ）。Worker を使わない場合は、tgsvr の `fetch_amedas_mirror.py` が
+`AMEDAS_R2_BASE` 未設定なら気象庁から直接取るので、そのまま動く。
+取得結果を R2 へ流すのは上表の `r2 sync` で足りる。
+
+- **Worker を使う利点**: 収集が tgsvr の死活から独立する（10 分値は 10 日で
+  消えるため、取り逃しが回復不能）
+- **Worker を使わない場合**: tgsvr が止まっている間の 10 分値は失われる。
+  ただし日別値は etrn から後追いできる
 
 ### tgsvr 側の cron
 
