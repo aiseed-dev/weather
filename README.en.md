@@ -1,5 +1,7 @@
 # AIseed Weather
 
+*A personally developed weather tool.*
+
 **A weather chart studio for enthusiasts and analysts.**
 Build publication-ready figures from ECMWF, ERA5, JMA, and Open-Meteo, then
 share them with the people who need to see them.

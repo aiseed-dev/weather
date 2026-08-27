@@ -45,7 +45,8 @@
 {% block content %}
 
 <div class="app-hero">
-    <h2>AIseed Weather — 天気図スタジオ</h2>
+    <h2>AIseed Weather</h2>
+    <p class="lede" style="opacity:1;font-weight:bold;margin-bottom:10px">個人開発気象ツール</p>
     <p class="lede">ECMWF・ERA5・気象庁・Open-Meteo のデータから、出版品質の天気図を作って共有するデスクトップアプリです。</p>
     <p>気圧配置図、500 hPa 高度図、平年差（アノマリ）— 見たい図を、見たい変数で、自分で作れます。</p>
 </div>
@@ -140,6 +141,11 @@
         </div>
     </div>
     <p class="app-note" style="margin-top:14px;">
+        <strong>この 2 つは、法的な立ち位置でもあります。</strong>
+        データを取得するのも、図を作るのもあなたの手元です。当ツールは
+        気象データを可視化する道具であり、予報を生成して配信するものでは
+        ありません。だから<a href="/">個人開発気象統計</a>（気象庁の観測値だけを
+        扱うサイト）とは違い、ECMWF や ERA5 を扱えます。<br>
         これは思想であると同時に、データ提供元への礼儀でもあります。キャッシュを効かせ、必要なときだけ取得し、
         User-Agent でアプリ名を正直に名乗ります。
     </p>
