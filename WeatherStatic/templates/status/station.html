@@ -61,8 +61,12 @@
             {% else %}
             <span>最大 {{ "%.1f" | format(c.max / c.scale) if c.scale > 1 else c.max }}{{ c.unit }}</span>
             {% endif %}
+            {% if c.diff is not none %}
+            <span>本日最高の平年差 <b>{{ "%+.1f" | format(c.diff / 10) }}℃</b></span>
+            {% endif %}
         </p>
         {{ c.svg | safe }}
+        {% if c.note %}<p class="sp-note" style="margin-top:4px">{{ c.note }}</p>{% endif %}
     </div>
     {% endfor %}
     <p class="sp-note">

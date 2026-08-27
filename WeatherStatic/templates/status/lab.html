@@ -102,10 +102,22 @@ def draw(raw, amedas):
     st = d["stations"][amedas]
     color = "#1987E5" if d["kind"] == "bar" else "#F92500"
     series = [{"label": st["name"], "color": color, "values": st["v"]}]
+
+    # 平年値は日別しかないので、平年の最高〜最低を帯で重ねる（気温のみ）
+    band = refs = None
+    n = st.get("n")
+    if n:
+        band = {"lo": n[0], "hi": n[1], "color": "#4d86b8",
+                "hi_label": f"平年の最高 {n[1] / 10:.1f}℃",
+                "lo_label": f"平年の最低 {n[0] / 10:.1f}℃"}
+        if len(n) > 2:
+            refs = [{"v": n[2], "color": "#2e7d32", "dash": "5 4",
+                     "label": f"平年の日平均 {n[2] / 10:.1f}℃"}]
+
     return intraday_svg(
         f'{st["name"]}（{st["pref"]}）{d["date"]} の{d["label"]} 10 分値',
         d["minutes"], series, width=680, height=300,
-        scale=d["scale"], unit=d["unit"], kind=d["kind"])
+        scale=d["scale"], unit=d["unit"], kind=d["kind"], band=band, refs=refs)
 
 def stations(raw):
     d = json.loads(raw)

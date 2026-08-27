@@ -202,7 +202,8 @@ def _nice_step(lo: float, hi: float, target: int = 6) -> float:
 
 def intraday_svg(title: str, minutes: list[int], series: list[dict],
                  width: int = 640, height: int = 260, scale: int = 10,
-                 unit: str = "", kind: str = "line") -> str:
+                 unit: str = "", kind: str = "line",
+                 band: "dict | None" = None, refs: "list[dict] | None" = None) -> str:
     """当日の 10 分値時系列 SVG。
 
     timeseries_svg が日単位の軸なのに対し、こちらは 0 時からの分で刻む。
@@ -213,13 +214,23 @@ def intraday_svg(title: str, minutes: list[int], series: list[dict],
     series  … [{label, color, values(整数 or None), width}]
     scale   … values を実単位に戻す倍率（気温 10、湿度 1 など）
     kind    … "line"（気温・気圧など）/ "bar"（降水量・日照など積算量）
+    band    … {lo, hi, color, label} の帯。平年の最高〜最低など
+              （平年値は日別しかないので、10 分値に対する平年「曲線」は描けない。
+                その日の平年が収まる範囲を帯で示すのが誠実な表現）
+    refs    … [{v, color, label, dash}] の水平基準線
     """
     ml, mr, mt, mb = 52, 12, 26, 24
     pw, ph = width - ml - mr, height - mt - mb
     vals = [v / scale for s in series for v in s["values"] if v is not None]
     if not vals or not minutes:
         return ""
-    lo_v, hi_v = min(vals), max(vals)
+    # 帯や基準線が枠外に出ると比較にならないので、値域に含める
+    extra = []
+    if band:
+        extra += [band["lo"] / scale, band["hi"] / scale]
+    for r in (refs or []):
+        extra.append(r["v"] / scale)
+    lo_v, hi_v = min(vals + extra), max(vals + extra)
     if kind == "bar":
         lo_v = 0                       # 積算量は 0 起点でないと大小を誤読する
     step = _nice_step(lo_v, hi_v)
@@ -261,6 +272,28 @@ def intraday_svg(title: str, minutes: list[int], series: list[dict],
     if unit:
         e.append(f'<text x="{ml - 5}" y="{mt - 8}" text-anchor="end" font-size="10" '
                  f'fill="#666" {FONT}>{unit}</text>')
+
+    # 帯と基準線はデータより先に描く（線を隠さない）
+    if band:
+        y0, y1 = y(band["hi"]), y(band["lo"])
+        e.append(f'<rect x="{ml}" y="{y0:.1f}" width="{pw}" height="{max(y1 - y0, 1):.1f}" '
+                 f'fill="{band.get("color", "#8fbcdb")}" opacity="0.16"/>')
+        for yy, lab in ((y0, band.get("hi_label")), (y1, band.get("lo_label"))):
+            e.append(f'<line x1="{ml}" y1="{yy:.1f}" x2="{ml + pw}" y2="{yy:.1f}" '
+                     f'stroke="{band.get("color", "#8fbcdb")}" stroke-width="1" '
+                     f'stroke-dasharray="4 3"/>')
+            if lab:
+                e.append(f'<text x="{ml + pw - 4}" y="{yy - 3:.1f}" text-anchor="end" '
+                         f'font-size="9.5" fill="{band.get("color", "#8fbcdb")}" '
+                         f'{FONT}>{lab}</text>')
+    for r in (refs or []):
+        yy = y(r["v"])
+        e.append(f'<line x1="{ml}" y1="{yy:.1f}" x2="{ml + pw}" y2="{yy:.1f}" '
+                 f'stroke="{r.get("color", "#7a8896")}" stroke-width="1" '
+                 f'stroke-dasharray="{r.get("dash", "2 3")}"/>')
+        if r.get("label"):
+            e.append(f'<text x="{ml + 4}" y="{yy - 3:.1f}" font-size="9.5" '
+                     f'fill="{r.get("color", "#7a8896")}" {FONT}>{r["label"]}</text>')
 
     if kind == "bar":
         bw = max(pw / max(len(minutes), 1) * 0.8, 1.0)

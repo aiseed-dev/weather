@@ -365,6 +365,15 @@ def build_station_pages(env: Environment, stations: dict) -> None:
         slug = station_slug(rec) if amedas in has_climate else amedas
         if not slug:
             slug = amedas
+        # 平年値があるのは気温・降水・日照だけ。しかも**日別**なので、
+        # 10 分値に対応する平年曲線は存在しない。気温はその日の平年最高〜最低を
+        # 帯で重ね、平年の日平均を破線にする（比較の基準が一目で分かる）。
+        n_max = n_min = n_avg = None
+        if code is not None:
+            n_max = normal_daily(int(code), "tmax", day)
+            n_min = normal_daily(int(code), "tmin", day)
+            n_avg = normal_daily(int(code), "tavg", day)
+
         charts = []
         for key, label, mul, unit, kind in LAB_ELEMENTS:
             vals = per.get(key)
@@ -372,14 +381,25 @@ def build_station_pages(env: Environment, stations: dict) -> None:
                 continue
             good = [v for v in vals if v is not None]
             color = "#1987E5" if kind == "bar" else "#F92500"
+            band = refs = None
+            note = ""
+            if key == "temp" and n_max is not None and n_min is not None:
+                band = {"lo": n_min, "hi": n_max, "color": "#4d86b8",
+                        "hi_label": f"平年の最高 {n_max / 10:.1f}℃",
+                        "lo_label": f"平年の最低 {n_min / 10:.1f}℃"}
+                if n_avg is not None:
+                    refs = [{"v": n_avg, "color": "#2e7d32",
+                             "label": f"平年の日平均 {n_avg / 10:.1f}℃", "dash": "5 4"}]
+                note = "帯は平年の最高〜最低。平年値は日別なので時刻ごとの平年線は引けない。"
             charts.append({
-                "label": label, "unit": unit,
+                "label": label, "unit": unit, "note": note,
                 "now": vals[-1] if vals[-1] is not None else good[-1],
                 "max": max(good), "min": min(good), "scale": mul, "kind": kind,
+                "diff": (max(good) - n_max) if key == "temp" and n_max is not None else None,
                 "svg": intraday_svg(f"{rec['name']} {day} の{label}", minutes,
                                     [{"label": label, "color": color, "values": vals}],
                                     width=680, height=240, scale=mul,
-                                    unit=unit, kind=kind),
+                                    unit=unit, kind=kind, band=band, refs=refs),
             })
         html = env.get_template("status/station.html").render(
             page_title=f"{rec['name']}（{rec.get('pref') or ''}）の10分値観測",
@@ -476,6 +496,14 @@ def build_today_json(stations: dict) -> None:
                     rec = acc[key][amedas] = {
                         "name": m["name"], "pref": m.get("pref") or "",
                         "v": [None] * len(slots)}
+                    # 気温だけ平年値を添える（帯として重ねるため。1 地点 3 個で軽い）
+                    if key == "temp":
+                        c = a2c.get(amedas)
+                        nx = normal_daily(int(c), "tmax", day) if c else None
+                        nn = normal_daily(int(c), "tmin", day) if c else None
+                        na = normal_daily(int(c), "tavg", day) if c else None
+                        if nx is not None and nn is not None:
+                            rec["n"] = [nn, nx] + ([na] if na is not None else [])
                 rec["v"][j] = int(round(float(e[0]) * mul))
 
     index = []
