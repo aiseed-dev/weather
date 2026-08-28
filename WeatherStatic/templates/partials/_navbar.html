@@ -1,14 +1,24 @@
 {#
-  グローバルナビ。Views/Shared/Partials/_NavBarN.cshtml を移植。
-  active 判定は生成時に決まるので、コンテキスト変数 nav_active（例 "temperature"）で渡す。
+  グローバルナビ。active 判定は生成時に決まるので、コンテキスト変数
+  nav_active（例 "temperature"）で渡す。
+
+  現在地は class="active"（見た目）と aria-current="page"（支援技術）の
+  両方で示す。片方だけだと、色が見えない利用者に現在地が伝わらない。
 #}
+{% set nav_items = [
+  ('temperature',   '/Temperature/HighsMain', '今日の気温'),
+  ('summer',        '/Summer/Ranking',        '暑さランキング'),
+  ('winter',        '/Winter/LowestList',     '寒さランキング'),
+  ('climate',       '/Climate',               '雨温図'),
+  ('monthly',       '/Monthly',               '月別気温'),
+  ('precipitation', '/Precipitation',         '降水量ランキング'),
+  ('status',        '/Status/Temperature',    '実況（10分毎）'),
+  ('app',           '/App',                   'アプリ'),
+] %}
 <ul class="nav navbar-nav">
-  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'temperature' }}" href="/Temperature/HighsMain">今日の気温</a></li>
-  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'summer' }}" href="/Summer/Ranking">暑さランキング</a></li>
-  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'winter' }}" href="/Winter/LowestList">寒さランキング</a></li>
-  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active in ('climate', 'station') }}" href="/Climate">雨温図</a></li>
-  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'monthly' }}" href="/Monthly">月別気温</a></li>
-  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'precipitation' }}" href="/Precipitation">降水量ランキング</a></li>
-  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'status' }}" href="/Status/Temperature">実況（10分毎）</a></li>
-  <li class="nav-item"><a class="nav-link {{ 'active' if nav_active == 'app' }}" href="/App">アプリ</a></li>
+{% for key, href, label in nav_items %}
+  {# 地点ページ（station）は雨温図の下位なので、雨温図を現在地にする #}
+  {% set current = nav_active == key or (key == 'climate' and nav_active == 'station') %}
+  <li class="nav-item"><a class="nav-link{% if current %} active{% endif %}" href="{{ href }}"{% if current %} aria-current="page"{% endif %}>{{ label }}</a></li>
+{% endfor %}
 </ul>

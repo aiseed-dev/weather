@@ -31,17 +31,33 @@
     <link href="/css/site.css?v={{ css_version }}" rel="stylesheet"/>
 </head>
 <body>
+<a class="skip-link" href="#main">本文へスキップ</a>
 <div class="maincontainer">
     <header class="navbar navbar-inverse navbar-static-top">
         <div class="container-outside">
             <div class="navbar-header">
                 <a class="navbar-brand" href="/">
-                    <img src="/Images/weatherblue.png" width="36" height="36" alt=""/>
+                    {# 雨温図（棒＝降水量／折れ線＝気温）を模した記章。currentColor なので
+                       ヘッダの文字色に追従し、画像リクエストも発生しない #}
+                    <svg class="brand-mark" viewBox="0 0 36 36" width="36" height="36"
+                         aria-hidden="true" focusable="false">
+                        <rect width="36" height="36" rx="8" fill="currentColor" opacity=".15"/>
+                        <g fill="currentColor" opacity=".5">
+                            <rect x="7"    y="21" width="4" height="7"  rx="1"/>
+                            <rect x="13.5" y="16" width="4" height="12" rx="1"/>
+                            <rect x="20"   y="19" width="4" height="9"  rx="1"/>
+                            <rect x="26.5" y="14" width="4" height="14" rx="1"/>
+                        </g>
+                        <path d="M7 15.5 L14 10 L21 12.5 L29 8"
+                              fill="none" stroke="currentColor" stroke-width="2.2"
+                              stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
                     <span class="nav-title">個人開発気象統計</span>
                 </a>
                 <button id="theme-toggle" type="button" aria-label="ダークモード切替" title="ダークモード切替">◐</button>
-                {# 開閉は checkbox で行うので、label は #navbar の兄弟として先に置く #}
-                <input class="nav-toggle-state" type="checkbox" id="nav-toggle" aria-hidden="true" tabindex="-1">
+                {# 開閉は checkbox で行うので、label は #navbar の兄弟として先に置く。
+                   キーボードで開けるよう、フォーカスは受ける（CSS で見えなくするだけ）。 #}
+                <input class="nav-toggle-state" type="checkbox" id="nav-toggle">
                 <label class="navbar-toggle" for="nav-toggle" aria-label="メニューを開閉">
                     <span class="icon-bar"></span>
                     <span class="icon-bar"></span>
@@ -61,7 +77,7 @@
         </div>
     </header>
 
-    <main class="container centerpage">
+    <main id="main" class="container centerpage">
         <div class="main-section">
             {% block content %}{% endblock %}
         </div>
