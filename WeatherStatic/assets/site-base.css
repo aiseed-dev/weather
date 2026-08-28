@@ -119,16 +119,39 @@ select:focus, input[type="text"]:focus { outline: 2px solid var(--accent); outli
 /*
   ヘッダ。開閉は checkbox のみで行う（bootstrap.min.js と jQuery を外すため）。
   チェックボックスは navbar-toggle の直前に置く前提。
+
+  DOM 順は brand → theme-toggle → checkbox → hamburger → #navbar だが、
+  見せたい並びは brand → メニュー → 検索 → theme-toggle → hamburger なので
+  order で入れ替える。checkbox は display:none なので順序に影響しない。
+
+  幅で 3 段階に切り替える。メニュー 8 項目が約 700px を要するので、
+  1 行に収まるのは container が最大幅（1180px）のときだけ。
+    1181px〜  1 行（brand｜メニュー｜検索｜切替）
+     961〜1180px  2 段（1 段目 brand と切替 / 2 段目 メニューと検索）
+      〜960px  ハンバーガー
+  中間幅で項目ごとに折り返すと「アプリだけ 3 行目」のような崩れ方をするため、
+  2 段目は flex-basis: 100% で行ごと確保する。
 */
-.navbar { position: relative; margin: 0 0 10px; }
-.navbar-header { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
-.navbar-brand { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+.navbar { position: relative; margin: 0; }
+.navbar-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 16px;
+    row-gap: 2px;
+    padding: 6px 0;
+}
+.navbar-brand {
+    order: 0; flex: 0 0 auto;
+    display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+}
 .navbar-brand:hover { text-decoration: none; }
 
 .nav-toggle-state { display: none; }
 
 .navbar-toggle {
     display: none;
+    order: 3;
     margin-left: auto;
     padding: 7px 9px;
     background: transparent;
@@ -141,15 +164,51 @@ select:focus, input[type="text"]:focus { outline: 2px solid var(--accent); outli
     background: currentColor; border-radius: 1px;
 }
 
-.navbar-collapse { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; }
+/*
+  メニュー本体。ul をここで横並びにしておかないと li が縦積みになる
+  （Bootstrap 3 の .navbar-nav > li { float: left } を引き継いでいなかった）。
+*/
+.navbar-collapse {
+    order: 1;
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    column-gap: 10px;
+}
+.navbar-nav { display: flex; flex-wrap: wrap; align-items: center; }
+.navbar-nav > li > a {
+    display: block;
+    padding: 6px 8px;
+    border-radius: 8px;
+    white-space: nowrap;
+}
+#cse-search-box { margin-left: auto; flex: 0 0 auto; }
+#theme-toggle { order: 2; flex: 0 0 auto; }
 
-@media (max-width: 900px) {
+/* 2 段。1 段目は brand と切替だけ、メニューと検索は行ごと 2 段目に落とす */
+@media (max-width: 1180px) {
+    .navbar-collapse { order: 4; flex-basis: 100%; padding-bottom: 4px; }
+    #theme-toggle { margin-left: auto; }
+}
+
+@media (max-width: 960px) {
     .navbar-toggle { display: block; }
-    .navbar-collapse { display: none; width: 100%; flex-direction: column; align-items: stretch; }
+    .navbar-collapse {
+        display: none;
+        order: 4;
+        flex-basis: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        padding-bottom: 8px;
+    }
     /* トグルの checkbox が入ると開く */
     .nav-toggle-state:checked ~ #navbar { display: flex; }
-    .navbar-collapse .nav { display: flex; flex-direction: column; }
-    .navbar-collapse .nav > li > a { display: block; padding: 9px 4px; }
+    /* 横並び用の align-items: center が残ると項目が中央寄せになる */
+    .navbar-collapse .nav { display: flex; flex-direction: column; align-items: stretch; }
+    .navbar-collapse .nav > li > a { padding: 8px 10px; }
+    /* 幅は site.css 側（後読み・同一詳細度）で指定する */
+    #cse-search-box { margin-left: 0; margin-top: 8px; width: 100%; }
 }
 
 /* ---------------------------------------------------------------- アイコン */
