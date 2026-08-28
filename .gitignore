@@ -241,3 +241,6 @@ weather.gz
 
 # Rust ビューアのビルド成果物
 viewer/target/
+
+# 変更検知の控え（git のある環境では使わない）
+WeatherStatic/stations/.amedastable.prev.adoc
