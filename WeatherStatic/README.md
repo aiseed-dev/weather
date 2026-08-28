@@ -24,12 +24,14 @@ weatherlib/
   filters.py           ViewUtility/Jma の移植（ondo=気温表示, bcolor=平年差の色, jikan=時刻表示, weather_img）
   season.py            Jma.IsSummer / IsSeason の移植
 templates/
-  _layout.html         共有レイアウト（_LayoutBootstrap + A を統合）
+  _layout.html         共有レイアウト（外部フレームワーク無しの素の HTML/CSS/JS）
   partials/_navbar.html
   temperature/highsmain.html
 data/
   highsmain.sample.json  合成サンプル（実データが無い環境用）
-public/                出力（HTML＋wwwrootからコピーしたCSS/JS/画像）
+assets/                自前の CSS/JS（site-base.css → site.css の順で読ませる）
+wwwroot/               画像・favicon・robots.txt（旧サイトから引き継いだ静的物）
+public/                出力（HTML＋assets/ と wwwroot/ からコピーした静的物）
 DATA_CONTRACT.md       取得層が出力すべき JSON の仕様
 ```
 
@@ -75,8 +77,8 @@ etrn の公式日別値と**完全一致**（東京 7/1〜7/4 の平均/最高/�
 
 ## 未対応・今後
 
-- モバイル専用レイアウト（元 `_LayoutBootstrapA.NonPC`）は未移植。
-  Bootstrap のレスポンシブで一本化するか、別 HTML を生成するかは要判断。
+- モバイル専用レイアウト（元 `_LayoutBootstrapA.NonPC`）は移植せず、
+  1 枚のレイアウトのメディアクエリで対応する方針に決めた（2026-08-28）。
 - 残りのページ群（Home / 各地 / ランキング / 月別 / 雨温図 / 降水量 / 天気図）は
   この HighsMain と同じ型で順次移植する。DATA_CONTRACT.md 末尾の表を参照。
 - 広告（AdSense）・アクセス解析タグは元レイアウトから必要に応じて復元する。

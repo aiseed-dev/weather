@@ -643,7 +643,6 @@ def main() -> int:
                       trim_blocks=True, lstrip_blocks=True)
     env.filters.update(FILTERS)
     env.globals["css_version"] = "status"
-    env.globals["legacy_layout"] = False
 
     if only in (None, "temp"):
         build_temperature(env, stations)

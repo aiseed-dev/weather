@@ -1,19 +1,21 @@
 /*
-  土台スタイル。Bootstrap 3（bootstrap-pc.min.css / style03pc.min.css / bootstrap.min.js）と
-  jQuery を外すために、旧サイトが Bootstrap から借りていたクラスだけを自前で実装したもの。
+  土台スタイル。外部 CSS フレームワークは使わない（素の CSS のみ）。
 
   読み込み順は site-base.css → site.css。配色とコンポーネントの見た目は site.css の
-  CSS 変数が持ち、こちらは「Bootstrap が提供していた土台」だけを担当する。
-  そのため既存 20 ページのテンプレートは 1 行も変更せずに済む。
+  CSS 変数が持ち、こちらは配置とフォーム部品という土台だけを担当する。
 
-  Bootstrap から引き継いだクラス:
-    .container / .container-outside / .row / .col-xs-*  … 配置
+  クラス名は旧サイト（Bootstrap 3）から引き継いだままにしてある。中身は全て
+  自前実装なので Bootstrap への依存は無いが、名前を変えると 30 個のテンプレートを
+  一斉に書き換えることになるため、名前だけ残している。
+
+  ここで定義するもの:
+    .container / .container-outside / .row / .col-xs-*  … 配置（flex）
     .table-responsive                                    … 横スクロール
     .btn / .btn-default / .btn-group                     … ボタン
     .form-group / .form-horizontal                       … フォーム
     .hidden-xs / .visible-xs / .sr-only                  … 表示切替
-    .navbar 一式 / .icon-bar                             … ヘッダ（開閉は CSS のみ、JS 不要）
-    .glyphicon                                           … アイコン（絵文字で代替）
+    .navbar 一式 / .icon-bar                             … ヘッダ（開閉は checkbox + CSS）
+    .glyphicon                                           … アイコン（Unicode で代替）
     .pager / .nav / .active                              … ナビ部品
 */
 
@@ -117,7 +119,7 @@ select:focus, input[type="text"]:focus { outline: 2px solid var(--accent); outli
 .pager li { display: inline-block; }
 
 /*
-  ヘッダ。開閉は checkbox のみで行う（bootstrap.min.js と jQuery を外すため）。
+  ヘッダ。開閉は checkbox のみで行う（JS 不要）。
   チェックボックスは navbar-toggle の直前に置く前提。
 
   DOM 順は brand → theme-toggle → checkbox → hamburger → #navbar だが、

@@ -1,11 +1,132 @@
 {#
-  共有レイアウトの切り替え口。ページ側は従来どおり `{% extends "_layout.html" %}` のままでよい。
+  共有レイアウト。外部フレームワークは使わない（素の HTML/CSS/JS）。
 
-    _layout_modern.html … Bootstrap 3 と jQuery を外した自前実装（既定）
-    _layout_legacy.html … 旧 ASP.NET から移植したままの Bootstrap 3 版
+    - CSS は assets/site-base.css → assets/site.css の 2 枚だけ
+    - ナビの開閉は checkbox + CSS（JS 不要）
+    - ダークモードの切替だけ 8 行の素の JS
+    - セマンティックな要素（header / main / footer / nav）
 
-  環境変数 WEATHER_LEGACY_LAYOUT=1 で旧版に戻せる（generate.py が
-  legacy_layout グローバルとして渡す）。ブロック名は両者で同じなので、
-  ここでブロックを再定義する必要はない — ページのブロックはそのまま親へ届く。
-#}
-{% extends "_layout_legacy.html" if legacy_layout else "_layout_modern.html" %}
+  ページ側テンプレートが差し込めるブロック:
+    head_extra / content / add_script
+#}<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="utf-8"/>
+    {# ダークモード: 保存済みの選択を描画前に適用（フラッシュ防止のため最上部で同期実行） #}
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem('theme');
+                if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+            } catch (e) {}
+        })();
+    </script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>{{ page_title }}</title>
+    <link rel="shortcut icon" href="/favicon.ico"/>
+    <link href="/css/site-base.css?v={{ css_version }}" rel="stylesheet"/>
+    {% block head_extra %}{% endblock %}
+    {# テーマ本体はページ固有スタイルの後に読み込んで上書きする #}
+    <link href="/css/site.css?v={{ css_version }}" rel="stylesheet"/>
+</head>
+<body>
+<div class="maincontainer">
+    <header class="navbar navbar-inverse navbar-static-top">
+        <div class="container-outside">
+            <div class="navbar-header">
+                <a class="navbar-brand" href="/">
+                    <img src="/Images/weatherblue.png" width="36" height="36" alt=""/>
+                    <span class="nav-title">個人開発気象統計</span>
+                </a>
+                <button id="theme-toggle" type="button" aria-label="ダークモード切替" title="ダークモード切替">◐</button>
+                {# 開閉は checkbox で行うので、label は #navbar の兄弟として先に置く #}
+                <input class="nav-toggle-state" type="checkbox" id="nav-toggle" aria-hidden="true" tabindex="-1">
+                <label class="navbar-toggle" for="nav-toggle" aria-label="メニューを開閉">
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </label>
+                <nav id="navbar" class="navbar-collapse" aria-label="サイト内メニュー">
+                    {% include "partials/_navbar.html" %}
+                    <form action="//www.google.co.jp/cse" id="cse-search-box" role="search">
+                        <div>
+                            <input type="hidden" name="cx" value="partner-pub-1546885182692889:8411568461"/>
+                            <input type="hidden" name="ie" value="UTF-8"/>
+                            <input type="text" name="q" size="13" placeholder="サイト内検索" aria-label="サイト内検索"/>
+                        </div>
+                    </form>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="container centerpage">
+        <div class="main-section">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <div class="sidebar">
+        {# 旧 @section rightside の広告枠。静的移行では広告タグはそのまま残す。 #}
+    </div>
+
+    <footer id="footer" class="container-outside">
+        <div class="row">
+            <div class="col-xs-3">
+                <h6>サイトメニュー</h6>
+                <ul>
+                    <li><a href="/">個人開発気象統計ホーム</a></li>
+                    <li><a href="/Temperature/HighsMain">今日の気温</a></li>
+                    <li><a href="/Summer/Ranking">暑さランキング</a></li>
+                    <li><a href="/Winter/LowestList">寒さランキング</a></li>
+                    <li><a href="/Climate">雨温図</a></li>
+                    <li><a href="/App">AIseed Weather（個人開発気象ツール）</a></li>
+                </ul>
+            </div>
+            <div class="col-xs-3">
+                <h6>関連サイト</h6>
+                <ul>
+                    <li><a href="//www.time-j.net">世界の時間と時差</a></li>
+                    <li><a href="//www.time-j.net/Metar/">空港の天気 METAR、TAF</a></li>
+                    <li><a href="//ecitizen.jp/">統計メモ帳</a></li>
+                </ul>
+            </div>
+            <div class="col-xs-3">
+                <h6>このサイトについて</h6>
+                <ul>
+                    <li><a href="//www.time-j.net/about/">このサイトについて</a></li>
+                    <li><a href="//www.time-j.net/privacypolicy/">免責事項・プライバシーポリシー</a></li>
+                </ul>
+            </div>
+            <div class="col-xs-3">
+                <h6>お問い合わせ</h6>
+                <ul>
+                    <li><a href="//www.time-j.net/contacts/">お問い合わせ</a></li>
+                </ul>
+            </div>
+        </div>
+        <p>個人が開発・運用している非公式サイトです。気象庁の観測データを加工して掲載しています（出典: <a href="//www.jma.go.jp/">気象庁ホームページ</a>）。<br><strong>警報・注意報などの防災情報は扱っていません。</strong>緊急時は<a href="//www.jma.go.jp/bosai/">気象庁</a>でご確認ください。<a href="/About/">このサイトについて</a></p>
+        <p>Copyright &copy; 2011 - {{ build_year }} time-j.net All Rights Reserved.</p>
+    </footer>
+</div>
+
+<script>
+    document.getElementById('theme-toggle').addEventListener('click', function () {
+        var root = document.documentElement;
+        var dark = root.dataset.theme === 'dark' ||
+            (!root.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+        root.dataset.theme = dark ? 'light' : 'dark';
+        try { localStorage.setItem('theme', root.dataset.theme); } catch (e) {}
+    });
+    // ページ遷移したように見せないため、メニューを開いたままの状態を残さない
+    document.querySelectorAll('#navbar a').forEach(function (a) {
+        a.addEventListener('click', function () {
+            var t = document.getElementById('nav-toggle');
+            if (t) t.checked = false;
+        });
+    });
+</script>
+{% block add_script %}{% endblock %}
+</body>
+</html>

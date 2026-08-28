@@ -44,7 +44,9 @@ _candidates = [
     BASE.parent.parent / "WeatherCore" / "WeatherCore" / "wwwroot",
 ]
 WWWROOT = next((p for p in _candidates if p and p.is_dir()), BASE / "wwwroot")
-ASSET_PATHS = ["css", "javascripts", "Images", "favicon.ico", "robots.txt"]
+# css/ と javascripts/ は Bootstrap 3・jQuery 用だったので配信しない。
+# スタイルは assets/site-base.css + assets/site.css の 2 枚だけで足りる。
+ASSET_PATHS = ["Images", "favicon.ico", "robots.txt"]
 
 
 # ---------------------------------------------------------------- 入力の読み込み
@@ -249,15 +251,22 @@ def make_env() -> Environment:
         if p.exists():
             h.update(p.read_bytes())
     env.globals["css_version"] = h.hexdigest()[:10]
-    # 旧 Bootstrap 3 レイアウトへ戻す非常口（_layout.html が参照する）
-    env.globals["legacy_layout"] = os.environ.get("WEATHER_LEGACY_LAYOUT") == "1"
     return env
 
 
 def copy_assets() -> None:
+    # 黙って飛ばすと全ページのロゴと天気アイコンが壊れたまま公開されるので、
+    # 見つからなければ止める（2026-08-28、tgsvr に wwwroot が無く実際に起きた）。
     if not WWWROOT.is_dir():
-        print(f"  [assets] スキップ: {WWWROOT} が見つかりません")
-        return
+        raise SystemExit(
+            f"アセットが見つかりません: {WWWROOT}\n"
+            "  このまま生成すると /Images/ と /favicon.ico が 404 になります。\n"
+            "  リポジトリの WeatherStatic/wwwroot/ を配置するか、\n"
+            "  環境変数 WEATHERCORE_WWWROOT で場所を指定してください。"
+        )
+    missing = [rel for rel in ASSET_PATHS if not (WWWROOT / rel).exists()]
+    if missing:
+        raise SystemExit(f"アセットが欠けています: {', '.join(missing)}（{WWWROOT} 配下）")
     for rel in ASSET_PATHS:
         src = WWWROOT / rel
         dst = PUBLIC / rel
@@ -266,7 +275,7 @@ def copy_assets() -> None:
         elif src.is_file():
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
-    print("  [assets] css / javascripts / Images をコピーしました")
+    print("  [assets] Images / favicon.ico / robots.txt をコピーしました")
 
 
 def write(path_rel: str, html: str) -> None:
