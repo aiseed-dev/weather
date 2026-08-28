@@ -226,6 +226,8 @@ WeatherStatic/store/
 WeatherStatic/data/
 WeatherStatic/public/
 WeatherStatic/master/
+# ただし観測所情報は git で管理する（下の stations/ を参照）。
+# master/ は再生成できる派生物の置き場、stations/ は履歴を残す原本。
 WeatherStatic/logs/
 WeatherStatic/dist/
 WeatherStatic/public_amedas/
