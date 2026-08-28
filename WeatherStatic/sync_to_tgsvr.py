@@ -11,9 +11,14 @@
     stations/ を書き換えることはない。検知用の控え .amedastable.prev.adoc は
     .gitignore にあるため、送っても tgsvr 側の基準は保たれる。
 
+このファイル自身は送らない。tgsvr に置かなければ tgsvr では動かせない。
+2026-08-28 に dev 向けのコマンド列を tgsvr のシェルに貼って tgsvr→tgsvr の
+rsync が走りかけたが、道具が向こうに無ければその事故は起こりようがない。
+
+tgsvr でしかできないこと（生成と Cloudflare への公開）は publish_site.py に
+分けてある。あちらは tgsvr で動かす前提なので、送る対象に入れてある。
+
 安全のための決まり
-    - tgsvr の上では動かない（hostname で弾く）。2026-08-28 に、dev 向けの
-      コマンド列を tgsvr のシェルに貼って tgsvr→tgsvr の rsync が走りかけた
     - 既定は下見だけ。実際に送るのは --apply を付けたときだけ
     - 消す操作はしない。余分なファイルは報告するだけで、消すかは人が決める
     - 生成はしない。送るところで止める（続けて何が起きるか分からない状態にしない）
@@ -27,13 +32,13 @@ from __future__ import annotations
 
 import argparse
 import os
-import socket
 import subprocess
 import sys
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent          # …/weather/WeatherStatic
 REPO = BASE.parent                              # …/weather
+SELF = Path(__file__).name                      # 自分は送らない
 
 HOST = os.environ.get("WEATHER_SYNC_HOST", "tgsvr")
 DEST = os.environ.get("WEATHER_SYNC_PATH", "dev/weather/WeatherStatic")
@@ -45,14 +50,6 @@ STALE_SCAN = ("templates", "assets", "weatherlib", "workers", "wwwroot", "tests"
 def die(msg: str) -> None:
     print(msg, file=sys.stderr)
     raise SystemExit(1)
-
-
-def guard_host() -> None:
-    """tgsvr の上で動かさない。ここが最後の砦。"""
-    here = socket.gethostname()
-    if here == HOST:
-        die(f"ここは {here} です。このスクリプトは送り出す側（手元）で実行してください。\n"
-            f"  {HOST} の上で走らせると自分自身へ rsync することになります。")
 
 
 def git(*args: str) -> str:
@@ -72,7 +69,7 @@ def source_files() -> tuple[list[str], list[str]]:
         if not entry:
             continue
         rel = entry[len("WeatherStatic/"):]
-        if not rel:
+        if not rel or rel == SELF:
             continue
         if (BASE / rel).is_file():
             rels.append(rel)
@@ -155,8 +152,6 @@ def main() -> int:
     ap.add_argument("--stale", action="store_true", help="向こうに残る余分なファイルも調べる")
     args = ap.parse_args()
 
-    guard_host()
-
     rels, missing = source_files()
     if missing:
         print(f"注意: git にはあるが手元に無いファイルが {len(missing)} 件（送りません）")
@@ -174,9 +169,8 @@ def main() -> int:
     if not args.apply:
         print("\n下見だけです。送るには --apply を付けてください。")
     elif n:
-        print("\n送信は完了しました。生成はこのスクリプトではしません。次はどちらかを:")
-        print(f"    ssh {HOST} 'cd {DEST} && ./.venv/bin/python generate.py'")
-        print(f"    ssh {HOST} 'cd {DEST} && ./.venv/bin/python generate_status.py'")
+        print("\n送信は完了しました。生成と公開は向こうの publish_site.py で行います:")
+        print(f"    ssh {HOST} 'cd {DEST} && ./.venv/bin/python publish_site.py'")
     return 0
 
 
