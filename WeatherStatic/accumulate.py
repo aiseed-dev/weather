@@ -14,9 +14,8 @@ cron は 1 日 1 回、気象庁の更新（1 時頃）のあとに回す。7 �
 
 処理:
   1. map JSON（毎正時・全 1286 地点・過去 7 日分）→ temp/precip1h/sun1h
-  2. mdrr 確定値 CSV（最高・最低）→ tmax/tmin（official・品質つき）
-     取りに行くのは前々日・前日（必要なとき）・7 日前の 3 日だけ。
-     気象庁の更新が 1 日 1 巡なので、毎時舐め直しても意味がない
+  2. mdrr 確定値 CSV（最高・最低、前日〜7 日前）→ tmax/tmin（official・品質つき）
+     気象庁の更新は 1 日 1 巡なので 1 日 1 回。ただし窓は毎日 7 日ぶんさらう
        毎回再取得し、値が変わっていたら訂正として correction_log に記録
   3. 日集計 → tavg（1〜24 時の毎正時 24 回平均）・precip・sun
 
@@ -61,15 +60,34 @@ def now_jst() -> datetime:
     return datetime.now(JST).replace(tzinfo=None)
 
 
+# 気象庁の更新は 1 時頃（stats/data/mdrr/man/update_k.html）。
+# 「1 日 1 回」の区切りは日付ではなく**この更新時刻**に合わせる。
+UPDATE_HOUR = 1
+
+
+def update_boundary(now: datetime) -> datetime:
+    """直近の更新時刻（1 時）。ここより後に取ったものは今回ぶんとみなす。
+
+    日付で区切ると、0 時台に走った回が「その日ぶん」を消化してしまい、
+    1 時の更新で入った値が翌日まで取り込まれない。0 時台の実行は前日 1 時の
+    区切りに属させる。
+    """
+    b = now.replace(hour=UPDATE_HOUR, minute=0, second=0, microsecond=0)
+    return b if now >= b else b - timedelta(days=1)
+
+
 # ----------------------------------------------------- 1. map JSON（毎正時）→ hourly
 
 def ingest_map_hours(conn, ncs: NcStore) -> tuple[int, int]:
-    """毎正時の map JSON を時別値として取り込む。
+    """毎正時の map JSON を時別値として取り込む。7 日窓を**毎日**さらう。
 
     統計は 10 分値に依存させない。10 分値（地点別）は実況ページ用の速報で、
     収集が数日止まっても統計が壊れないよう経路を分けてある。ここで見るのは
-    毎正時の map JSON だけで、1 日 24 本。気象庁の保持は約 10 日あるので、
-    1 時の更新のあと前日ぶんをまとめて取れば足りる。
+    毎正時の map JSON だけ。
+
+    取得済みでも日が変われば取り直す。恒久的に飛ばすと、止まっていた間の穴が
+    埋まらず、あとから入った訂正も取り込めない。7 日 × 24 = 168 本で、
+    1 本 350KB なので 1 日およそ 59MB。気象庁の保持（約 10 日）の内側。
 
     終端を今日の 0 時にするのは、日をまたいで完結したぶんだけを入れるため。
     進行中の日は aggregate_day の対象外なので、急いで入れる意味がない。
@@ -78,8 +96,16 @@ def ingest_map_hours(conn, ncs: NcStore) -> tuple[int, int]:
     start = (now - timedelta(days=WINDOW_DAYS)).replace(minute=0, second=0, microsecond=0)
     end = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
+    # **直近の更新（1 時）より後にさらった正時だけ**飛ばす。恒久的に飛ばすと
+    # 「毎日 7 日分」にならず、あとから入った訂正を取り込めない。日付で
+    # 区切ると 0 時台の実行が今日ぶんを消化してしまう。
+    # 404 は恒久扱い（そのスロットは気象庁にもう無い）。
+    stamp = update_boundary(now).isoformat()
     done = {k for (k,) in conn.execute(
-        "SELECT key FROM ingest_log WHERE kind IN ('map_hour', 'map_hour_404')")}
+        "SELECT key FROM ingest_log WHERE kind = 'map_hour' AND fetched_at >= ?",
+        (stamp,))}
+    done |= {k for (k,) in conn.execute(
+        "SELECT key FROM ingest_log WHERE kind = 'map_hour_404'")}
 
     n_ok = n_404 = 0
     seen: dict[str, str] = {}   # amedas → 最後に現れた正時（改番・廃止の検知用）
@@ -117,53 +143,37 @@ def ingest_map_hours(conn, ncs: NcStore) -> tuple[int, int]:
 
 # ---------------------------------------------------------------- 2. 確定値 CSV → daily
 
-def target_days(conn, ncs: NcStore, today: date) -> list[date]:
-    """確定値 CSV を取りに行く日を決める。
+def target_days(today: date) -> list[date]:
+    """確定値 CSV を取りに行く日。前日から 7 日前までを毎日さらう。
 
     気象庁の更新は 1 日 1 巡（stats/data/mdrr/man/update_k.html）:
         1 時頃  10 分〜日ごとの値・前日までの順位値
         2 時頃  官署の速報値（前日まで）
         3 時頃  アメダスの速報値
         14 時頃 官署の確定値
-    毎時 7 日ぶんを舐め直しても、増えるのは気象庁への負荷だけになる。
+    なので 1 日 1 回で足りる。ただし**窓は 7 日ぶんを毎日**さらう。
 
-    取りに行くのは 3 日だけ:
-        前々日  必ず。3 時のアメダス速報値が出そろっている
-        前日    こちらに欠けがあるときだけ。1 時更新の直後は未確定が多い
-        7 日前  一度だけの締め。この頃には値が落ち着く
+    前々日と 7 日前だけに絞ると、数日止まったときにその間の日を拾う機会が
+    ほぼ無くなる（8 日以上止まれば永久に欠ける）。7 日窓を毎日さらえば、
+    止まっても再開時に自力で埋まるし、途中で入った訂正も拾える。
+    1 日 7 日 × 2 要素 = 14 リクエストで、負荷としては小さい。
     """
-    days = [today - timedelta(days=2), today - timedelta(days=7)]
-
-    # 前日は「必要か」を手元で見る。tmax か tmin が半分も入っていなければ取る
-    d1 = today - timedelta(days=1)
-    j = date_index(d1)
-    n_dates = ncs.ds.dimensions["date"].size
-    need = True
-    if j < n_dates:
-        got = 0
-        for f in ("tmax", "tmin"):
-            arr = ncs.ds[f][:, j]
-            got = max(got, int((arr != FILL).sum()))
-        need = got < ncs._nst() // 2
-        log(f"確定値 CSV: 前日 {d1} は {got} 地点ぶんあり → "
-            + ("取り直す" if need else "取らない"))
-    if need:
-        days.append(d1)
-    return sorted(set(days), reverse=True)
+    return [today - timedelta(days=i) for i in range(1, WINDOW_DAYS + 1)]
 
 
 def ingest_daily_csv(conn, ncs: NcStore) -> tuple[int, int]:
     now = now_jst()
     today = now.date()
-    # 1 日 1 巡。同じ日に二度舐めない（更新が 1 日 1 回なので意味がない）
-    sweep = today.isoformat()
+    # 1 日 1 巡。区切りは日付ではなく直近の更新時刻（1 時）にする。
+    # 日付で区切ると、0 時台の実行が今日ぶんを消化して 1 時の更新を取り逃す。
+    sweep = update_boundary(now).isoformat()
     if conn.execute("SELECT 1 FROM ingest_log WHERE kind='daily_csv_sweep' AND key=?",
                     (sweep,)).fetchone():
         log(f"確定値 CSV: {sweep} は取得済みのため省略")
         return 0, 0
 
     n_days = n_corr = 0
-    for d in target_days(conn, ncs, today):
+    for d in target_days(today):
         mmdd = d.strftime("%m%d")
         for url_tpl, field in ((jma.URL_MXTEM_DAY, "tmax"), (jma.URL_MNTEM_DAY, "tmin")):
             try:
