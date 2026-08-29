@@ -3,35 +3,37 @@
 
 流れ
     1. 気象庁の latest_time.txt で最新スロットを知る（1 リクエスト）
-    2. 親 Worker を起こす。子がエリアごとに取って R2 へ置く
-    3. R2 から公開ツリー public_amedas/point/ へ取り寄せる
-    4. 地点別に無い要素だけ map JSON から取る（1 リクエスト）
-
-なぜ一部だけ map か
-    地点別エンドポイントに積雪が無い（2026-08-29 実測）。map にしか無い
-    要素だけをそこから取る。map は全地点で 1 ファイルなので 10 分ごとに
-    取っても 1 リクエストで、地点別の 1,286 に比べれば無視できる。
-    合流は weatherlib/pointstore.py が行う。
+    2. エリアごとに Worker を呼ぶ。Worker が R2 へ 1 本置く
+    3. 地点別に無い要素だけ map JSON から取る（1 リクエスト）
 
 なぜ Worker に取らせるか
     1,286 地点を tgsvr から 1 秒間隔で取ると 21 分かかる。Worker なら並列に
     走る。tgsvr は「いつ・何を取るか」を決め、重い取得は手足に任せる。
+    Worker に cron は持たせない。日付の切り替わりや取りこぼしの追跡を
+    1 箇所（tgsvr）に集めるため。
 
-なぜ cron を Worker に持たせないか
-    日付の切り替わりや取りこぼしの追跡を 1 箇所（tgsvr）に集めるため。
-    Worker は呼ばれたぶんだけ働く。
+なぜ一部だけ map か
+    地点別エンドポイントに積雪と天気が無い（2026-08-29 実測。A〜G の 12 地点で
+    確認）。map にしか無い要素をそこから補う。map は全地点で 1 ファイルなので
+    10 分ごとに取っても 1 リクエストで、地点別の 1,286 に比べれば無視できる。
+    合流は weatherlib/pointstore.py が行う。
+
+    要素の一覧は持たない。欠測のとき要素はキーごと来ないので、ある時刻に
+    無いことは「配信に無い」とも「いま欠測」とも取れる。値のあるものを
+    そのまま残す。
 
 数の勘定（無料枠はサブリクエスト 50/実行。R2 の put も数に入る）
-    Worker 1 実行 … 担当エリアの地点数ぶんの fetch ＋ put 1。最大 47 で 48
-    呼ぶ数 … エリア数（64）。同時 6 本まで。実行は 9,216/日（上限 10 万）
+    Worker 1 実行 … 頼んだ地点数ぶんの fetch ＋ put 1。30 地点で 31
+    呼ぶ数 … 72 回（64 エリア。多い県は 2 つに割れる）。同時 6 本
+    実行 … 72 × 144 ＝ 10,368/日（上限 10 万）
 
-    親子 2 本だったものを 1 本にした。分けた理由は 50 サブリクエストだったが、
-    エリア単位にまとめた時点で 1 エリアが収まる。地点の多い県は 1 回 30 地点で
-    切り、**別ファイル**（{area}-1.json / -2.json）に置く。既存を読んで併合
-    する必要が無いので、同一エリアでも並行に呼べる。
+    地点の多い県（岩手 47・長野 45・新潟 44 など 8 エリア）は 1 回 30 地点で
+    切り、**別ファイル**（{area}-1.json / -2.json）に置く。ファイルを分ける
+    ので既存を読んで併合する必要が無く、同一エリアでも並行に呼べる。
+    読む側（pointstore）はブロック配下の *.json をすべて見る。
 
 資格情報と URL
-    WEATHER_WORKER_URL   親 Worker。既定の *.workers.dev で足りる
+    WEATHER_WORKER_URL   Worker の URL。既定の *.workers.dev で足りる
     WEATHER_WORKER_TOKEN 呼び出しの合言葉
     AMEDAS_R2_BASE       R2 の公開ベース。**取り寄せる場合だけ**要る
     環境変数か ~/.config/weather/points.env から読む。値は表示しない。
@@ -39,14 +41,15 @@
 R2 に独自ドメインは要らない
     Worker → R2 はバインディングで書くので、ドメインが無くても収集は動く。
     ドメインが要るのは、ブラウザや Flet が HTTP で読みに行くときだけ。
-    tgsvr が引き戻す必要も本来は無い（R2 から端末が直接読む）。--pull-only を
-    使わなければ取り寄せは飛ばせる。
+    tgsvr が引き戻す必要も本来は無い（R2 から端末が直接読む）ので、
+    取り寄せは既定で行わない。
 
 使い方
     python fetch_points.py                 # 最新スロットを取りに行く
-    python fetch_points.py --pull-only     # 起動はせず R2 から取り寄せるだけ
-    python fetch_points.py --day 20260829 --hour 12   # ブロックを指定
     python fetch_points.py --dry-run       # 何をするかだけ見る
+    python fetch_points.py --day 20260829 --hour 12   # ブロックを指定
+    python fetch_points.py --pull          # R2 から tgsvr へも取り寄せる
+    python fetch_points.py --pull-only     # 呼ばずに取り寄せるだけ
 """
 from __future__ import annotations
 
@@ -71,10 +74,9 @@ LATEST_TIME = "https://www.jma.go.jp/bosai/amedas/data/latest_time.txt"
 MAP = "https://www.jma.go.jp/bosai/amedas/data/map/{ts}.json"
 UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)"
 
-# 1 回の呼び出しで頼む地点数の上限。Worker のサブリクエストは
-# fetch N + get 1 + put 1 なので 48 まで可能だが、CPU 10ms に余裕を持たせて
-# 30 で切る。実データ（64 エリア / 1,286 地点）では 8 エリアだけが 2 回に
-# 分かれ、呼び出しは 64 → 72 回になる。
+# 1 回の呼び出しで頼む地点数の上限。Worker のサブリクエストは fetch N + put 1
+# なので 49 まで可能だが、余裕を持たせて 30 で切る。実データ（64 エリア /
+# 1,286 地点）では 8 エリアだけが 2 回に分かれ、呼び出しは 64 → 72 回になる。
 CHUNK = 30
 PARALLEL = 6                 # 同時に呼ぶ数。tgsvr 側の礼儀として控えめに
 
@@ -150,8 +152,7 @@ def invoke(groups: dict[str, list[str]], day: str, hour: str,
            dry: bool, retries: int = 1) -> list[str]:
     """エリアごとに Worker を呼ぶ。戻り値は最後まで置けなかったエリア。
 
-    親子をやめて 1 本にしたので、呼ぶ数はエリア数（64）になる。結果が
-    エリア単位で返るため、失敗したものだけ呼び直せる。
+    結果がまとまり単位で返るので、失敗したものだけ呼び直せる。
     """
     base = os.environ.get("WEATHER_WORKER_URL", "").rstrip("/")
     token = os.environ.get("WEATHER_WORKER_TOKEN", "")
@@ -169,8 +170,9 @@ def invoke(groups: dict[str, list[str]], day: str, hour: str,
             log(f"  [下見] 分ける {len(split)} エリア: "
                 + "、".join(f"{a}×{n}" for a, n in list(split.items())[:6])
                 + ("…" if len(split) > 6 else ""))
+        # Worker のサブリクエストは fetch（地点数）＋ put 1
         log(f"  [下見] 最大 {mx} 地点（{big} は {len(groups[big])} 地点）"
-            f" → サブリクエスト {mx + 2}／上限 50")
+            f" → サブリクエスト {mx + 1}／上限 50")
         log(f"  [下見] 設定: WORKER_URL={'あり' if base else 'なし'}"
             f" TOKEN={'あり' if token else 'なし'}")
         return []

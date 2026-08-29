@@ -1,8 +1,11 @@
-# 運用手順書（気温と雨量の統計 + 数値予報配信）
+# 運用手順書（個人開発気象統計）
 
-2026-07-06 作成。この 1 枚で全システムを運用できることを目的とする。
-詳細設計は各設計書（DESIGN.md / forecast-distribution.md / forecast-charts.md /
-r2-deployment.md）を参照。
+観測データの収集からサイト公開までの手順。数値予報・観測データ配布・
+世界天気は [operations-forecast.md](operations-forecast.md)。
+
+設計は [WeatherStatic/DESIGN.md](../WeatherStatic/DESIGN.md)、データの出所は
+[data-acquisition.md](data-acquisition.md)、保存形式は
+[WeatherStatic/STORAGE_FORMATS.md](../WeatherStatic/STORAGE_FORMATS.md) を参照。
 
 ## 全体の形
 
@@ -260,51 +263,11 @@ Flet が HTTP で読みに行くときだけ。
 - `fetch_amedas_mirror.py` が map のまま。地点別へ移すのは別の塊
 - 実況ページ 1,293 枚を 10 分ごとに作り直している（43MB）。R2 直読みにすれば
   この山は消えるが、検索の入口も消える。分け方の検討が要る
-- アプリ（Flet）の mirror ソースを実 R2 URL で最終確認
-- conda-forge 公開（PyPI 公開後に grayskull → staged-recipes）
-- ERA5 気候値パック（notebooks/06 を Colab で実行）
+- **Worker が未デプロイ**。デプロイするまで地点別データは集まらない。
+  その間は `pointstore` が map ミラーへ退避する（移行のための仮の道）
+- `fetch_amedas_mirror.py` が map のまま。地点別へ移すのは別の塊
+- 実況ページ 1,293 枚を 10 分ごとに作り直している（43MB）。R2 直読みにすれば
+  この山は消えるが、検索の入口も消える。分け方の検討が要る
 
-## 数値予報（00z/12z の 2 回。日本時間 17:30 / 5:30 目安）
-
-```cron
-30 17,5 * * *  cd $HOME/dev/weather && \
-  ./.venv/bin/python tools/publish_forecast.py --out $HOME/wxpub --tier core && \
-  ./.venv/bin/python tools/publish_charts.py --out $HOME/wxpub && \
-  rclone sync $HOME/wxpub/forecast r2:weather-forecast/forecast && \
-  rclone sync $HOME/wxpub/charts r2:weather-forecast/charts
-```
-
-- publish_forecast と publish_charts は grib-cache を別に持つが同じ bulk GRIB。
-  帯域が気になる場合は charts の `--out` を forecast と同じにしても安全
-- ENS 降水（アンサンブル）は publish_charts の `--ens`（既定オン）
-
-## 過去観測データ（月次で十分）
-
-```bash
-cd ~/dev/weather/WeatherStatic
-./.venv/bin/python export_dist.py && rclone sync dist/ r2:weather-obs
-```
-
-## 世界天気（worldtime-web 連携）
-
-```cron
-# met.no 予報+METAR → data/world/（時間毎で十分。METARだけ高頻度も可）
-40 * * * *   cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_world.py
-# 世界気温タイル 1日4回（各ランの公開後 ≈ JST 17:30/23:30/5:30/11:30）
-30 17,23,5,11 * * *  cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_tiles.py
-```
-
-タイルは conda 環境（../.venv、cfgrib 必要）で実行する点に注意。
-
-## rclone の代替（cf-publish 0.2.0 以降）
-
-R2 への同期は `cf-publish r2 sync` でも可能（rclone 設定不要。
-R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / CLOUDFLARE_ACCOUNT_ID を設定）:
-
-```bash
-cf-publish r2 sync ~/wxpub/forecast weather-forecast/forecast --delete
-cf-publish r2 sync ~/wxpub/charts weather-forecast/charts --delete
-cf-publish r2 sync WeatherStatic/dist weather-obs
-```
-
-初回は --dry-run で差分を確認してから。実運用実績がつくまでは rclone も併記のまま残す。
+数値予報・観測データ配布・世界天気は
+[operations-forecast.md](operations-forecast.md) を参照。
