@@ -26,8 +26,9 @@
     呼ぶ数 … エリア数（64）。同時 6 本まで。実行は 9,216/日（上限 10 万）
 
     親子 2 本だったものを 1 本にした。分けた理由は 50 サブリクエストだったが、
-    エリア単位にまとめた時点で 1 エリアが収まる。結果もエリア単位で返るので、
-    失敗したエリアだけ呼び直せる。
+    エリア単位にまとめた時点で 1 エリアが収まる。地点の多い県は 1 回 30 地点で
+    切り、**別ファイル**（{area}-1.json / -2.json）に置く。既存を読んで併合
+    する必要が無いので、同一エリアでも並行に呼べる。
 
 資格情報と URL
     WEATHER_WORKER_URL   親 Worker。既定の *.workers.dev で足りる
@@ -129,20 +130,20 @@ def chunks_of(stations: list[str]) -> list[list[str]]:
     return [stations[i:i + size] for i in range(0, len(stations), size)]
 
 
-def call_area(base: str, token: str, area: str, stations: list[str],
+def call_part(base: str, token: str, name: str, stations: list[str],
               day: str, hour: str) -> dict:
-    """1 エリア分を Worker に取らせる。結果はエリア単位で返る。"""
+    """1 まとまりを Worker に取らせる。name がそのまま置き先のファイル名になる。"""
     body = json.dumps({"day": day, "hour": hour,
-                       "area": area, "stations": stations}).encode()
+                       "name": name, "stations": stations}).encode()
     try:
         return json.loads(http(f"{base}/fetch", data=body, headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}"}))
     except urllib.error.HTTPError as e:
         detail = e.read()[:120].decode(errors="replace")
-        return {"area": area, "written": 0, "error": 1, "why": f"HTTP {e.code} {detail}"}
+        return {"name": name, "written": 0, "error": 1, "why": f"HTTP {e.code} {detail}"}
     except Exception as e:
-        return {"area": area, "written": 0, "error": 1, "why": str(e)[:80]}
+        return {"name": name, "written": 0, "error": 1, "why": str(e)[:80]}
 
 
 def invoke(groups: dict[str, list[str]], day: str, hour: str,
@@ -182,35 +183,30 @@ def invoke(groups: dict[str, list[str]], day: str, hour: str,
         if attempt:
             log(f"置けなかった {len(pending)} エリアを呼び直す（{attempt}/{retries}）")
 
-        def run_area(area: str, stations: list[str]) -> dict:
-            """1 エリアを（必要なら分けて）順に呼ぶ。
-
-            **同一エリアの分割は順番に呼ぶ。** Worker は既存を GET して
-            併合するので、同じ鍵へ同時に書くと読み書きが交差して片方が消える。
-            """
-            tally = {"area": area, "stored": 0, "missing": 0, "error": 0,
-                     "written": 0, "kept": 0}
-            for part in chunks_of(stations):
-                r = call_area(base, token, area, part, day, hour)
-                for k in ("stored", "missing", "error", "written", "kept"):
-                    tally[k] += r.get(k, 0)
-                if r.get("why") and not tally.get("why"):
-                    tally["why"] = r["why"]
-            return tally
+        # 分けたぶんは別ファイルになるので、同一エリアでも並行に呼べる
+        jobs: list[tuple[str, str, list[str]]] = []
+        for area, stations in pending.items():
+            cs = chunks_of(stations)
+            for i, part in enumerate(cs, 1):
+                name = area if len(cs) == 1 else f"{area}-{i}"
+                jobs.append((area, name, part))
 
         results: list[dict] = []
         with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
-            futures = [pool.submit(run_area, a, st) for a, st in pending.items()]
+            futures = {pool.submit(call_part, base, token, n, st, day, hour): a
+                       for a, n, st in jobs}
             for f in as_completed(futures):
-                results.append(f.result())
+                r = f.result()
+                r["area"] = futures[f]
+                results.append(r)
 
         ok = [r for r in results if r.get("written")]
         ng = [r for r in results if not r.get("written")]
-        log(f"  置いた {len(ok)} エリア / 取得 {sum(r.get('stored', 0) for r in results)} 地点"
+        log(f"  置いた {len(ok)} ファイル / 取得 {sum(r.get('stored', 0) for r in results)} 地点"
             f" / 欠測 {sum(r.get('missing', 0) for r in results)}"
             f" / 失敗 {sum(r.get('error', 0) for r in results)}")
         for r in ng[:5]:
-            log(f"    × {r['area']}: {r.get('why') or '1 地点も取れず'}")
+            log(f"    × {r.get('name', r['area'])}: {r.get('why') or '1 地点も取れず'}")
         pending = {r["area"]: groups[r["area"]] for r in ng if r["area"] in groups}
         failed = list(pending)
     return failed
