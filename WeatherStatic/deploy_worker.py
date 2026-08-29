@@ -6,21 +6,28 @@
     python WeatherStatic/deploy_worker.py            # 下見
     python WeatherStatic/deploy_worker.py --apply    # 実際に上げる
 
-合言葉の扱い
-    Worker 側の secret（TOKEN）と、tgsvr が送る WEATHER_WORKER_TOKEN は
-    **同じ値でなければならない**。手で二度打つと食い違うので、
-    ~/.config/weather/points.env の WEATHER_WORKER_TOKEN を読んで、それを
-    そのまま Worker の secret にする。
+二種類の秘密を混ぜない
+    Cloudflare API トークン … デプロイする権限。Cloudflare アカウントを操作できる
+    Worker の TOKEN         … tgsvr だけが Worker を呼べるようにする合言葉
 
-    値は表示しない。cf-publish には同名の環境変数として渡すだけで、
-    引数にも出さない（ps で見えないようにするため）。
+    後者に前者を使ってはいけない。合言葉は tgsvr の設定ファイルと Worker の
+    環境の両方に置かれ、呼び出しのたびに HTTP ヘッダで飛ぶ。漏れたときに
+    失うものを「その Worker を呼べる」だけに留める。
 
+読む場所（先に見つかったものを使う。値は表示しない）
+    Cloudflare 資格情報 … 環境変数 → ~/.config/cloudflare/worker.env
+                          → cf-publish 既定（~/.config/cloudflare/pages.env）
+    合言葉              … 環境変数 → ~/.config/cloudflare/worker.env
+                          → ~/.config/weather/points.env
+
+    Worker のデプロイには Pages 用と違う権限（Workers Scripts: Edit、
+    バケット作成には Workers R2 Storage: Edit）が要るので、トークンを
+    分ける場合は worker.env に置く。
+
+    合言葉は Worker 側の secret と tgsvr が送る値が**同じでなければならない**。
+    手で二度打つと食い違うので、ここで読んだものをそのまま secret にする。
+    cf-publish へは同名の環境変数として渡し、引数には置かない（ps で見える）。
     まだ無ければ --init-token で作れる。生成した値も表示しない。
-
-必要な権限
-    Workers Scripts: Edit      … Worker のデプロイ
-    Workers R2 Storage: Edit   … バケット weather-amedas の作成
-    Pages 用のトークンにはこれらが無い。足りなければ cf-publish が言う。
 """
 from __future__ import annotations
 
@@ -35,21 +42,27 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 WORKER_DIR = BASE / "workers" / "amedas-point"
 VENV = BASE / ".venv" / "bin" / "cf-publish"
+
+# Worker 用の資格情報。Pages 用とは権限が違うので分けて置ける
+CF_ENV = Path.home() / ".config" / "cloudflare" / "worker.env"
+# tgsvr に配る設定。合言葉と Worker の URL が入る
 ENV_FILE = Path.home() / ".config" / "weather" / "points.env"
 
 TOKEN_KEY = "WEATHER_WORKER_TOKEN"
 URL_KEY = "WEATHER_WORKER_URL"
+CF_KEYS = ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID")
 
 
 def log(msg: str) -> None:
     print(f"[deploy] {msg}", flush=True)
 
 
-def read_env_file() -> dict[str, str]:
-    if not ENV_FILE.is_file():
+def read_env_file(path: Path = ENV_FILE) -> dict[str, str]:
+    """KEY=VALUE を読む。値はここでも呼び出し側でも表示しない。"""
+    if not path.is_file():
         return {}
     out = {}
-    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=" in line:
             k, _, v = line.partition("=")
@@ -57,20 +70,32 @@ def read_env_file() -> dict[str, str]:
     return out
 
 
-def write_env_file(values: dict[str, str]) -> None:
-    """points.env を書き戻す。値は表示しない。パーミッションは 0600。"""
-    ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
+def find_token() -> tuple[str | None, str]:
+    """合言葉と、それをどこから読んだか。値は返すが表示はしない。"""
+    if os.environ.get(TOKEN_KEY):
+        return os.environ[TOKEN_KEY], "環境変数"
+    for path in (CF_ENV, ENV_FILE):
+        v = read_env_file(path).get(TOKEN_KEY)
+        if v:
+            return v, str(path)
+    return None, ""
+
+
+def write_env_file(values: dict[str, str], path: Path = ENV_FILE) -> None:
+    """KEY=VALUE を書き戻す。値は表示しない。パーミッションは 0600。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
     body = "".join(f"{k}={v}\n" for k, v in values.items())
-    ENV_FILE.write_text(body, encoding="utf-8")
-    ENV_FILE.chmod(0o600)
+    path.write_text(body, encoding="utf-8")
+    path.chmod(0o600)
 
 
 def init_token() -> int:
-    values = read_env_file()
-    if values.get(TOKEN_KEY):
-        log(f"{TOKEN_KEY} は既にあります（値は表示しません）。作り直すなら "
-            f"{ENV_FILE} から消してください")
+    token, where = find_token()
+    if token:
+        log(f"{TOKEN_KEY} は既にあります（{where}／値は表示しません）。"
+            "作り直すならそこから消してください")
         return 1
+    values = read_env_file()
     values[TOKEN_KEY] = secrets.token_urlsafe(32)
     write_env_file(values)
     log(f"{TOKEN_KEY} を作って {ENV_FILE} に書きました（値は表示しません）")
@@ -94,11 +119,12 @@ def deploy(apply: bool) -> int:
     if not WORKER_DIR.is_dir():
         sys.exit(f"{WORKER_DIR} がありません")
 
-    token = os.environ.get(TOKEN_KEY) or read_env_file().get(TOKEN_KEY)
+    token, where = find_token()
     if not token:
-        log(f"{TOKEN_KEY} がありません（環境変数か {ENV_FILE}）")
+        log(f"{TOKEN_KEY} がありません（環境変数 / {CF_ENV} / {ENV_FILE}）")
         log("  作るには: python WeatherStatic/deploy_worker.py --init-token")
         return 1
+    log(f"合言葉: {where} から読みました（値は表示しません）")
 
     cmd = [find_cf_publish(), "worker", "deploy", str(WORKER_DIR),
            "--secret", "TOKEN", "--workers-dev"]
@@ -107,6 +133,21 @@ def deploy(apply: bool) -> int:
 
     # 合言葉は同名の環境変数として渡す。引数に置くと ps で見えてしまう
     env = dict(os.environ, TOKEN=token)
+
+    # Cloudflare の資格情報。Worker のデプロイには Pages 用と違う権限が要るので、
+    # worker.env があればそちらを優先する。無ければ cf-publish が既定の
+    # pages.env を読む。
+    cf = read_env_file(CF_ENV)
+    supplied = [k for k in CF_KEYS if cf.get(k)]
+    if supplied:
+        env.update({k: cf[k] for k in supplied})
+        log(f"Cloudflare 資格情報: {CF_ENV} から {'・'.join(supplied)}")
+    elif any(os.environ.get(k) for k in CF_KEYS):
+        log("Cloudflare 資格情報: 環境変数")
+    else:
+        log("Cloudflare 資格情報: cf-publish の既定（~/.config/cloudflare/pages.env）")
+        log("  Worker のデプロイには Workers Scripts: Edit が要ります。"
+            "Pages 用のトークンでは足りません")
     log(("上げます" if apply else "下見します") + f": {WORKER_DIR.name}")
     r = subprocess.run(cmd, env=env, capture_output=True, text=True)
     out = (r.stdout or "") + (r.stderr or "")
