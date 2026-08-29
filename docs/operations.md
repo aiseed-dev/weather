@@ -4,49 +4,111 @@
 詳細設計は各設計書（DESIGN.md / forecast-distribution.md / forecast-charts.md /
 r2-deployment.md）を参照。
 
-## 日次 cron（WeatherStatic = 気温サイト）
+## 全体の形
 
-```cron
-# 10分毎: アメダス地点別を集める（エリアごとに Worker を呼ぶ。取り寄せはしない）
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_points.py >> $HOME/dev/weather/logs/points.log 2>&1
-# 日次 1:30: 統計の蓄積。前日ぶんの毎正時 map JSON と確定値 CSV から nc を作る
-30 1 * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python accumulate.py
-# 10分毎: 現在値だけ更新（トップページが読む public/data/current.json）
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
-# 10分毎: 実況ページ（気温・風・Python グラフ工房）。fetch_points の後に回す
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && ./.venv/bin/python generate_status.py >> $HOME/dev/weather/logs/status.log 2>&1
-# 毎時50分: 最新CSV・予報・現在天気 → サイト再生成
-52 * * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py && ./.venv/bin/python generate.py
-# 日次: 投票集計（Workers+KV 版。要 VOTES_KV_NAMESPACE_ID）
-15 1 * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python aggregate_votes.py --kv
+三つの経路がある。**どれが止まると何が困るか**が違うので、混ぜない。
+
+| 経路 | 取得者 | 取得元 | 頻度 | 用途 | 止まると |
+|------|--------|--------|------|------|----------|
+| 速報 | Cloudflare Worker → R2 | 地点別 10 分値 | 10 分ごと | 実況ページ・Flet 版 | 実況が古くなる。10 日で取り返せなくなる |
+| 統計 | **tgsvr が直接** | map 毎正時 ＋ 確定値 CSV | 1 日 1 回（1 時以降） | `observations.nc` | 7 日以内の再開なら自力で埋まる |
+| 公開 | dev | tgsvr の生成物 | 手動 | Cloudflare Pages | サイトが更新されない |
+
+**速報と統計を分けてある。** 10 分値は実況用の速報で、統計には使わない。
+分けていないと、10 分値の収集が止まったときに統計まで欠ける。
+2026-08-29 に実際に 2 日止まり、実況ページだけが古いまま公開された。
+
+tgsvr は生産者であって配信者ではない。押し出したあとは落ちていても
+利用者は困らない。**tgsvr を公開する必要はない**（アウトバウンドのみ）。
+
+## 道具と置き場所
+
+道具は動く場所で分かれている。手元専用のものは tgsvr へ送らない
+（向こうに置かなければ向こうで動かせない）。
+
+| 場所 | 道具 | すること |
+|------|------|----------|
+| dev | `make_testdata.py` | 作り物のデータを置く。見た目の確認用 |
+| dev | `sync_to_tgsvr.py` | ソースを送る。**自分と release.py は送らない** |
+| dev | `release.py` | tgsvr の生成物を取り寄せて Cloudflare へ |
+| tgsvr | `fetch_points.py` | Worker を呼んで 10 分値を集める（速報） |
+| tgsvr | `fetch_amedas_mirror.py` | 10 分値を複製し半月 NetCDF へ封入 |
+| tgsvr | `accumulate.py` | map 毎正時と確定値 CSV から `observations.nc` を作る（統計） |
+| tgsvr | `fetch_data.py` | 現在値・予報・現在天気 |
+| tgsvr | `build_site.py` | 生成して点検する（公開はしない） |
+| Worker | `workers/amedas-point/` | 渡された地点を取り、渡された名前で R2 に 1 本置く |
+
+**Worker に判断を持たせない。** いつ・何を取るか、失敗をどう呼び直すかは
+すべて tgsvr が決める。Worker は重い取得を肩代わりする手足に徹する。
+そうしないと、地点の増減のたびに Worker の再デプロイが要る。
+
+## 公開の手順（3 段。飛ばさない）
+
+```bash
+# 1. dev でテストデータで確認
+cd ~/dev/weather/WeatherStatic
+./.venv/bin/python make_testdata.py --force
+./.venv/bin/python build_site.py
+
+# 2. ソースを送って tgsvr で実データで確認
+./.venv/bin/python sync_to_tgsvr.py            # 下見
+./.venv/bin/python sync_to_tgsvr.py --apply
+ssh tgsvr 'cd dev/weather/WeatherStatic && ./.venv/bin/python build_site.py'
+
+# 3. 手元から Cloudflare へ
+./.venv/bin/python release.py                  # 取り寄せて点検（公開しない）
+./.venv/bin/python release.py --publish
 ```
 
-### 速報と統計を分ける
+`release.py` は `_meta.source` が `TESTDATA` なら公開を拒む。ページ数が
+目安（500）を下回るときも拒む。生成が途中で失敗したものを上げないため。
 
-10 分値（地点別）は**実況ページ用の速報**で、統計には使わない。統計は
-`accumulate.py` が毎正時の map JSON と確定値 CSV だけから `observations.nc`
-を作る。分けておくと、10 分値の収集が数日止まっても統計は壊れない
-（2026-08-29 に実際に 2 日止まり、実況ページだけが古いまま公開された）。
+**公開は手元から行う。** tgsvr にも Cloudflare のトークンはあるが、あれは
+データ用（R2 同期と Worker 起動）。site の公開までそこでやると、同じ
+トークンに `Pages:Edit` まで持たせることになる。
 
-| 経路 | 取得者 | 取得元 | 頻度 | 使い道 |
-|------|--------|--------|------|--------|
-| 速報 | Worker → R2 → tgsvr | 地点別 10 分値 | 10 分ごと | 実況ページ |
-| 統計 | **tgsvr が直接** | map JSON 毎正時 ＋ 確定値 CSV | 1 日 1 回（1 時以降） | observations.nc |
+`sync_to_tgsvr.py --stale` で「向こうにだけあるファイル」を調べられる。
+こちらで消したものが残っていると、古いコードからデプロイしてしまう。
 
-統計は Worker も R2 も経由しない。1,286 地点を並列に取る必要があるのは
-10 分値だけで、毎正時の map は全地点 1 ファイル・1 日 24 本しかないため、
-tgsvr から直に取れば済む。経路が短いほど壊れる箇所が少ない。
+## cron（tgsvr）
 
-気象庁へのリクエストは 1 日あたり:
+**cron の設定は運用者が行う。** ここに載せるのは照合用の一覧で、
+道具や手順書がこれを自動で登録することはしない。二重登録すると同じ処理が
+並走し、`observations.nc` の書込が後勝ちで失われる。
+`crontab -l` と見比べて、足りないものだけを足すこと。
 
-| | 回数 |
-|---|---|
-| 地点別 10 分値（Worker が実行） | 1,286 × 144 |
-| map（速報の補完・積雪と天気） | 144 |
-| map（統計の時別値） | 24 |
-| 確定値 CSV | 4〜6 |
+```cron
+# 10分毎: 地点別 10 分値を集める（速報）
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_points.py >> $HOME/dev/weather/logs/points.log 2>&1
+# 10分毎: 10 分値を複製し半月 NetCDF へ封入
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_amedas_mirror.py >> $HOME/dev/weather/logs/amedas_mirror.log 2>&1
+# 10分毎: 現在値だけ更新（トップページが読む public/data/current.json）
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
+# 10分毎: 実況ページ。収集の後に回す
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && ./.venv/bin/python generate_status.py >> $HOME/dev/weather/logs/status.log 2>&1
+# 毎時50分: 最新CSV・予報・現在天気 → サイト再生成
+52 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py && ./.venv/bin/python generate.py
+# 日次 1:30: 統計の蓄積（気象庁の 1 時更新の後）
+30 1 * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python accumulate.py >> $HOME/dev/weather/logs/accumulate.log 2>&1
+# 毎月2日 03:30: 前月分を etrn 確定値で置換
+30 3 2 * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python backfill_etrn.py --from $(date -d "-1 month" +\%Y-\%m) --to $(date -d "-1 month" +\%Y-\%m) --force >> $HOME/dev/weather/logs/etrn_monthly.log 2>&1
+# 日次: 投票集計（Workers+KV 版。要 VOTES_KV_NAMESPACE_ID）
+15 1 * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python aggregate_votes.py --kv
+```
 
-### 確定値 CSV をいつ取りに行くか
+**ロックはスクリプト自身が取る。** `observations.nc` は「コピー → 更新 →
+rename」で置き換えるため、同時実行すると後勝ちで書込が失われる。以前は
+cron 側の `flock` に頼っていたが、手動実行の手順から簡単に抜け落ちる
+（実際に抜けた）。`weatherlib/storelock.py` を accumulate / backfill_daily /
+backfill_etrn が自前で使う。**cron に flock を書く必要はない。**
+
+- ロックファイルは `WeatherStatic/store.lock`（`WEATHER_STORE_LOCK` で変更可）
+- accumulate は 40 分待って取れなければその回を見送る（7 日窓なので次回が拾う）
+- バックフィルは既定 1 時間待つ。その間 accumulate は見送られる
+
+## いつ何を取りに行くか
+
+### 統計（accumulate.py）
 
 気象庁の更新は 1 日 1 巡（[更新時刻](https://www.data.jma.go.jp/stats/data/mdrr/man/update_k.html)）。
 
@@ -57,42 +119,150 @@ tgsvr から直に取れば済む。経路が短いほど壊れる箇所が少�
 | 3 時頃 | アメダスの速報値 |
 | 14 時頃 | 官署の確定値 |
 
-`accumulate.py` は **1 日 1 回、7 日窓をまるごと**さらう。更新が 1 日 1 巡
-なので毎時は無駄だが、窓を狭めると数日止まったときに埋まらなくなる
-（前々日と 7 日前だけに絞ると、8 日以上止まった日は永久に欠ける）。
+**1 日 1 回、7 日窓をまるごとさらう。**
 
-- 確定値 CSV … 前日〜7 日前 × 2 要素 = 14 リクエスト
-- map 毎正時 … 7 日 × 24 = 168 本（取得済みでも更新回が変われば取り直す）
+- 確定値 CSV … 前日〜7 日前 × 2 要素 ＝ 14 リクエスト
+- map 毎正時 … 7 日 × 24 ＝ 168 本（取得済みでも更新回が変われば取り直す）
 
-**区切りは日付ではなく直近の 1 時**。日付で区切ると、0 時台に走った回が
+窓を狭めてはいけない。前々日と 7 日前だけに絞ると、8 日以上止まった日は
+永久に欠ける。7 日窓を毎日さらえば、止まっても再開時に自力で埋まる。
+
+**区切りは日付ではなく直近の 1 時。** 日付で区切ると、0 時台に走った回が
 「その日ぶん」を消化してしまい、1 時の更新で入った値が翌日まで取り込まれない。
 0 時台の実行は前日 1 時の区切りに属させる。
 
 値が変わっていれば `correction_log` に残る。
 
-### 実況ページ（気象庁より高頻度）
+### 速報（fetch_points.py）
 
-気象庁は元データが 10 分値なのに「気温の状況」「風の状況」を**毎時 50 分頃**しか
-更新していない。10 分値を持っているので、そのまま 6 倍の頻度で出せる。
+10 分値は**約 10 日で気象庁から消える**（実測: 10 日前 200 / 11 日前 404）。
+etrn から後追いできるのは日別の気温と降水だけで、湿度・気圧・視程・風・
+10 分降水は二度と取れない。
 
-| ページ | 内容 |
+- 気象庁の `latest_time.txt` で最新スロットを知る（1 リクエスト）
+- エリアごとに Worker を呼ぶ。地点の多い県は 1 回 30 地点で切り、
+  `{area}-1.json` / `-2.json` と**別ファイル**に置く
+- 失敗したエリアは呼び直す（結果がエリア単位で返る）
+- 地点別に無い要素（積雪・天気）は map を 1 本取って補う
+
+`weather` は毎正時のスロットにしか入らない（実測: 正時 150 地点・非正時 0）。
+要素の一覧は持たず、来たものをそのまま重ねる。**欠測のとき要素はキーごと
+来ない**ので、一覧を決め打ちすると判断を誤ったときに黙って欠ける。
+
+### 地点別と map の違い（2026-08-29 実測・A〜G の 12 地点）
+
+| | 要素 |
 |---|---|
-| `/Status/Temperature/` | 気温の順位・平年差・当日 10 分値グラフ（サーバー生成 SVG） |
-| `/Status/Wind/` | 風速の順位・当日最大・風向分布。**最大値は 10 分値ベース**で、気象庁の日最大瞬間風速とは別物 |
-| `/Status/Lab/` | ブラウザ内 Python（Pyodide）が `weatherlib/svgchart.py` で描く。起動はボタン押下時のみ |
+| 地点別のみ | `gust` `gustDirection` `gustTime` `maxTemp` `maxTempTime` `minTemp` `minTempTime` |
+| map のみ | `snow` `snow1h` `snow6h` `snow12h` `snow24h` `weather` |
+| 共通 | 気温・湿度・気圧 2 種・降水 4 種・日照 2 種・風・風向・視程 |
 
-`generate_status.py` はサイト全体（1,840 ページ）を作り直さず、この 3 ページと
-`public/data/amedas-today.json`（916 地点 × 10 分値、gzip 後 61KB）だけを書く。
+包含関係ではない。片方だけでは足りないので、`weatherlib/pointstore.py` が
+両者を合流させ、消費側には map と同じ形だけを見せる。
 
-**ブラウザから気象庁へは取りに行かない**（2026-08-27 以降）。以前のトップページは
-訪問者ごとに `map/{ts}.json`（245KB）と推計気象分布のタイル（512px PNG 複数）を
-気象庁から直接取得し、ブラウザ内でピクセル判定して天気を出していた。同じ計算は
-`fetch_data.py` が既に行っているので、ページは `public/data/current.json`（4KB）
-だけを読む。気象庁への取得はサーバー側の 10 分に 1 回に集約される。
+## Cloudflare の無料枠と実測
 
-- サイト生成の環境変数（本番時）: `WEATHER_CHARTS_BASE`（チャート画像の公開URL、
-  既定 /charts）、`WEATHER_VOTE_URL`（Worker の vote.gif、既定 /vote.gif）
-- デプロイ: `cf-publish public/ --project <名前>`（実績あり: ecitizen.jp）
+| 制限 | 上限 | 実測 |
+|------|------|------|
+| Worker サブリクエスト/実行 | 50 | fetch 30 ＋ put 1 ＝ 31 |
+| Worker 実行/日 | 100,000 | 72 呼び出し × 144 ＝ 10,368 |
+| Worker CPU | 10ms | 本文を復号しないので余裕。復号すると 407KB で parse 3.9ms |
+| R2 Class A（書込）/月 | 1,000,000 | 72 × 144 × 30 ＝ 31 万 |
+| R2 Class B（読出）/月 | 10,000,000 | 端末が読むぶん |
+| R2 容量 | 10 GB | 生 JSON 10 日で約 350MB |
+| Pages ファイル数 | 20,000 | 4,186 |
+| Pages 1 ファイル | 25 MiB | 最大 0.40 MiB |
+
+**R2 の put もサブリクエストに数えられる**（"A subrequest is any request a
+Worker makes using the Fetch API or to Cloudflare services like R2, KV, or
+D1."）。地点ごとに置くと fetch N ＋ put N ＝ 2N になり 25 地点で頭打ち。
+エリア単位にまとめる理由はここにもある。
+
+気象庁へのリクエスト（1 日）:
+
+| | 回数 | 誰が |
+|---|---|---|
+| 地点別 10 分値 | 1,286 × 144 | Worker |
+| map（速報の補完） | 144 | tgsvr |
+| map（統計の時別） | 168 | tgsvr |
+| 確定値 CSV | 14 | tgsvr |
+
+## デプロイ（cf-publish。wrangler は使わない）
+
+| 対象 | コマンド |
+|------|----------|
+| サイト | `release.py --publish`（手元から） |
+| 収集 Worker | `TOKEN=... cf-publish worker deploy . --secret TOKEN --workers-dev` |
+| アメダスミラー | `cf-publish r2 sync WeatherStatic/public_amedas weather-amedas` |
+| 予報パック | `cf-publish r2 sync ~/wxpub/forecast weather-forecast/forecast --delete` |
+
+Worker のデプロイは `workers/amedas-point/` で実行する。`--secret TOKEN` は
+**同名の環境変数から読まれ、値は表示されない**（対話入力ではない）。
+`--workers-dev` を付けると公開 URL が出るので、それを tgsvr の
+`~/.config/weather/points.env` に `WEATHER_WORKER_URL` として置く。
+
+R2 バケット `weather-amedas` は `wrangler.toml` に書いてあるので、無ければ
+cf-publish が作る（トークンに `Workers R2 Storage: Edit` が要る）。
+
+**cf-publish 0.3.1 に Service Binding の対応は無い**（`--service` は存在
+しない）。Worker が別の Worker を呼ぶ構成はこの道具ではデプロイできない。
+`wrangler.toml` から拾う既定にも `[[services]]` は含まれない。
+
+**R2 に独自ドメインは要らない**（収集には）。Worker → R2 はバインディング、
+tgsvr → Worker は `*.workers.dev` で足りる。ドメインが要るのは、ブラウザや
+Flet が HTTP で読みに行くときだけ。
+
+## 資格情報の置き場所（値は書かない）
+
+| 場所 | ファイル | 用途 |
+|------|----------|------|
+| dev | `~/.config/cloudflare/pages.env` | Pages 公開（`Pages:Edit`） |
+| tgsvr | `~/.config/cloudflare/pages.env` | データ用（R2 同期） |
+| tgsvr | `~/.config/weather/points.env` | `WEATHER_WORKER_URL` と `WEATHER_WORKER_TOKEN` |
+
+権限は用途で分ける。tgsvr のトークンに `Pages:Edit` を持たせない。
+
+## 障害時・再開
+
+| 症状 | 見るところ | 対処 |
+|------|-----------|------|
+| 実況ページが古い | `logs/points.log` `logs/status.log` | 収集が止まっている。`fetch_points.py --dry-run` で設定を確認 |
+| 「生成できなかった区画が N 件」 | 同上 | 10 分値が無い。復旧するまで公開しない（`build_site.py` が止まる） |
+| 10 分値に穴 | `public_amedas/map/` の最新 | 10 日以内なら `fetch_amedas_mirror.py` を繰り返す（1 回 60 スロットまで） |
+| 統計に穴 | `logs/accumulate.log` | 7 日以内なら次回の実行で埋まる。それ以上なら `backfill_etrn.py` |
+| `うち気象庁へ退避` が恒常的に出る | `logs/amedas_mirror.log` | Worker が動いていない合図 |
+| backfill_etrn が途中で止まった | — | 同じコマンド再実行（ingest_log で続きから） |
+| 予報 office が 404 | `weatherlib/jma.py` | `OFFICE_REMAP` 参照（014030→014100 等の統合例外） |
+| JMA から 403/429 | — | しばらく止める。恒常なら `jma.py` の `MIN_INTERVAL` を増やす |
+| チャートの日本語が豆腐 | — | Noto CJK フォント（fonts-noto-cjk）を確認 |
+| publisher が途中で止まった | — | 同じコマンド再実行（manifest で続きから、GRIB もキャッシュ） |
+| Pages で _headers が効かない | — | cf-publish 0.1.1 以上を使う（0.1.0 は資産扱いのバグ） |
+
+**古いものを公開しないための関門。** `generate_status.py` は 10 分値が無くて
+生成を飛ばしたら終了コード 1 を返し、`build_site.py` がそこで止まる。
+黙って飛ばすと前回の生成物が残ったまま公開され、古い実況が出続ける。
+
+## 観測ストアの由来（tgsvr、2026-08-26 稼働開始）
+
+観測ストア（`store/observations.nc` ＋ `weather.sqlite`）の正本は tgsvr。
+
+- 初期データ: 旧 WeatherCore の pg_dump（weather.gz）の jma_daily を
+  `backfill_daily.py` で投入済み（1880-11-01〜2022-03-14、69.1M セル）
+- ダンプ末尾 5 日分（2022-03-10〜14）は速報値だったため etrn から `--force`
+  再取得して置換済み（値訂正 8 件・品質フラグ更新 5 件・欠測補完 10 件）
+- ギャップ（2022-04〜2026-07）は `backfill_etrn.py` で取得
+- 進行中の月は etrn 対象外のため、月初の穴は毎月 2 日の月次 cron が埋める
+
+## まだ手つかず
+
+- **Worker が未デプロイ**。デプロイするまで地点別データは集まらない。
+  その間は `pointstore` が map ミラーへ退避する（移行のための仮の道）
+- `fetch_amedas_mirror.py` が map のまま。地点別へ移すのは別の塊
+- 実況ページ 1,293 枚を 10 分ごとに作り直している（43MB）。R2 直読みにすれば
+  この山は消えるが、検索の入口も消える。分け方の検討が要る
+- アプリ（Flet）の mirror ソースを実 R2 URL で最終確認
+- conda-forge 公開（PyPI 公開後に grayskull → staged-recipes）
+- ERA5 気候値パック（notebooks/06 を Colab で実行）
 
 ## 数値予報（00z/12z の 2 回。日本時間 17:30 / 5:30 目安）
 
@@ -108,114 +278,12 @@ tgsvr から直に取れば済む。経路が短いほど壊れる箇所が少�
   帯域が気になる場合は charts の `--out` を forecast と同じにしても安全
 - ENS 降水（アンサンブル）は publish_charts の `--ens`（既定オン）
 
-## 観測データ蓄積基盤（tgsvr、2026-08-26 稼働開始）
-
-観測ストア（store/observations.nc + weather.sqlite）の正本は **tgsvr**
-（`~/.ssh/config` の `tgsvr`、`~/dev/weather/WeatherStatic/store/`）で管理する。
-
-- 初期データ: 旧 WeatherCore の pg_dump（weather.gz）の jma_daily を
-  backfill_daily.py で投入済み（1880-11-01〜2022-03-14、69.1M セル）
-- ダンプ末尾 5 日分（2022-03-10〜14）は速報値だったため etrn から `--force`
-  再取得して置換済み（値訂正 8 件・品質フラグ更新 5 件・欠測補完 10 件を確認）
-- ギャップ（2022-04〜2026-07）は backfill_etrn.py で取得（再開可能・ingest_log 管理）
-- 進行中の月は etrn 対象外のため、月初の穴は毎月 2 日の月次 cron が前月分で埋める
-
-tgsvr の crontab（設置済み）:
-
-```cron
-# 毎正時+10分: アメダス map JSON + mdrr 確定値CSV（7日窓。速報値は毎回再取得し訂正記録）
-10 * * * * cd $HOME/dev/weather/WeatherStatic && flock -w 600 $HOME/dev/weather/store.lock ./.venv/bin/python accumulate.py >> $HOME/dev/weather/logs/accumulate.log 2>&1
-# 毎月2日 03:30: 前月分を etrn 確定値で置換（月次の二重チェック）
-30 3 2 * * cd $HOME/dev/weather/WeatherStatic && flock -w 10800 $HOME/dev/weather/store.lock ./.venv/bin/python backfill_etrn.py --from $(date -d "-1 month" +\%Y-\%m) --to $(date -d "-1 month" +\%Y-\%m) --force >> $HOME/dev/weather/logs/etrn_monthly.log 2>&1
-```
-
-**ロックはスクリプト自身が取る**（2026-08-27 以降）。observations.nc は
-「コピー → 更新 → rename」で置き換えるため、同時実行すると後勝ちで書込が失われる。
-以前は cron 側の `flock` に頼っていたが、手動実行の手順から簡単に抜け落ちるため
-（実際に抜けた）、`weatherlib/storelock.py` を accumulate / backfill_daily /
-backfill_etrn が自前で使うようにした。**cron やコマンドラインで flock を書く必要はない**
-（書いても二重に効くだけで害はない）。
-
-- ロックファイルは `WeatherStatic/store.lock`（`WEATHER_STORE_LOCK` で変更可）
-- accumulate は 40 分待って取れなければ**その回を見送る**（7 日窓なので次回が拾う）。
-  見送りはログに 1 行残る
-- バックフィルは既定 1 時間待つ。長時間走るので、その間 accumulate は見送られる
-
-## アメダス 10 分値の収集とアーカイブ
-
-10 分値は**約 10 日で気象庁から消える**（実測: 10 日前 200 / 11 日前 404）。
-etrn から後追いできるのは日別の気温と降水だけで、湿度・気圧・視程・風・10 分降水は
-二度と取れない。取り逃しが回復不能なので、収集は tgsvr の死活から切り離す。
-
-### 役割分担
-
-| | 担当 | 内容 |
-|---|---|---|
-| 収集 | **Cloudflare Worker** | 10 分ごとに気象庁から取得し、**加工せずそのまま** R2 へ置く |
-| 配信 | **R2** | 独自ドメインで公開（egress 無料）。Worker は配信に使わない |
-| 封入 | **tgsvr** | R2 から拾って半月 NetCDF へ。netCDF4/numpy を使う処理はすべてここ |
-
-Worker を配信に使わないのは、無料枠の **10 万リクエスト/日**を訪問者が食い潰すため。
-重い処理を Worker に載せないのは、無料枠の **CPU 10ms・メモリ 128MB** に収まらないため。
-この分担なら **tgsvr を公開する必要がない**（アウトバウンドのみ）。
-
-### デプロイ（cf-publish を使う。wrangler は使わない）
-
-| 対象 | コマンド |
-|---|---|
-| サイト | `cf-publish public/ --project <名前>` |
-| アメダスミラー | `cf-publish r2 sync WeatherStatic/public_amedas weather-amedas` |
-| 予報パック | `cf-publish r2 sync ~/wxpub/forecast weather-forecast/forecast --delete` |
-
-R2 バケットの作成と独自ドメイン（例 `amedas.time-j.net`）の割当は
-ダッシュボードで行う。CORS もバケット側の設定。
-
-**収集 Worker（`workers/amedas/`）は cf-publish の対象外**（Pages 配信と
-R2 同期のみ）。Worker を使わない場合は、tgsvr の `fetch_amedas_mirror.py` が
-`AMEDAS_R2_BASE` 未設定なら気象庁から直接取るので、そのまま動く。
-取得結果を R2 へ流すのは上表の `r2 sync` で足りる。
-
-- **Worker を使う利点**: 収集が tgsvr の死活から独立する（10 分値は 10 日で
-  消えるため、取り逃しが回復不能）
-- **Worker を使わない場合**: tgsvr が止まっている間の 10 分値は失われる。
-  ただし日別値は etrn から後追いできる
-
-### tgsvr 側の cron
-
-```cron
-# 10分毎: R2 から拾って NetCDF へ封入（AMEDAS_R2_BASE 未設定なら気象庁から直接取る）
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && AMEDAS_R2_BASE=https://amedas.time-j.net ./.venv/bin/python fetch_amedas_mirror.py >> $HOME/dev/weather/logs/amedas_mirror.log 2>&1
-```
-
-ストアには触らないので `store.lock` とは無関係（accumulate と並行して安全）。
-
-**R2 に無いスロットは気象庁へ退避する。** Worker が黙って止まっていた場合に
-欠測が確定してしまうのを防ぐため。退避した件数はログに出るので、
-`うち気象庁へ退避` が恒常的に出るなら Worker が動いていない合図。
-
 ## 過去観測データ（月次で十分）
 
 ```bash
 cd ~/dev/weather/WeatherStatic
 ./.venv/bin/python export_dist.py && rclone sync dist/ r2:weather-obs
 ```
-
-## 障害時・再開
-
-| 症状 | 対処 |
-|------|------|
-| backfill_etrn が途中で止まった | 同じコマンド再実行（ingest_log で続きから） |
-| publisher が途中で止まった | 同じコマンド再実行（manifest で続きから、GRIB もキャッシュ） |
-| 予報 office が 404 | jma.py の OFFICE_REMAP 参照（014030→014100 等の統合例外） |
-| JMA から 403/429 | しばらく止める。恒常なら jma.py の MIN_INTERVAL を増やす |
-| チャートの日本語が豆腐 | Noto CJK フォント（fonts-noto-cjk）を確認 |
-| Pages で _headers が効かない | cf-publish 0.1.1 以上を使う（0.1.0 は資産扱いのバグ） |
-
-## まだ手つかず（優先度低）
-
-- アプリ（Flet）の mirror ソースを実 R2 URL で最終確認
-- conda-forge 公開（PyPI 公開後に grayskull → staged-recipes）
-- ERA5 気候値パック（notebooks/06 を Colab で実行）
 
 ## 世界天気（worldtime-web 連携）
 
