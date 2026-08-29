@@ -1,4 +1,5 @@
-# アメダス地点別取得の子。親から地点リストを受け取り、取得して R2 へ置く。
+# アメダス地点別取得の子。親からエリア 1 つ分を受け取り、地点をまとめて
+# point/{YYYYMMDD}/{area_code}.json に置く。
 # cron は無い（親から呼ばれるだけ）。公開もしない。
 name = "amedas-point-child"
 main = "child.js"
