@@ -9,8 +9,8 @@ r2-deployment.md）を参照。
 ```cron
 # 10分毎: アメダス地点別を集める（Worker を起こして R2 から取り寄せ、map から補完）
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_points.py >> $HOME/dev/weather/logs/points.log 2>&1
-# 毎正時+10分: 蓄積（日平均の材料）。確定値 CSV は 1 日 1 巡だけ取りに行く
-10 * * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python accumulate.py
+# 日次 1:30: 統計の蓄積。前日ぶんの毎正時 map JSON と確定値 CSV から nc を作る
+30 1 * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python accumulate.py
 # 10分毎: 現在値だけ更新（トップページが読む public/data/current.json）
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
 # 10分毎: 実況ページ（気温・風・Python グラフ工房）。fetch_points の後に回す
@@ -20,6 +20,31 @@ r2-deployment.md）を参照。
 # 日次: 投票集計（Workers+KV 版。要 VOTES_KV_NAMESPACE_ID）
 15 1 * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python aggregate_votes.py --kv
 ```
+
+### 速報と統計を分ける
+
+10 分値（地点別）は**実況ページ用の速報**で、統計には使わない。統計は
+`accumulate.py` が毎正時の map JSON と確定値 CSV だけから `observations.nc`
+を作る。分けておくと、10 分値の収集が数日止まっても統計は壊れない
+（2026-08-29 に実際に 2 日止まり、実況ページだけが古いまま公開された）。
+
+| 経路 | 取得者 | 取得元 | 頻度 | 使い道 |
+|------|--------|--------|------|--------|
+| 速報 | Worker → R2 → tgsvr | 地点別 10 分値 | 10 分ごと | 実況ページ |
+| 統計 | **tgsvr が直接** | map JSON 毎正時 ＋ 確定値 CSV | 1 日 1 回（1 時以降） | observations.nc |
+
+統計は Worker も R2 も経由しない。1,286 地点を並列に取る必要があるのは
+10 分値だけで、毎正時の map は全地点 1 ファイル・1 日 24 本しかないため、
+tgsvr から直に取れば済む。経路が短いほど壊れる箇所が少ない。
+
+気象庁へのリクエストは 1 日あたり:
+
+| | 回数 |
+|---|---|
+| 地点別 10 分値（Worker が実行） | 1,286 × 144 |
+| map（速報の補完・積雪と天気） | 144 |
+| map（統計の時別値） | 24 |
+| 確定値 CSV | 4〜6 |
 
 ### 確定値 CSV をいつ取りに行くか
 

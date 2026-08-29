@@ -4,12 +4,16 @@
   観測値本体 → store/observations.nc（NetCDF-4 単一ファイル。station×time/date の配列）
   帳簿       → store/weather.sqlite（取込ログ・訂正ログ・地点マスタ）
 
-cron で 1 日数回実行する。7 日窓で動くため、数日実行が止まっても欠測しない。
+**速報と統計を分ける。** 10 分値（地点別）は実況ページ用の速報で、統計には
+使わない。統計はここが受け持ち、毎正時の map JSON と確定値 CSV だけから
+observations.nc を作る。分けておくと、10 分値の収集が数日止まっても統計は
+壊れない（2026-08-29 に実際に 2 日止まった）。
+
+cron は 1 日 1 回、気象庁の更新（1 時頃）のあとに回す。7 日窓で動くので、
+数日実行が止まっても次回が拾う。何度動かしても ingest_log で二度取りしない。
 
 処理:
-  1. 地点別 10 分値（毎正時・全 1286 地点・過去 7 日分）→ temp/precip1h/sun1h
-     取得は Worker が行い R2 経由でローカルへ届く。ここでは読むだけで、
-     気象庁へは取りに行かない（収集の入口を 1 本にする）
+  1. map JSON（毎正時・全 1286 地点・過去 7 日分）→ temp/precip1h/sun1h
   2. mdrr 確定値 CSV（最高・最低）→ tmax/tmin（official・品質つき）
      取りに行くのは前々日・前日（必要なとき）・7 日前の 3 日だけ。
      気象庁の更新が 1 日 1 巡なので、毎時舐め直しても意味がない
@@ -31,7 +35,7 @@ from zoneinfo import ZoneInfo
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)  # netCDF4×numpy2.5 の内部警告
 
-from weatherlib import jma, pointstore
+from weatherlib import jma
 from weatherlib.ncstore import FILL, date_index, NcStore
 from weatherlib.store import open_store
 from weatherlib.storelock import store_lock
@@ -57,12 +61,22 @@ def now_jst() -> datetime:
     return datetime.now(JST).replace(tzinfo=None)
 
 
-# ------------------------------------------------------- 1. 地点別 10 分値 → hourly
+# ----------------------------------------------------- 1. map JSON（毎正時）→ hourly
 
 def ingest_map_hours(conn, ncs: NcStore) -> tuple[int, int]:
+    """毎正時の map JSON を時別値として取り込む。
+
+    統計は 10 分値に依存させない。10 分値（地点別）は実況ページ用の速報で、
+    収集が数日止まっても統計が壊れないよう経路を分けてある。ここで見るのは
+    毎正時の map JSON だけで、1 日 24 本。気象庁の保持は約 10 日あるので、
+    1 時の更新のあと前日ぶんをまとめて取れば足りる。
+
+    終端を今日の 0 時にするのは、日をまたいで完結したぶんだけを入れるため。
+    進行中の日は aggregate_day の対象外なので、急いで入れる意味がない。
+    """
     now = now_jst()
     start = (now - timedelta(days=WINDOW_DAYS)).replace(minute=0, second=0, microsecond=0)
-    end = (now - timedelta(minutes=20)).replace(minute=0, second=0, microsecond=0)
+    end = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     done = {k for (k,) in conn.execute(
         "SELECT key FROM ingest_log WHERE kind IN ('map_hour', 'map_hour_404')")}
@@ -74,9 +88,7 @@ def ingest_map_hours(conn, ncs: NcStore) -> tuple[int, int]:
         key = ts.strftime("%Y-%m-%dT%H:00")
         if key not in done:
             try:
-                data = pointstore.hourly_view(ts)
-                if not data:
-                    raise LookupError("404")   # そのスロットがまだ届いていない
+                data = jma.fetch_amedas_map(ts)
                 ncs.write_hour(ts, data)
                 conn.execute("INSERT OR REPLACE INTO ingest_log VALUES ('map_hour', ?, ?)",
                              (key, now.isoformat()))
