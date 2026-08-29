@@ -2,11 +2,15 @@
 """アメダス 10 分値のアーカイブ化。生の JSON を NetCDF-4 へ封入する。
 
 役割分担:
-    収集 … workers/amedas/worker.js（Cloudflare Worker）が 10 分ごとに
-           気象庁から取得し、**加工せずそのまま** R2 へ置く
-    封入 … このスクリプト（tgsvr）が R2 から拾って NetCDF へまとめる。
-           netCDF4 / numpy を使う処理は Workers の CPU 10ms・メモリ 128MB に
-           載らないので、重い側はすべてここで行う
+    収集 … このスクリプト（tgsvr）が気象庁から取得する。**Cloudflare の cron は
+           使わない**。いつ何を取るかを決めるのは tgsvr 側に一本化する
+           （日付の切り替わりや取りこぼしの追跡を 1 箇所に集めるため）。
+           重い取得を肩代わりさせたいときは workers/amedas-point を tgsvr から
+           呼ぶ。あちらも cron を持たず、tgsvr の指示で動く
+    封入 … このスクリプトが NetCDF へまとめる。netCDF4 / numpy を使う処理は
+           Workers の CPU 10ms・メモリ 128MB に載らないので、すべてここで行う
+
+    AMEDAS_R2_BASE を指すと、気象庁ではなく R2 のミラーから取る。
 
 
 気象庁の map JSON は **約 10 日で消える**（実測: 10 日前 200 / 11 日前 404）。
