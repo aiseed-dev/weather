@@ -52,6 +52,7 @@ etrn から後追いできるのは日別・時別の気温と降水だけで、
 from __future__ import annotations
 
 import calendar
+import argparse
 import json
 import os
 import shutil
@@ -477,7 +478,15 @@ def write_headers() -> None:
 
 
 def main() -> int:
-    dry = "--dry-run" in sys.argv
+    # sys.argv を直接見ていたため、--help でも知らない引数でも素通りして
+    # 本番の取得が走っていた（2026-08-29 に実際に踏んだ）。取得は外向きの
+    # 操作なので、打ち間違いで走らないよう引数をきちんと解釈する。
+    ap = argparse.ArgumentParser(
+        description="アメダス 10 分値を複製し、半月ごとに NetCDF へ封入する")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="取得も書き込みもせず、何をするかだけ見る")
+    args = ap.parse_args()
+    dry = args.dry_run
     OUT.mkdir(parents=True, exist_ok=True)
 
     try:

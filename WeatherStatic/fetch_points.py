@@ -25,10 +25,17 @@
     子 … 担当エリアの地点数ぶんの fetch ＋ put 1。最大エリア 47 で 48
     親 … 子の呼び出し数。1 回 45 まで。64 エリアなので 2 回に分けて呼ぶ
 
-資格情報
-    親 Worker の合言葉は WEATHER_WORKER_TOKEN、R2 の公開ベースは
-    AMEDAS_R2_BASE。どちらも環境変数か ~/.config/weather/points.env から
-    読む。値は表示しない。
+資格情報と URL
+    WEATHER_WORKER_URL   親 Worker。既定の *.workers.dev で足りる
+    WEATHER_WORKER_TOKEN 呼び出しの合言葉
+    AMEDAS_R2_BASE       R2 の公開ベース。**取り寄せる場合だけ**要る
+    環境変数か ~/.config/weather/points.env から読む。値は表示しない。
+
+R2 に独自ドメインは要らない
+    Worker → R2 はバインディングで書くので、ドメインが無くても収集は動く。
+    ドメインが要るのは、ブラウザや Flet が HTTP で読みに行くときだけ。
+    tgsvr が引き戻す必要も本来は無い（R2 から端末が直接読む）。--pull-only を
+    使わなければ取り寄せは飛ばせる。
 
 使い方
     python fetch_points.py                 # 最新スロットを取りに行く
@@ -226,6 +233,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="アメダス地点別 10 分値を集める")
     ap.add_argument("--day", metavar="YYYYMMDD", help="対象日（既定は最新スロットの日）")
     ap.add_argument("--hour", metavar="HH", help="3 時間ブロック（00/03/…/21）")
+    ap.add_argument("--pull", action="store_true",
+                    help="R2 から tgsvr へ取り寄せる（既定はしない。"
+                         "端末が R2 を直接読むなら不要）")
     ap.add_argument("--pull-only", action="store_true", help="Worker は起こさず取り寄せるだけ")
     ap.add_argument("--dry-run", action="store_true", help="何をするかだけ見る")
     args = ap.parse_args()
@@ -248,18 +258,23 @@ def main() -> int:
             log(f"置けなかったエリア {len(failed)} 件: {'、'.join(failed[:8])}"
                 + ("…" if len(failed) > 8 else ""))
 
-    got = pull(day, hour, list(groups), args.dry_run)
     if not args.pull_only and slot is not None:
         fetch_extra(slot, args.dry_run)
+
+    # 取り寄せは既定で行わない。R2 に置いた時点で端末（Flet・ブラウザ）は
+    # そこから直接読める。同じデータを tgsvr へ引き戻すのは二度手間で、
+    # R2 の公開ドメインも要求してしまう。
+    got = pull(day, hour, list(groups), args.dry_run) if args.pull else 0
     if args.dry_run:
-        log(f"[下見] {len(groups)} エリアを {POINT / day / hour}/ へ取り寄せる")
+        if args.pull or args.pull_only:
+            log(f"[下見] {len(groups)} エリアを {POINT / day / hour}/ へ取り寄せる")
         return 0
 
-    log(f"取り寄せ: {got} / {len(groups)} エリア → {POINT / day / hour}/")
-    # 1 エリアも取れなければ、次の段（蓄積・生成）に進ませない
-    if got == 0:
-        log("1 エリアも取れませんでした。R2 と Worker の状態を確認してください")
-        return 1
+    if args.pull or args.pull_only:
+        log(f"取り寄せ: {got} / {len(groups)} エリア → {POINT / day / hour}/")
+        if got == 0:
+            log("1 エリアも取れませんでした。R2 と Worker の状態を確認してください")
+            return 1
     return 1 if failed else 0
 
 
