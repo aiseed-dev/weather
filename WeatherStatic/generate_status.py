@@ -81,6 +81,24 @@ def load_slots(day: date) -> list[str]:
     return sorted(p.stem for p in MIRROR.glob(f"{day:%Y%m%d}*.json"))
 
 
+# 10 分値が無くて生成できなかった区画。空でなければ main は失敗を返す。
+SKIPPED: list[str] = []
+
+
+def skip_no_slots(section: str) -> None:
+    """生成を飛ばしたことを記録する。
+
+    黙って飛ばすと前回の生成物がそのまま残り、古い実況が公開され続ける。
+    2026-08-29 に実際に起きた: ミラーの cron が止まっていて 2 日前のページが
+    公開され、ヘッダの改修も当該ページだけ反映されなかった。
+    """
+    SKIPPED.append(section)
+    newest = sorted(p.stem for p in MIRROR.glob("*.json"))
+    where = f"手元の最新は {newest[-1]}" if newest else "ミラーが空"
+    log(f"{section}: 10 分値が無いため生成しない（{where}／"
+        f"fetch_amedas_mirror.py は動いていますか）")
+
+
 def region_of(prec_no: int | None) -> str:
     for key, _name, lo, hi in REGIONS:
         if prec_no is not None and lo <= prec_no <= hi:
@@ -109,7 +127,7 @@ def build_temperature(env: Environment, stations: dict) -> None:
     now = datetime.now(JST).replace(tzinfo=None)
     slots = load_slots(now.date()) or load_slots(now.date() - timedelta(days=1))
     if not slots:
-        log("10 分値が無いため気温の状況は生成しない（fetch_amedas_mirror.py が未実行?）")
+        skip_no_slots("気温の状況")
         return
     latest = slots[-1]
     snap = json.loads((MIRROR / f"{latest}.json").read_bytes())
@@ -180,7 +198,7 @@ def build_wind(env: Environment, stations: dict) -> None:
     now = datetime.now(JST).replace(tzinfo=None)
     slots = load_slots(now.date()) or load_slots(now.date() - timedelta(days=1))
     if not slots:
-        log("10 分値が無いため風の状況は生成しない")
+        skip_no_slots("風の状況")
         return
     latest = slots[-1]
     obs_time = datetime(*map(int, (latest[:4], latest[4:6], latest[6:8],
@@ -260,7 +278,7 @@ def _rank_page(env, stations, kind: str) -> None:
     now = datetime.now(JST).replace(tzinfo=None)
     slots = load_slots(now.date()) or load_slots(now.date() - timedelta(days=1))
     if not slots:
-        log(f"10 分値が無いため{kind}の状況は生成しない")
+        skip_no_slots({"precip": "降水", "snow": "積雪"}.get(kind, kind) + "の状況")
         return
     st = stations["stations"]
     a2c = stations["index"]["amedas_to_code"]
@@ -432,7 +450,7 @@ def build_station_pages(env: Environment, stations: dict) -> None:
     now = datetime.now(JST).replace(tzinfo=None)
     slots = load_slots(now.date()) or load_slots(now.date() - timedelta(days=1))
     if not slots:
-        log("10 分値が無いため地点ページは生成しない")
+        skip_no_slots("地点ページ")
         return
     day = slot_date(slots[-1])
     minutes = [slot_minutes(s) for s in slots]
@@ -573,6 +591,7 @@ def build_today_json(stations: dict) -> None:
     now = datetime.now(JST).replace(tzinfo=None)
     slots = load_slots(now.date()) or load_slots(now.date() - timedelta(days=1))
     if not slots:
+        skip_no_slots("地点別 JSON")
         return
     day = slot_date(slots[-1])
     st = stations["stations"]
@@ -659,6 +678,11 @@ def main() -> int:
     if only in (None, "lab"):
         build_today_json(stations)
         build_lab(env)
+
+    if SKIPPED:
+        log(f"生成できなかった区画が {len(SKIPPED)} 件: {'、'.join(SKIPPED)}")
+        log("  前回の生成物が残っています。このまま公開すると古い実況が出ます。")
+        return 1
     return 0
 
 
