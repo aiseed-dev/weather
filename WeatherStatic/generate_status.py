@@ -31,12 +31,13 @@ from zoneinfo import ZoneInfo
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from weatherlib.filters import FILTERS
+from weatherlib import pointstore
 from weatherlib.svgchart import intraday_svg, trend_svg
 # 平年値の読み方（daily は月キー・日は月内添字）は generate.py に正しい実装がある
 from generate import normal_daily, climate_targets, station_slug
 
 BASE = Path(__file__).resolve().parent
-MIRROR = BASE / "public_amedas" / "map"
+# 10 分値は地点別（エリア束）で入る。pointstore が map JSON と同じ形に直す
 MASTER = BASE / "master"
 PUBLIC = BASE / "public"
 
@@ -78,7 +79,7 @@ def slot_minutes(name: str) -> int:
 
 def load_slots(day: date) -> list[str]:
     """その日の 10 分値スロット名を古い順に返す。"""
-    return sorted(p.stem for p in MIRROR.glob(f"{day:%Y%m%d}*.json"))
+    return pointstore.available_slots(day)
 
 
 # 10 分値が無くて生成できなかった区画。空でなければ main は失敗を返す。
@@ -93,8 +94,9 @@ def skip_no_slots(section: str) -> None:
     公開され、ヘッダの改修も当該ページだけ反映されなかった。
     """
     SKIPPED.append(section)
-    newest = sorted(p.stem for p in MIRROR.glob("*.json"))
-    where = f"手元の最新は {newest[-1]}" if newest else "ミラーが空"
+    newest = pointstore.latest_slot(date.today()) or pointstore.latest_slot(
+        date.today() - timedelta(days=1))
+    where = f"手元の最新は {newest}" if newest else "ミラーが空"
     log(f"{section}: 10 分値が無いため生成しない（{where}／"
         f"fetch_amedas_mirror.py は動いていますか）")
 
@@ -130,7 +132,7 @@ def build_temperature(env: Environment, stations: dict) -> None:
         skip_no_slots("気温の状況")
         return
     latest = slots[-1]
-    snap = json.loads((MIRROR / f"{latest}.json").read_bytes())
+    snap = pointstore.slot_view(latest)
     obs_time = datetime(*map(int, (latest[:4], latest[4:6], latest[6:8],
                                    latest[8:10], latest[10:12])))
 
@@ -161,7 +163,7 @@ def build_temperature(env: Environment, stations: dict) -> None:
 
     # 当日の 10 分値推移（主要都市）。気象庁の同名ページには無い粒度
     series, minutes = [], [slot_minutes(s) for s in slots]
-    cache = {s: json.loads((MIRROR / f"{s}.json").read_bytes()) for s in slots}
+    cache = {s: pointstore.slot_view(s) for s in slots}
     for (label, key), color in zip(GRAPH_CITIES, GRAPH_COLORS):
         vals = []
         for s in slots:
@@ -209,7 +211,7 @@ def build_wind(env: Environment, stations: dict) -> None:
     # 当日の最大風速はここまでの全スロットから拾う
     peak: dict[str, tuple[int, int, str]] = {}     # amedas -> (風速x10, 風向, 時刻)
     for s in slots:
-        snap = json.loads((MIRROR / f"{s}.json").read_bytes())
+        snap = pointstore.slot_view(s)
         for amedas, entry in snap.items():
             e = entry.get("wind")
             if not (isinstance(e, list) and len(e) >= 2
@@ -221,7 +223,7 @@ def build_wind(env: Environment, stations: dict) -> None:
                 dv = d[0] if isinstance(d, list) and d[0] is not None else 0
                 peak[amedas] = (v, dv, f"{s[8:10]}:{s[10:12]}")
 
-    snap = json.loads((MIRROR / f"{latest}.json").read_bytes())
+    snap = pointstore.slot_view(latest)
     rows = []
     for amedas, entry in snap.items():
         e = entry.get("wind")
@@ -298,13 +300,13 @@ def _rank_page(env, stations, kind: str) -> None:
     # 主要素を持つ直近のスロットまで遡る。
     latest, snap = None, None
     for name in reversed(slots[-7:]):
-        d = json.loads((MIRROR / f"{name}.json").read_bytes())
+        d = pointstore.slot_view(name)
         if any(cols[0][0] in e for e in d.values()):
             latest, snap = name, d
             break
     if snap is None:
         latest = slots[-1]
-        snap = json.loads((MIRROR / f"{latest}.json").read_bytes())
+        snap = pointstore.slot_view(latest)
     obs_time = datetime(*map(int, (latest[:4], latest[4:6], latest[6:8],
                                    latest[8:10], latest[10:12])))
 
@@ -463,7 +465,7 @@ def build_station_pages(env: Environment, stations: dict) -> None:
     # 1 周だけ読んで、地点 × 要素の系列に組み替える
     series: dict[str, dict[str, list]] = {}
     for j, s_name in enumerate(slots):
-        snap = json.loads((MIRROR / f"{s_name}.json").read_bytes())
+        snap = pointstore.slot_view(s_name)
         for amedas, entry in snap.items():
             per = series.setdefault(amedas, {})
             for key, _label, mul, _unit, _kind in LAB_ELEMENTS:
@@ -601,7 +603,7 @@ def build_today_json(stations: dict) -> None:
     # 1 周だけ読んで全要素を同時に振り分ける（144 回 × 要素数の再読込を避ける）
     acc: dict[str, dict[str, dict]] = {k: {} for k, _, _, _, _ in LAB_ELEMENTS}
     for j, s in enumerate(slots):
-        snap = json.loads((MIRROR / f"{s}.json").read_bytes())
+        snap = pointstore.slot_view(s)
         for amedas, entry in snap.items():
             m = None
             for key, _label, mul, _unit, _kind in LAB_ELEMENTS:

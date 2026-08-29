@@ -29,6 +29,7 @@ import csv
 import json
 import math
 import random
+import shutil
 import sqlite3
 import warnings
 import sys
@@ -44,7 +45,8 @@ BASE = Path(__file__).resolve().parent
 STORE = BASE / "store"
 MASTER = BASE / "master"
 DATA = BASE / "data"
-MIRROR = BASE / "public_amedas" / "map"
+POINT = BASE / "public_amedas" / "point"
+EXTRA = BASE / "public_amedas" / "extra"
 ADOC = BASE / "stations" / "amedastable.adoc"
 
 
@@ -355,31 +357,106 @@ def write_data(master: dict, dates: list[date], rng: random.Random) -> None:
 
 
 def write_mirror(master: dict, rng: random.Random, slots: int = 8) -> None:
-    """アメダスの 10 分値。generate_status.py が読む。"""
-    MIRROR.mkdir(parents=True, exist_ok=True)
-    for p in MIRROR.glob("*.json"):
-        p.unlink()
+    """アメダスの 10 分値を**地点別・エリア束**の形で置く。
+
+    本番と同じ形にしておかないとテストにならない。Worker が R2 に置き、
+    tgsvr が取り寄せたあとの姿を再現する:
+
+        public_amedas/point/{YYYYMMDD}/{HH}/{area_code}.json
+        中身は {アメダス番号: {時刻(14桁): {要素: [値, 品質]}}}
+
+    エリアは master/area_map.json が正だが、テストでは作らないので
+    アメダス番号の上 2 桁（府県予報区）で束ねる。束ね方が本番と違っても、
+    読む側は「その日のエリア束を全部見る」ので結果は変わらない。
+    """
+    for d in (POINT, EXTRA):
+        if d.exists():
+            shutil.rmtree(d)
+    st = master["stations"]
     now = datetime.now().replace(second=0, microsecond=0)
     now = now.replace(minute=now.minute // 10 * 10)
-    st = master["stations"]
+
+    # {日付: {ブロック: {エリア: {番号: {時刻: 値}}}}}
+    tree: dict[str, dict[str, dict[str, dict[str, dict]]]] = {}
     for k in range(slots):
         t = now - timedelta(minutes=10 * (slots - 1 - k))
-        snap = {}
+        day, block, key = f"{t:%Y%m%d}", f"{t.hour // 3 * 3:02d}", f"{t:%Y%m%d%H%M}00"
         for s in st.values():
             temp = seasonal(t.timetuple().tm_yday, s["lat"]) / 10 + rng.uniform(-2, 2)
-            snap[s["amedas"]] = {
+            area = s["amedas"][:2]
+            (tree.setdefault(day, {}).setdefault(block, {})
+                 .setdefault(area, {}).setdefault(s["amedas"], {}))[key] = {
+                # 対でない素の整数。pointstore が除くことの確認も兼ねる
+                "prefNumber": int(area), "observationNumber": int(s["amedas"][2:]),
                 "temp": [round(temp, 1), 0],
                 "humidity": [rng.randrange(35, 95), 0],
                 "pressure": [round(rng.uniform(995, 1020), 1), 0],
+                "normalPressure": [round(rng.uniform(1000, 1025), 1), 0],
                 "precipitation10m": [round(max(0.0, rng.gauss(0, 0.6)), 1), 0],
                 "precipitation1h": [round(max(0.0, rng.gauss(0, 2.0)), 1), 0],
                 "wind": [round(rng.uniform(0, 12), 1), 0],
                 "windDirection": [rng.randrange(0, 17), 0],
                 "gust": [round(rng.uniform(2, 25), 1), 0],
                 "sun10m": [rng.randrange(0, 11), 0],
+                "maxTemp": [round(temp + rng.uniform(0, 4), 1), 0],
+                "minTemp": [round(temp - rng.uniform(0, 4), 1), 0],
             }
-        (MIRROR / f"{t:%Y%m%d%H%M}.json").write_text(
-            json.dumps(snap, ensure_ascii=False), encoding="utf-8")
+
+    # map 由来の補完分。地点別に無い要素（積雪・天気）はこちらから来る。
+    # weather は正時のスロットにだけ入れる（実測 2026-08-29: 正時 150 地点 /
+    # 非正時 0 地点）。欠測＝キーごと無い、を再現しておく。
+    n_extra = 0
+    for k in range(slots):
+        t = now - timedelta(minutes=10 * (slots - 1 - k))
+        key = f"{t:%Y%m%d%H%M}"
+        ex = {}
+        for s_ in st.values():
+            vals = {}
+            if t.minute == 0:
+                vals["weather"] = [rng.choice([100, 200, 300]), 0]
+            # 積雪は冬だけ。夏は要素ごと来ない
+            if t.month in (12, 1, 2, 3) and s_["lat"] > 36:
+                vals["snow"] = [rng.randrange(0, 80), 0]
+                vals["snow24h"] = [rng.randrange(0, 30), 0]
+            if vals:
+                ex[s_["amedas"]] = vals
+        if ex:
+            d = EXTRA / key[:8]
+            d.mkdir(parents=True, exist_ok=True)
+            (d / f"{key}.json").write_text(json.dumps(ex, ensure_ascii=False),
+                                           encoding="utf-8")
+            n_extra += 1
+
+    n = 0
+    for day, blocks in tree.items():
+        for block, areas in blocks.items():
+            out = POINT / day / block
+            out.mkdir(parents=True, exist_ok=True)
+            for area, stations in areas.items():
+                (out / f"{area}.json").write_text(
+                    json.dumps(stations, ensure_ascii=False), encoding="utf-8")
+                n += 1
+    return n, n_extra
+
+
+def write_area_map(master: dict) -> int:
+    """エリア対応表。fetch_points.py が「どのエリアに何地点あるか」を引く。
+
+    本番は build_area_map.py が振興局と予報区から作るが、テストでは
+    アメダス番号の上 2 桁（府県予報区）で束ねる。束ね方が本番と違っても、
+    1 エリアの地点数が上限内かどうかを試すには足りる。
+    """
+    out = {}
+    for s_ in master["stations"].values():
+        area = s_["amedas"][:2]
+        out[s_["amedas"]] = {"area": area, "pref": s_["pref"], "name": s_["name"],
+                             "lat": s_["lat"], "lon": s_["lon"], "alt": s_["alt"],
+                             "type": s_["type"]}
+    MASTER.mkdir(parents=True, exist_ok=True)
+    (MASTER / "area_map.json").write_text(json.dumps(
+        {"note": "TESTDATA", "source": "TESTDATA", "count": len(out), "stations": out},
+        ensure_ascii=False), encoding="utf-8")
+    return len({v["area"] for v in out.values()})
 
 
 def looks_real() -> bool:
@@ -427,14 +504,17 @@ def main() -> int:
     fill_station_meta(master)
     write_normals(master)
     write_data(master, dates, rng)
-    write_mirror(master, rng)
+    n_area, n_extra = write_mirror(master, rng)
+    n_groups = write_area_map(master)
 
     nc = (STORE / "observations.nc").stat().st_size
     print(f"テストデータを作りました（作り物です。実データではありません）")
     print(f"  地点 {len(codes)} / 日数 {args.days}（{dates[0]} 〜 {dates[-1]}）")
     print(f"  store/observations.nc  {nc:,} bytes")
     print(f"  master/normals/        {len(codes)} 件")
-    print(f"  public_amedas/map/     {len(list(MIRROR.glob('*.json')))} スロット")
+    print(f"  public_amedas/point/   {n_area} エリア束（{n_groups} エリア）")
+    print(f"  master/area_map.json   {n_groups} エリア")
+    print(f"  public_amedas/extra/   {n_extra} スロット（map 由来の補完分）")
     print(f"\n次: ./.venv/bin/python generate.py")
     return 0
 

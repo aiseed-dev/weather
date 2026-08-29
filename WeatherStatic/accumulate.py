@@ -7,7 +7,9 @@
 cron で 1 日数回実行する。7 日窓で動くため、数日実行が止まっても欠測しない。
 
 処理:
-  1. アメダス map JSON（毎正時・全 1286 地点・過去 7 日分）→ temp/precip1h/sun1h
+  1. 地点別 10 分値（毎正時・全 1286 地点・過去 7 日分）→ temp/precip1h/sun1h
+     取得は Worker が行い R2 経由でローカルへ届く。ここでは読むだけで、
+     気象庁へは取りに行かない（収集の入口を 1 本にする）
   2. mdrr 確定値 CSV（最高・最低、過去 7 日分）→ tmax/tmin（official・品質つき）
        毎回再取得し、値が変わっていたら訂正として correction_log に記録
   3. 日集計 → tavg（1〜24 時の毎正時 24 回平均）・precip・sun
@@ -27,7 +29,7 @@ from zoneinfo import ZoneInfo
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)  # netCDF4×numpy2.5 の内部警告
 
-from weatherlib import jma
+from weatherlib import jma, pointstore
 from weatherlib.ncstore import NcStore
 from weatherlib.store import open_store
 from weatherlib.storelock import store_lock
@@ -53,7 +55,7 @@ def now_jst() -> datetime:
     return datetime.now(JST).replace(tzinfo=None)
 
 
-# ---------------------------------------------------------------- 1. map JSON → hourly
+# ------------------------------------------------------- 1. 地点別 10 分値 → hourly
 
 def ingest_map_hours(conn, ncs: NcStore) -> tuple[int, int]:
     now = now_jst()
@@ -70,7 +72,9 @@ def ingest_map_hours(conn, ncs: NcStore) -> tuple[int, int]:
         key = ts.strftime("%Y-%m-%dT%H:00")
         if key not in done:
             try:
-                data = jma.fetch_amedas_map(ts)
+                data = pointstore.hourly_view(ts)
+                if not data:
+                    raise LookupError("404")   # そのスロットがまだ届いていない
                 ncs.write_hour(ts, data)
                 conn.execute("INSERT OR REPLACE INTO ingest_log VALUES ('map_hour', ?, ?)",
                              (key, now.isoformat()))

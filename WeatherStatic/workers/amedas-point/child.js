@@ -24,13 +24,18 @@
  * 文字列に直すと UTF-8 の復号と再符号化で 2 往復ぶん余計に食う。
  *
  * R2 レイアウト:
- *   point/{YYYYMMDD}/{area_code}.json
+ *   point/{YYYYMMDD}/{HH}/{area_code}.json
  *
  * **日付を最上位に置く。** 半月分を NetCDF へ封入したあと生 JSON を消す運用で、
  * 日付が上なら 1 階層の削除で済む。
  *
- * 3 時間ファイル（{YYYYMMDD}_{HH}.json）は 1 日 8 本あるが、**同じ日の分は
- * 1 本にまとめて置く**。日をまたがない限り上書きで済み、日別の扱いが単純になる。
+ * **3 時間ブロック（HH = 00/03/…/21）もキーに残す。** 日単位のキーに書くと、
+ * 15 時台の取得が 12 時台までの内容を消してしまう。まとめて 1 本にするには
+ * 既存を読んで併合することになるが、190KB の JSON.parse は CPU 10ms に
+ * 載らない。ブロックごとに分けておけば、上書きだけで正しく貯まる。
+ *
+ * 大きさ（実測 2026-08-29 / 東京 44132）: 1 スロット約 528 バイト × 18 スロット
+ * ＝ 1 地点 1 ブロック約 9.5KB。エリア 1 本は平均 190KB・最大 450KB。
  */
 
 const JMA = "https://www.jma.go.jp/bosai/amedas/data/point";
@@ -95,7 +100,7 @@ async function handle(env, area, stations, day, hour) {
   // 内容を消してしまう（気象庁側の一時的な不調で全滅することがある）
   if (tally.stored === 0) return { area, ...tally, written: 0 };
 
-  await env.AMEDAS.put(`point/${day}/${area}.json`, combine(parts), {
+  await env.AMEDAS.put(`point/${day}/${hour}/${area}.json`, combine(parts), {
     httpMetadata: {
       contentType: "application/json; charset=utf-8",
       // 進行中のブロックは上書きされ続けるので短命にする
