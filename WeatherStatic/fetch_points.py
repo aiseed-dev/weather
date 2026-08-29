@@ -34,9 +34,13 @@
 
 資格情報と URL
     WEATHER_WORKER_URL   Worker の URL。既定の *.workers.dev で足りる
-    WEATHER_WORKER_TOKEN 呼び出しの合言葉
+    WEATHER_WORKER_TOKEN 呼び出しの合言葉。Worker 側の secret と同じ値
     AMEDAS_R2_BASE       R2 の公開ベース。**取り寄せる場合だけ**要る
-    環境変数か ~/.config/weather/points.env から読む。値は表示しない。
+
+    環境変数か ~/.config/cloudflare/pages.env から読む。値は表示しない。
+    tgsvr には既に pages.env があるので、そこに 2 行足せばよい。
+    デプロイ側（dev）の資格情報は ~/.config/cloudflare/worker.env に分けてある
+    （Worker のデプロイは Pages と違う権限が要るため。deploy_worker.py 参照）。
 
 R2 に独自ドメインは要らない
     Worker → R2 はバインディングで書くので、ドメインが無くても収集は動く。
@@ -68,7 +72,7 @@ BASE = Path(__file__).resolve().parent
 MASTER = BASE / "master"
 POINT = BASE / "public_amedas" / "point"
 EXTRA = BASE / "public_amedas" / "extra"
-ENV_FILE = Path.home() / ".config" / "weather" / "points.env"
+ENV_FILE = Path.home() / ".config" / "cloudflare" / "pages.env"
 
 LATEST_TIME = "https://www.jma.go.jp/bosai/amedas/data/latest_time.txt"
 MAP = "https://www.jma.go.jp/bosai/amedas/data/map/{ts}.json"
@@ -86,7 +90,7 @@ def log(msg: str) -> None:
 
 
 def load_env() -> None:
-    """~/.config/weather/points.env の KEY=VALUE を環境へ。値は表示しない。"""
+    """~/.config/cloudflare/pages.env の KEY=VALUE を環境へ。値は表示しない。"""
     if not ENV_FILE.is_file():
         return
     for line in ENV_FILE.read_text(encoding="utf-8").splitlines():

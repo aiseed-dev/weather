@@ -194,15 +194,15 @@ D1."）。地点ごとに置くと fetch N ＋ put N ＝ 2N になり 25 地点�
 
 | 対象 | コマンド |
 |------|----------|
-| サイト | `release.py --publish`（手元から） |
-| 収集 Worker | `TOKEN=... cf-publish worker deploy . --secret TOKEN --workers-dev` |
+| サイト | `python WeatherStatic/release.py --publish`（手元から） |
+| 収集 Worker | `python WeatherStatic/deploy_worker.py --apply` |
 | アメダスミラー | `cf-publish r2 sync WeatherStatic/public_amedas weather-amedas` |
 | 予報パック | `cf-publish r2 sync ~/wxpub/forecast weather-forecast/forecast --delete` |
 
-Worker のデプロイは `workers/amedas-point/` で実行する。`--secret TOKEN` は
-**同名の環境変数から読まれ、値は表示されない**（対話入力ではない）。
-`--workers-dev` を付けると公開 URL が出るので、それを tgsvr の
-`~/.config/weather/points.env` に `WEATHER_WORKER_URL` として置く。
+`deploy_worker.py` はどのディレクトリから実行してもよい。既定は下見で、
+`--apply` を付けたときだけ上げる。合言葉がまだ無ければ `--init-token` で作る
+（値は表示しない）。デプロイ後に `workers.dev` の URL を拾って `worker.env` に
+書き戻し、tgsvr へ足す 2 行を表示する。
 
 R2 バケット `weather-amedas` は `wrangler.toml` に書いてあるので、無ければ
 cf-publish が作る（トークンに `Workers R2 Storage: Edit` が要る）。
@@ -217,13 +217,30 @@ Flet が HTTP で読みに行くときだけ。
 
 ## 資格情報の置き場所（値は書かない）
 
-| 場所 | ファイル | 用途 |
+| 場所 | ファイル | 中身 |
 |------|----------|------|
-| dev | `~/.config/cloudflare/pages.env` | Pages 公開（`Pages:Edit`） |
-| tgsvr | `~/.config/cloudflare/pages.env` | データ用（R2 同期） |
-| tgsvr | `~/.config/weather/points.env` | `WEATHER_WORKER_URL` と `WEATHER_WORKER_TOKEN` |
+| dev | `~/.config/cloudflare/pages.env` | サイト公開用（`Pages:Edit`） |
+| dev | `~/.config/cloudflare/worker.env` | Worker のデプロイ用（`Workers Scripts: Edit` ＋ `Workers R2 Storage: Edit`）と `WEATHER_WORKER_TOKEN` |
+| tgsvr | `~/.config/cloudflare/pages.env` | データ用（R2 同期）＋ `WEATHER_WORKER_URL` と `WEATHER_WORKER_TOKEN` |
 
 権限は用途で分ける。tgsvr のトークンに `Pages:Edit` を持たせない。
+Worker のデプロイは Pages と要る権限が違うので `worker.env` に分ける。
+
+**二種類の秘密を混ぜない。**
+
+- Cloudflare API トークン … デプロイする権限。アカウントを操作できる
+- `WEATHER_WORKER_TOKEN` … tgsvr だけが Worker を呼べるようにする合言葉
+
+後者に前者を流用しない。合言葉は tgsvr の設定と Worker の環境の両方に置かれ、
+呼び出しのたびに HTTP ヘッダで飛ぶ。漏れたときに失うものを「その Worker を
+呼べる」だけに留める。
+
+**`worker.env` を tgsvr へ丸ごと配らない。** 向こうの `pages.env` には
+向こうの資格情報が入っている。足すのは `WEATHER_WORKER_URL` と
+`WEATHER_WORKER_TOKEN` の 2 行だけ。
+
+Worker 側の secret と tgsvr が送る値は同じでなければならない。手で二度打つと
+食い違うので、`deploy_worker.py` が `worker.env` の値をそのまま secret にする。
 
 ## 障害時・再開
 

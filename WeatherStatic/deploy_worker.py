@@ -14,15 +14,17 @@
     環境の両方に置かれ、呼び出しのたびに HTTP ヘッダで飛ぶ。漏れたときに
     失うものを「その Worker を呼べる」だけに留める。
 
-読む場所（先に見つかったものを使う。値は表示しない）
-    Cloudflare 資格情報 … 環境変数 → ~/.config/cloudflare/worker.env
-                          → cf-publish 既定（~/.config/cloudflare/pages.env）
-    合言葉              … 環境変数 → ~/.config/cloudflare/worker.env
-                          → ~/.config/weather/points.env
+置き場所（値は表示しない）
+    dev   ~/.config/cloudflare/worker.env  デプロイ用の資格情報と合言葉
+    tgsvr ~/.config/cloudflare/pages.env   合言葉と Worker の URL
+                                           （fetch_points.py が読む）
 
     Worker のデプロイには Pages 用と違う権限（Workers Scripts: Edit、
-    バケット作成には Workers R2 Storage: Edit）が要るので、トークンを
-    分ける場合は worker.env に置く。
+    バケット作成には Workers R2 Storage: Edit）が要るので、worker.env に
+    分けて置く。無ければ cf-publish が既定の pages.env を読む。
+
+    **worker.env を tgsvr へ丸ごと配らない。** 向こうの pages.env には
+    向こうの資格情報が入っている。足すのは 2 行だけ。
 
     合言葉は Worker 側の secret と tgsvr が送る値が**同じでなければならない**。
     手で二度打つと食い違うので、ここで読んだものをそのまま secret にする。
@@ -43,10 +45,13 @@ BASE = Path(__file__).resolve().parent
 WORKER_DIR = BASE / "workers" / "amedas-point"
 VENV = BASE / ".venv" / "bin" / "cf-publish"
 
-# Worker 用の資格情報。Pages 用とは権限が違うので分けて置ける
+# Worker 用。Cloudflare の資格情報（デプロイ権限）と合言葉をここに置く。
+# Pages 用とは要る権限が違うので分けてある。
 CF_ENV = Path.home() / ".config" / "cloudflare" / "worker.env"
-# tgsvr に配る設定。合言葉と Worker の URL が入る
-ENV_FILE = Path.home() / ".config" / "weather" / "points.env"
+# tgsvr 側で fetch_points.py が読むファイル。**丸ごと配らない** —
+# 向こうの pages.env には向こうの資格情報が入っているので、
+# WEATHER_WORKER_URL と WEATHER_WORKER_TOKEN の 2 行だけを足す。
+REMOTE_ENV = "~/.config/cloudflare/pages.env"
 
 TOKEN_KEY = "WEATHER_WORKER_TOKEN"
 URL_KEY = "WEATHER_WORKER_URL"
@@ -57,7 +62,7 @@ def log(msg: str) -> None:
     print(f"[deploy] {msg}", flush=True)
 
 
-def read_env_file(path: Path = ENV_FILE) -> dict[str, str]:
+def read_env_file(path: Path = CF_ENV) -> dict[str, str]:
     """KEY=VALUE を読む。値はここでも呼び出し側でも表示しない。"""
     if not path.is_file():
         return {}
@@ -74,14 +79,11 @@ def find_token() -> tuple[str | None, str]:
     """合言葉と、それをどこから読んだか。値は返すが表示はしない。"""
     if os.environ.get(TOKEN_KEY):
         return os.environ[TOKEN_KEY], "環境変数"
-    for path in (CF_ENV, ENV_FILE):
-        v = read_env_file(path).get(TOKEN_KEY)
-        if v:
-            return v, str(path)
-    return None, ""
+    v = read_env_file(CF_ENV).get(TOKEN_KEY)
+    return (v, str(CF_ENV)) if v else (None, "")
 
 
-def write_env_file(values: dict[str, str], path: Path = ENV_FILE) -> None:
+def write_env_file(values: dict[str, str], path: Path = CF_ENV) -> None:
     """KEY=VALUE を書き戻す。値は表示しない。パーミッションは 0600。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     body = "".join(f"{k}={v}\n" for k, v in values.items())
@@ -98,9 +100,8 @@ def init_token() -> int:
     values = read_env_file()
     values[TOKEN_KEY] = secrets.token_urlsafe(32)
     write_env_file(values)
-    log(f"{TOKEN_KEY} を作って {ENV_FILE} に書きました（値は表示しません）")
-    log("  同じファイルを tgsvr にも置いてください。Worker と tgsvr で"
-        "同じ値である必要があります")
+    log(f"{TOKEN_KEY} を作って {CF_ENV} に書きました（値は表示しません）")
+    log(f"  デプロイ後、tgsvr の {REMOTE_ENV} にも同じ値を足してください")
     return 0
 
 
@@ -121,7 +122,7 @@ def deploy(apply: bool) -> int:
 
     token, where = find_token()
     if not token:
-        log(f"{TOKEN_KEY} がありません（環境変数 / {CF_ENV} / {ENV_FILE}）")
+        log(f"{TOKEN_KEY} がありません（環境変数 か {CF_ENV}）")
         log("  作るには: python WeatherStatic/deploy_worker.py --init-token")
         return 1
     log(f"合言葉: {where} から読みました（値は表示しません）")
@@ -170,9 +171,11 @@ def deploy(apply: bool) -> int:
         if values.get(URL_KEY) != url:
             values[URL_KEY] = url
             write_env_file(values)
-            log(f"{URL_KEY} を {ENV_FILE} に書きました")
-        log("  同じファイルを tgsvr にも置いてください:")
-        log(f"    scp {ENV_FILE} tgsvr:.config/weather/points.env")
+            log(f"{URL_KEY} を {CF_ENV} に書きました")
+        # ファイルごと配ると向こうの資格情報を潰すので、2 行だけ足させる
+        log(f"  tgsvr の {REMOTE_ENV} に次の 2 行を足してください（値は各自で）:")
+        log(f"    {URL_KEY}={url}")
+        log(f"    {TOKEN_KEY}=<{CF_ENV} と同じ値>")
     else:
         log("公開 URL を読み取れませんでした。上の出力を確認してください")
 
@@ -185,7 +188,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="アメダス収集 Worker をデプロイする")
     ap.add_argument("--apply", action="store_true", help="実際に上げる（既定は下見）")
     ap.add_argument("--init-token", action="store_true",
-                    help=f"{TOKEN_KEY} を作って {ENV_FILE} に書く（値は表示しない）")
+                    help=f"{TOKEN_KEY} を作って {CF_ENV} に書く（値は表示しない）")
     args = ap.parse_args()
     return init_token() if args.init_token else deploy(args.apply)
 
