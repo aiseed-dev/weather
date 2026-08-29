@@ -1,27 +1,34 @@
 /**
- * アメダス地点別データの取得（子）。**1 エリア分を 1 ファイルにまとめて** R2 へ置く。
+ * アメダス地点別データの取得。**1 エリア分を 1 ファイルにまとめて** R2 へ置く。
  *
- * ステートレスにしてあるのが要点。担当エリアを引数で受けるので、同じスクリプトを
- * 何度でも並列に呼べる（エリア数だけデプロイする必要がない）。
+ * tgsvr から呼ばれる。cron は持たない。いつ・何を取るかを決めるのは tgsvr 側に
+ * 寄せる（日付の切り替わりや取りこぼしの追跡が 1 箇所で済む）。Worker は
+ * 「重い取得を肩代わりする手足」に徹する。
  *
- * なぜ地点ごとではなくエリアごとに置くか
- * --------------------------------------
- * 1. **サブリクエストは 50/実行**。R2 の put もこれに数えられる
- *    （"A subrequest is any request a Worker makes using the Fetch API or to
- *    Cloudflare services like R2, KV, or D1."）。地点ごとに置くと
- *    fetch N + put N = 2N になり、25 地点で頭打ちになる。
- *    まとめれば fetch N + put 1 で、最大エリア 47 地点でも 48 で収まる。
- * 2. **R2 の Class A（書き込み）は月 100 万回**。進行中の 3 時間ブロックは
- *    10 分ごとに上書きされるので、地点ごとだと 1,286 × 144 × 30 ＝ 月 556 万回で
- *    無料枠を大きく超える。エリア単位なら 64 × 144 × 30 ＝ 月 27.6 万回。
- * 3. **読み方に合う**。気象庁の「◯◯県の観測データ」のように、県内の全地点を
- *    一覧するのが主な使い方。その画面がファイル 1 本で作れる。
+ * なぜ 1 本か（以前は親子 2 本だった）
+ * ------------------------------------
+ * 親子に分けたのは「1 実行あたりサブリクエスト 50」に 1,286 地点が収まらな
+ * かったため。地点ごとに R2 へ置いていた頃の制約で、**エリア単位にまとめた
+ * 時点で 1 エリア＝最大 48（fetch 47 ＋ put 1）**になり、分ける理由が消えた。
+ *
+ * 加えて cf-publish 0.3.1 に Service Binding の対応が無く、親が子を呼ぶ形は
+ * この道具ではデプロイできない。1 本なら tgsvr がエリアごとに呼ぶだけで済み、
+ * 結果もエリア単位で返るので、失敗したエリアだけ呼び直せる。
+ *
+ * 数の勘定（無料枠）
+ * ------------------
+ *   サブリクエスト 50/実行 … R2 の put も数に入る
+ *     ("A subrequest is any request a Worker makes using the Fetch API or to
+ *      Cloudflare services like R2, KV, or D1.")
+ *     1 エリア最大 47 地点 → fetch 47 ＋ put 1 ＝ 48
+ *   実行 10 万/日 … 64 エリア × 144 回 ＝ 9,216/日
+ *   R2 Class A 100 万/月 … 64 × 144 × 30 ＝ 27.6 万/月
+ *   CPU 10ms … JSON.parse はしない（下記）
  *
  * 本文は復号しない
  * ----------------
- * CPU は 10ms しかないので JSON.parse はしない。気象庁のペイロードを
- * バイト列のまま `{"11001":<生>,"16001":<生>}` と連結するだけにする。
- * 文字列に直すと UTF-8 の復号と再符号化で 2 往復ぶん余計に食う。
+ * 気象庁のペイロードをバイト列のまま `{"11001":<生>,"16001":<生>}` と連結する
+ * だけにする。文字列に直すと UTF-8 の復号と再符号化で 2 往復ぶん余計に食う。
  *
  * R2 レイアウト:
  *   point/{YYYYMMDD}/{HH}/{area_code}.json
@@ -36,11 +43,15 @@
  *
  * 大きさ（実測 2026-08-29 / 東京 44132）: 1 スロット約 528 バイト × 18 スロット
  * ＝ 1 地点 1 ブロック約 9.5KB。エリア 1 本は平均 190KB・最大 450KB。
+ *
+ * デプロイ（ユーザー実行。合言葉は環境変数から読まれ、表示されない）:
+ *   TOKEN=... cf-publish worker deploy . --secret TOKEN --workers-dev
  */
 
 const JMA = "https://www.jma.go.jp/bosai/amedas/data/point";
 const UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)";
 const CONCURRENCY = 6;      // Workers の同時接続上限に合わせる
+const MAX_STATIONS = 49;    // fetch N + put 1 ≤ 50
 
 const enc = new TextEncoder();
 
@@ -112,13 +123,19 @@ async function handle(env, area, stations, day, hour) {
 
 export default {
   /**
-   * 親からの呼び出し口。
-   *   POST /  {"day":"20260829","hour":"12",
-   *            "area":"011000","stations":["11001","11016", ...]}
+   * tgsvr からの呼び出し口。エリアと地点は**呼ぶ側が渡す** — Worker が
+   * 地点表を読みに行かないので、地点の増減も tgsvr の一存で反映できる
+   * （Worker の再デプロイが要らない）。
+   *
+   *   POST /fetch
+   *   {"day":"20260829","hour":"15","area":"岩手","stations":["33006", …]}
    */
   async fetch(request, env) {
-    if (request.method !== "POST") {
-      return new Response("method not allowed", { status: 405 });
+    if (request.method !== "POST" || new URL(request.url).pathname !== "/fetch") {
+      return new Response("not found", { status: 404 });
+    }
+    if (!env.TOKEN || request.headers.get("Authorization") !== `Bearer ${env.TOKEN}`) {
+      return new Response("forbidden", { status: 403 });
     }
     let body;
     try {
@@ -132,11 +149,16 @@ export default {
       return new Response("area と stations(配列) と day(YYYYMMDD) と hour(HH) が要る",
                           { status: 400 });
     }
-    // fetch は地点数、put は 1。50 を超える依頼は受けない（黙って欠けるより良い）
-    if (stations.length + 1 > 50) {
+    // 黙って欠けるより、受け取れない依頼は断る
+    if (stations.length > MAX_STATIONS) {
       return new Response(`地点が多すぎます（${stations.length}）。`
-                          + "サブリクエストは 1 実行 50 件まで", { status: 400 });
+                          + `fetch N + put 1 で 50 まで、つまり ${MAX_STATIONS} 地点まで`,
+                          { status: 400 });
     }
-    return Response.json({ ok: 1, ...await handle(env, area, stations, day, hour) });
+    try {
+      return Response.json({ ok: 1, ...await handle(env, area, stations, day, hour) });
+    } catch (e) {
+      return new Response(String(e), { status: 500 });
+    }
   },
 };

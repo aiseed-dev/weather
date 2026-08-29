@@ -7,7 +7,7 @@ r2-deployment.md）を参照。
 ## 日次 cron（WeatherStatic = 気温サイト）
 
 ```cron
-# 10分毎: アメダス地点別を集める（Worker を起こして R2 から取り寄せ、map から補完）
+# 10分毎: アメダス地点別を集める（エリアごとに Worker を呼ぶ。取り寄せはしない）
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_points.py >> $HOME/dev/weather/logs/points.log 2>&1
 # 日次 1:30: 統計の蓄積。前日ぶんの毎正時 map JSON と確定値 CSV から nc を作る
 30 1 * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python accumulate.py

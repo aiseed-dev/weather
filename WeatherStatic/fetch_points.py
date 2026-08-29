@@ -22,8 +22,12 @@
     Worker は呼ばれたぶんだけ働く。
 
 数の勘定（無料枠はサブリクエスト 50/実行。R2 の put も数に入る）
-    子 … 担当エリアの地点数ぶんの fetch ＋ put 1。最大エリア 47 で 48
-    親 … 子の呼び出し数。1 回 45 まで。64 エリアなので 2 回に分けて呼ぶ
+    Worker 1 実行 … 担当エリアの地点数ぶんの fetch ＋ put 1。最大 47 で 48
+    呼ぶ数 … エリア数（64）。同時 6 本まで。実行は 9,216/日（上限 10 万）
+
+    親子 2 本だったものを 1 本にした。分けた理由は 50 サブリクエストだったが、
+    エリア単位にまとめた時点で 1 エリアが収まる。結果もエリア単位で返るので、
+    失敗したエリアだけ呼び直せる。
 
 資格情報と URL
     WEATHER_WORKER_URL   親 Worker。既定の *.workers.dev で足りる
@@ -52,6 +56,7 @@ import sys
 import urllib.error
 import urllib.request
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -65,8 +70,8 @@ LATEST_TIME = "https://www.jma.go.jp/bosai/amedas/data/latest_time.txt"
 MAP = "https://www.jma.go.jp/bosai/amedas/data/map/{ts}.json"
 UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)"
 
-MAX_AREAS_PER_CALL = 45      # 親 1 実行のサブリクエスト上限に合わせる
-MAX_STATIONS_PER_AREA = 49   # 子 1 実行（fetch N + put 1 ≤ 50）
+MAX_STATIONS_PER_AREA = 49   # Worker 1 実行（fetch N + put 1 ≤ 50）
+PARALLEL = 6                 # 同時に呼ぶ数。tgsvr 側の礼儀として控えめに
 
 
 def log(msg: str) -> None:
@@ -114,49 +119,67 @@ def area_groups() -> dict[str, list[str]]:
     return {a: sorted(v) for a, v in sorted(groups.items())}
 
 
+def call_area(base: str, token: str, area: str, stations: list[str],
+              day: str, hour: str) -> dict:
+    """1 エリア分を Worker に取らせる。結果はエリア単位で返る。"""
+    body = json.dumps({"day": day, "hour": hour,
+                       "area": area, "stations": stations}).encode()
+    try:
+        return json.loads(http(f"{base}/fetch", data=body, headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"}))
+    except urllib.error.HTTPError as e:
+        detail = e.read()[:120].decode(errors="replace")
+        return {"area": area, "written": 0, "error": 1, "why": f"HTTP {e.code} {detail}"}
+    except Exception as e:
+        return {"area": area, "written": 0, "error": 1, "why": str(e)[:80]}
+
+
 def invoke(groups: dict[str, list[str]], day: str, hour: str,
-           dry: bool) -> list[str]:
-    """親 Worker を起こす。戻り値は置けなかったエリア。"""
+           dry: bool, retries: int = 1) -> list[str]:
+    """エリアごとに Worker を呼ぶ。戻り値は最後まで置けなかったエリア。
+
+    親子をやめて 1 本にしたので、呼ぶ数はエリア数（64）になる。結果が
+    エリア単位で返るため、失敗したものだけ呼び直せる。
+    """
     base = os.environ.get("WEATHER_WORKER_URL", "").rstrip("/")
     token = os.environ.get("WEATHER_WORKER_TOKEN", "")
-    # 下見では資格情報を要求しない。何をするかは値が無くても示せる
     if not dry and (not base or not token):
         sys.exit("WEATHER_WORKER_URL と WEATHER_WORKER_TOKEN が要ります"
                  f"（環境変数か {ENV_FILE}）")
 
-    items = [{"area": a, "stations": s} for a, s in groups.items()]
-    batches = [items[i:i + MAX_AREAS_PER_CALL]
-               for i in range(0, len(items), MAX_AREAS_PER_CALL)]
-    log(f"親を {len(batches)} 回呼ぶ（{len(items)} エリア / "
-        f"{sum(len(s) for s in groups.values())} 地点）")
     if dry:
-        for i, b in enumerate(batches, 1):
-            mx = max(len(a["stations"]) for a in b)
-            log(f"  [下見] {i} 回目: {len(b)} エリア（親のサブリクエスト {len(b)}／上限 45）"
-                f" 最大エリア {mx} 地点（子のサブリクエスト {mx + 1}／上限 50）")
+        mx = max(len(v) for v in groups.values())
+        big = max(groups, key=lambda a: len(groups[a]))
+        log(f"  [下見] {len(groups)} エリアを 1 つずつ呼ぶ（同時 {PARALLEL}）")
+        log(f"  [下見] 最大エリア {big} {mx} 地点 → サブリクエスト {mx + 1}／上限 50")
         log(f"  [下見] 設定: WORKER_URL={'あり' if base else 'なし'}"
             f" TOKEN={'あり' if token else 'なし'}")
         return []
 
+    pending = dict(groups)
     failed: list[str] = []
-    for i, b in enumerate(batches, 1):
-        body = json.dumps({"day": day, "hour": hour, "areas": b}).encode()
-        try:
-            res = json.loads(http(f"{base}/fetch", data=body, headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {token}"}))
-        except urllib.error.HTTPError as e:
-            log(f"  {i} 回目: 失敗 HTTP {e.code} {e.read()[:120].decode(errors='replace')}")
-            failed += [a["area"] for a in b]
-            continue
-        except Exception as e:
-            log(f"  {i} 回目: 失敗 {e}")
-            failed += [a["area"] for a in b]
-            continue
-        log(f"  {i} 回目: 置いた {res.get('written', 0)} エリア / "
-            f"取得 {res.get('stored', 0)} / 欠測 {res.get('missing', 0)} / "
-            f"失敗 {res.get('error', 0)}")
-        failed += res.get("failed") or []
+    for attempt in range(retries + 1):
+        if not pending:
+            break
+        if attempt:
+            log(f"置けなかった {len(pending)} エリアを呼び直す（{attempt}/{retries}）")
+        results: list[dict] = []
+        with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
+            futures = {pool.submit(call_area, base, token, a, st, day, hour): a
+                       for a, st in pending.items()}
+            for f in as_completed(futures):
+                results.append(f.result())
+
+        ok = [r for r in results if r.get("written")]
+        ng = [r for r in results if not r.get("written")]
+        log(f"  置いた {len(ok)} エリア / 取得 {sum(r.get('stored', 0) for r in results)} 地点"
+            f" / 欠測 {sum(r.get('missing', 0) for r in results)}"
+            f" / 失敗 {sum(r.get('error', 0) for r in results)}")
+        for r in ng[:5]:
+            log(f"    × {r['area']}: {r.get('why') or '1 地点も取れず'}")
+        pending = {r["area"]: groups[r["area"]] for r in ng if r["area"] in groups}
+        failed = list(pending)
     return failed
 
 
