@@ -7,17 +7,40 @@ r2-deployment.md）を参照。
 ## 日次 cron（WeatherStatic = 気温サイト）
 
 ```cron
-# 毎正時+10分: アメダス map JSON を蓄積（日平均の材料）
+# 10分毎: アメダス地点別を集める（Worker を起こして R2 から取り寄せ、map から補完）
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_points.py >> $HOME/dev/weather/logs/points.log 2>&1
+# 毎正時+10分: 蓄積（日平均の材料）。確定値 CSV は 1 日 1 巡だけ取りに行く
 10 * * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python accumulate.py
 # 10分毎: 現在値だけ更新（トップページが読む public/data/current.json）
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
-# 10分毎: 実況ページ（気温・風・Python グラフ工房）。fetch_amedas_mirror の後に回す
+# 10分毎: 実況ページ（気温・風・Python グラフ工房）。fetch_points の後に回す
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && ./.venv/bin/python generate_status.py >> $HOME/dev/weather/logs/status.log 2>&1
 # 毎時50分: 最新CSV・予報・現在天気 → サイト再生成
 52 * * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py && ./.venv/bin/python generate.py
 # 日次: 投票集計（Workers+KV 版。要 VOTES_KV_NAMESPACE_ID）
 15 1 * * *  cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python aggregate_votes.py --kv
 ```
+
+### 確定値 CSV をいつ取りに行くか
+
+気象庁の更新は 1 日 1 巡（[更新時刻](https://www.data.jma.go.jp/stats/data/mdrr/man/update_k.html)）。
+
+| 時刻 | 内容 |
+|------|------|
+| 1 時頃 | 10 分〜日ごとの値・前日までの順位値 |
+| 2 時頃 | 官署の速報値（前日まで） |
+| 3 時頃 | アメダスの速報値 |
+| 14 時頃 | 官署の確定値 |
+
+`accumulate.py` が取りに行くのは 3 日だけ。毎時 7 日ぶんを舐め直しても、
+増えるのは気象庁への負荷だけになる。
+
+- **前々日** … 必ず。3 時のアメダス速報値が出そろっている
+- **前日** … 手元に欠けがあるときだけ。1 時更新の直後は未確定が多い
+- **7 日前** … 一度だけの締め。この頃には値が落ち着く
+
+日次バッチより前に済ませる前提で、同じ日に二度は舐めない。値が変わっていれば
+`correction_log` に残る。
 
 ### 実況ページ（気象庁より高頻度）
 

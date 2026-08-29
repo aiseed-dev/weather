@@ -10,7 +10,9 @@ cron で 1 日数回実行する。7 日窓で動くため、数日実行が止�
   1. 地点別 10 分値（毎正時・全 1286 地点・過去 7 日分）→ temp/precip1h/sun1h
      取得は Worker が行い R2 経由でローカルへ届く。ここでは読むだけで、
      気象庁へは取りに行かない（収集の入口を 1 本にする）
-  2. mdrr 確定値 CSV（最高・最低、過去 7 日分）→ tmax/tmin（official・品質つき）
+  2. mdrr 確定値 CSV（最高・最低）→ tmax/tmin（official・品質つき）
+     取りに行くのは前々日・前日（必要なとき）・7 日前の 3 日だけ。
+     気象庁の更新が 1 日 1 巡なので、毎時舐め直しても意味がない
        毎回再取得し、値が変わっていたら訂正として correction_log に記録
   3. 日集計 → tavg（1〜24 時の毎正時 24 回平均）・precip・sun
 
@@ -30,7 +32,7 @@ from zoneinfo import ZoneInfo
 warnings.filterwarnings("ignore", category=DeprecationWarning)  # netCDF4×numpy2.5 の内部警告
 
 from weatherlib import jma, pointstore
-from weatherlib.ncstore import NcStore
+from weatherlib.ncstore import FILL, date_index, NcStore
 from weatherlib.store import open_store
 from weatherlib.storelock import store_lock
 
@@ -103,25 +105,53 @@ def ingest_map_hours(conn, ncs: NcStore) -> tuple[int, int]:
 
 # ---------------------------------------------------------------- 2. 確定値 CSV → daily
 
+def target_days(conn, ncs: NcStore, today: date) -> list[date]:
+    """確定値 CSV を取りに行く日を決める。
+
+    気象庁の更新は 1 日 1 巡（stats/data/mdrr/man/update_k.html）:
+        1 時頃  10 分〜日ごとの値・前日までの順位値
+        2 時頃  官署の速報値（前日まで）
+        3 時頃  アメダスの速報値
+        14 時頃 官署の確定値
+    毎時 7 日ぶんを舐め直しても、増えるのは気象庁への負荷だけになる。
+
+    取りに行くのは 3 日だけ:
+        前々日  必ず。3 時のアメダス速報値が出そろっている
+        前日    こちらに欠けがあるときだけ。1 時更新の直後は未確定が多い
+        7 日前  一度だけの締め。この頃には値が落ち着く
+    """
+    days = [today - timedelta(days=2), today - timedelta(days=7)]
+
+    # 前日は「必要か」を手元で見る。tmax か tmin が半分も入っていなければ取る
+    d1 = today - timedelta(days=1)
+    j = date_index(d1)
+    n_dates = ncs.ds.dimensions["date"].size
+    need = True
+    if j < n_dates:
+        got = 0
+        for f in ("tmax", "tmin"):
+            arr = ncs.ds[f][:, j]
+            got = max(got, int((arr != FILL).sum()))
+        need = got < ncs._nst() // 2
+        log(f"確定値 CSV: 前日 {d1} は {got} 地点ぶんあり → "
+            + ("取り直す" if need else "取らない"))
+    if need:
+        days.append(d1)
+    return sorted(set(days), reverse=True)
+
+
 def ingest_daily_csv(conn, ncs: NcStore) -> tuple[int, int]:
-    # 確定値 CSV の更新は 1 日 4 回（5・13・19・翌 1 時頃）のみ。
-    # 同じ更新スロット内での再取得は省略して気象庁への負荷を抑える。
     now = now_jst()
-    slot_hour = max((h for h in (1, 5, 13, 19) if now.hour >= h), default=None)
-    if slot_hour is None:   # 0 時台 → 前日の 19 時スロット
-        slot = (now - timedelta(days=1)).strftime("%Y-%m-%d") + "T19"
-    else:
-        slot = now.strftime("%Y-%m-%d") + f"T{slot_hour:02d}"
+    today = now.date()
+    # 1 日 1 巡。同じ日に二度舐めない（更新が 1 日 1 回なので意味がない）
+    sweep = today.isoformat()
     if conn.execute("SELECT 1 FROM ingest_log WHERE kind='daily_csv_sweep' AND key=?",
-                    (slot,)).fetchone():
-        log(f"確定値 CSV: スロット {slot} は取得済みのため省略")
+                    (sweep,)).fetchone():
+        log(f"確定値 CSV: {sweep} は取得済みのため省略")
         return 0, 0
 
-    today = now_jst().date()
     n_days = n_corr = 0
-
-    for i in range(1, WINDOW_DAYS + 1):
-        d = today - timedelta(days=i)
+    for d in target_days(conn, ncs, today):
         mmdd = d.strftime("%m%d")
         for url_tpl, field in ((jma.URL_MXTEM_DAY, "tmax"), (jma.URL_MNTEM_DAY, "tmin")):
             try:
@@ -161,7 +191,7 @@ def ingest_daily_csv(conn, ncs: NcStore) -> tuple[int, int]:
             time.sleep(CSV_INTERVAL)
         n_days += 1
     conn.execute("INSERT OR REPLACE INTO ingest_log VALUES ('daily_csv_sweep', ?, ?)",
-                 (slot, now_jst().isoformat()))
+                 (sweep, now_jst().isoformat()))
     conn.commit()
     return n_days, n_corr
 
