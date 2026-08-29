@@ -70,7 +70,11 @@ LATEST_TIME = "https://www.jma.go.jp/bosai/amedas/data/latest_time.txt"
 MAP = "https://www.jma.go.jp/bosai/amedas/data/map/{ts}.json"
 UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)"
 
-MAX_STATIONS_PER_AREA = 49   # Worker 1 実行（fetch N + put 1 ≤ 50）
+# 1 回の呼び出しで頼む地点数の上限。Worker のサブリクエストは
+# fetch N + get 1 + put 1 なので 48 まで可能だが、CPU 10ms に余裕を持たせて
+# 30 で切る。実データ（64 エリア / 1,286 地点）では 8 エリアだけが 2 回に
+# 分かれ、呼び出しは 64 → 72 回になる。
+CHUNK = 30
 PARALLEL = 6                 # 同時に呼ぶ数。tgsvr 側の礼儀として控えめに
 
 
@@ -113,10 +117,16 @@ def area_groups() -> dict[str, list[str]]:
     groups: dict[str, list[str]] = defaultdict(list)
     for amedas, rec in json.loads(p.read_text(encoding="utf-8"))["stations"].items():
         groups[rec["area"]].append(amedas)
-    over = {a: len(v) for a, v in groups.items() if len(v) > MAX_STATIONS_PER_AREA}
-    if over:
-        sys.exit(f"1 エリアの地点が多すぎます（上限 {MAX_STATIONS_PER_AREA}）: {over}")
     return {a: sorted(v) for a, v in sorted(groups.items())}
+
+
+def chunks_of(stations: list[str]) -> list[list[str]]:
+    """1 エリアを CHUNK 地点ずつに割る。端数が 1 件だけにならないよう均す。"""
+    n = -(-len(stations) // CHUNK)          # 切り上げ
+    if n <= 1:
+        return [stations]
+    size = -(-len(stations) // n)
+    return [stations[i:i + size] for i in range(0, len(stations), size)]
 
 
 def call_area(base: str, token: str, area: str, stations: list[str],
@@ -149,10 +159,17 @@ def invoke(groups: dict[str, list[str]], day: str, hour: str,
                  f"（環境変数か {ENV_FILE}）")
 
     if dry:
-        mx = max(len(v) for v in groups.values())
+        split = {a: len(chunks_of(v)) for a, v in groups.items() if len(chunks_of(v)) > 1}
+        calls = sum(len(chunks_of(v)) for v in groups.values())
         big = max(groups, key=lambda a: len(groups[a]))
-        log(f"  [下見] {len(groups)} エリアを 1 つずつ呼ぶ（同時 {PARALLEL}）")
-        log(f"  [下見] 最大エリア {big} {mx} 地点 → サブリクエスト {mx + 1}／上限 50")
+        mx = max(len(c) for v in groups.values() for c in chunks_of(v))
+        log(f"  [下見] {len(groups)} エリア → 呼び出し {calls} 回（同時 {PARALLEL}）")
+        if split:
+            log(f"  [下見] 分ける {len(split)} エリア: "
+                + "、".join(f"{a}×{n}" for a, n in list(split.items())[:6])
+                + ("…" if len(split) > 6 else ""))
+        log(f"  [下見] 最大 {mx} 地点（{big} は {len(groups[big])} 地点）"
+            f" → サブリクエスト {mx + 2}／上限 50")
         log(f"  [下見] 設定: WORKER_URL={'あり' if base else 'なし'}"
             f" TOKEN={'あり' if token else 'なし'}")
         return []
@@ -164,10 +181,26 @@ def invoke(groups: dict[str, list[str]], day: str, hour: str,
             break
         if attempt:
             log(f"置けなかった {len(pending)} エリアを呼び直す（{attempt}/{retries}）")
+
+        def run_area(area: str, stations: list[str]) -> dict:
+            """1 エリアを（必要なら分けて）順に呼ぶ。
+
+            **同一エリアの分割は順番に呼ぶ。** Worker は既存を GET して
+            併合するので、同じ鍵へ同時に書くと読み書きが交差して片方が消える。
+            """
+            tally = {"area": area, "stored": 0, "missing": 0, "error": 0,
+                     "written": 0, "kept": 0}
+            for part in chunks_of(stations):
+                r = call_area(base, token, area, part, day, hour)
+                for k in ("stored", "missing", "error", "written", "kept"):
+                    tally[k] += r.get(k, 0)
+                if r.get("why") and not tally.get("why"):
+                    tally["why"] = r["why"]
+            return tally
+
         results: list[dict] = []
         with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
-            futures = {pool.submit(call_area, base, token, a, st, day, hour): a
-                       for a, st in pending.items()}
+            futures = [pool.submit(run_area, a, st) for a, st in pending.items()]
             for f in as_completed(futures):
                 results.append(f.result())
 
