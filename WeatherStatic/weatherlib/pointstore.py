@@ -31,6 +31,17 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 POINT = BASE / "public_amedas" / "point"
 EXTRA = BASE / "public_amedas" / "extra"
+MAP = BASE / "public_amedas" / "map"
+
+# 地点別が無い間は map を見る（移行のための退避路）。
+#
+# 収集を地点別へ移す途中では、Worker のデプロイと R2 の用意が済むまで
+# 地点別が 1 件も無い。そこで止めると実況ページが作れなくなるので、
+# 従来の map ミラーがあればそれを使う。地点別が届き始めたら自動的に
+# そちらが優先される（同じ時刻に両方あれば地点別を採る）。
+#
+# この退避路は Worker が動き出したら不要になる。map ミラーを畳むときに
+# ここも消すこと。
 
 # 地点別エンドポイントに無い要素を map から補う。
 #
@@ -83,15 +94,23 @@ def load_area(path: Path) -> dict:
         return {}
 
 
+def map_files(day: date) -> list[Path]:
+    """退避路: 従来の map ミラー（1 スロット 1 ファイル）。"""
+    return sorted(MAP.glob(f"{day:%Y%m%d}*.json")) if MAP.is_dir() else []
+
+
 def available_slots(day: date) -> list[str]:
     """その日に値のある 10 分スロットを古い順に返す（YYYYMMDDHHMM）。
 
     map 時代の load_slots() と同じ戻り値の形にしてある。
+    地点別が無ければ map ミラーを見る（移行中の退避路）。
     """
     seen: set[str] = set()
     for p in area_files(day):
         for _amedas, series in load_area(p).items():
             seen.update(ts[:12] for ts in series)
+    if not seen:
+        seen = {p.stem[:12] for p in map_files(day)}
     return sorted(seen)
 
 
@@ -121,6 +140,16 @@ def slot_view(ts: str) -> dict[str, dict]:
             entry = series.get(key)
             if entry:
                 out[amedas] = {k: v for k, v in entry.items() if k not in NOT_ELEMENTS}
+
+    if not out:
+        # 退避路: 地点別がまだ無い期間は従来の map ミラーをそのまま使う
+        p = MAP / f"{key[:12]}.json"
+        if p.is_file():
+            try:
+                out = {a: {k: v for k, v in e.items() if k not in NOT_ELEMENTS}
+                       for a, e in _load(str(p), p.stat().st_mtime).items()}
+            except Exception:
+                out = {}
 
     # map 由来を重ねる。地点別に既にある要素は上書きしない（地点別が主）。
     # 地点別が 404 等で丸ごと欠けた地点も、map だけで拾えるようにする。
@@ -170,4 +199,13 @@ def station_series(amedas: str, day: date) -> dict[str, dict]:
         if series:
             for ts, entry in series.items():
                 out[ts] = {k: v for k, v in entry.items() if k not in NOT_ELEMENTS}
+    if not out:
+        # 退避路: map ミラーを 1 スロットずつ舐めて 1 地点ぶんを組み立てる
+        for p in map_files(day):
+            try:
+                e = _load(str(p), p.stat().st_mtime).get(amedas)
+            except Exception:
+                continue
+            if e:
+                out[p.stem] = {k: v for k, v in e.items() if k not in NOT_ELEMENTS}
     return dict(sorted(out.items()))
