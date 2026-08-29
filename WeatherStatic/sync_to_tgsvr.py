@@ -11,12 +11,13 @@
     stations/ を書き換えることはない。検知用の控え .amedastable.prev.adoc は
     .gitignore にあるため、送っても tgsvr 側の基準は保たれる。
 
-このファイル自身は送らない。tgsvr に置かなければ tgsvr では動かせない。
+手元専用の道具（このファイルと release.py）は送らない。向こうに置かなければ
+向こうでは動かせない。
 2026-08-28 に dev 向けのコマンド列を tgsvr のシェルに貼って tgsvr→tgsvr の
 rsync が走りかけたが、道具が向こうに無ければその事故は起こりようがない。
 
-tgsvr でしかできないこと（生成と Cloudflare への公開）は publish_site.py に
-分けてある。あちらは tgsvr で動かす前提なので、送る対象に入れてある。
+tgsvr でしかできないこと（実データでの生成と点検）は build_site.py。
+あちらは tgsvr で動かす前提なので、送る対象に入れてある。
 
 安全のための決まり
     - 既定は下見だけ。実際に送るのは --apply を付けたときだけ
@@ -38,7 +39,8 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent          # …/weather/WeatherStatic
 REPO = BASE.parent                              # …/weather
-SELF = Path(__file__).name                      # 自分は送らない
+# 手元でしか使わない道具は送らない。向こうに置かなければ向こうでは動かせない。
+DEV_ONLY = {Path(__file__).name, "release.py"}
 
 HOST = os.environ.get("WEATHER_SYNC_HOST", "tgsvr")
 DEST = os.environ.get("WEATHER_SYNC_PATH", "dev/weather/WeatherStatic")
@@ -69,7 +71,7 @@ def source_files() -> tuple[list[str], list[str]]:
         if not entry:
             continue
         rel = entry[len("WeatherStatic/"):]
-        if not rel or rel == SELF:
+        if not rel or rel in DEV_ONLY:
             continue
         if (BASE / rel).is_file():
             rels.append(rel)
@@ -169,8 +171,9 @@ def main() -> int:
     if not args.apply:
         print("\n下見だけです。送るには --apply を付けてください。")
     elif n:
-        print("\n送信は完了しました。生成と公開は向こうの publish_site.py で行います:")
-        print(f"    ssh {HOST} 'cd {DEST} && ./.venv/bin/python publish_site.py'")
+        print("\n送信は完了しました。次は向こうで生成:")
+        print(f"    ssh {HOST} 'cd {DEST} && ./.venv/bin/python build_site.py'")
+        print("  そのあと手元から公開: python release.py --publish")
     return 0
 
 
