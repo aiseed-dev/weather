@@ -41,7 +41,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from build_site import MIN_PAGES, fail, inspect, run
+from build_site import MIN_PAGES, fail, find_cf_publish, inspect, run
 
 BASE = Path(__file__).resolve().parent
 RELEASE = BASE / "release"
@@ -106,9 +106,7 @@ def main() -> int:
         return 0
 
     # --- ここから先は外向きの操作 ---
-    cf = BASE / ".venv" / "bin" / "cf-publish"
-    cmd = [str(cf) if cf.is_file() else "cf-publish",
-           str(RELEASE), "--project", args.project]
+    cmd = [find_cf_publish(), str(RELEASE), "--project", args.project]
     if args.dry_run:
         cmd.append("--dry-run")
     run("cf-publish" + ("（下見）" if args.dry_run else "（公開）"), cmd)

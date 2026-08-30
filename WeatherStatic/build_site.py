@@ -50,6 +50,20 @@ MAX_FILE_BYTES = 25 * 1024 * 1024
 MIN_PAGES = 500
 
 
+def find_cf_publish() -> str:
+    """cf-publish の場所。**実行中のインタプリタと同じ bin を先に見る。**
+
+    venv の場所を決め打ちすると、別の venv から呼んだときに古い cf-publish が
+    使われる。実際 tgsvr には venv が 2 つあり、片方だけ更新されていた
+    （2026-08-29: ~/dev/weather/.venv が 0.3.1、WeatherStatic/.venv が 0.3.0）。
+    """
+    here = Path(sys.executable).parent / "cf-publish"
+    if here.is_file():
+        return str(here)
+    from shutil import which
+    return which("cf-publish") or "cf-publish"
+
+
 def fail(*lines: str) -> int:
     """断る理由を出す。標準出力を先に流さないと、ログに落としたとき
     点検結果と理由の順序が入れ替わって読めなくなる。"""
@@ -116,9 +130,7 @@ def publish(project: str, dry: bool) -> int:
     サイトは 10 分ごとに更新されるので、生成だけして誰も上げない形は
     成り立たない。cron から --publish で呼ぶ。
     """
-    cf = BASE / ".venv" / "bin" / "cf-publish"
-    cmd = [str(cf) if cf.is_file() else "cf-publish",
-           "public", "--project", project]
+    cmd = [find_cf_publish(), "public", "--project", project]
     if dry:
         cmd.append("--dry-run")
     run("cf-publish" + ("（下見）" if dry else "（公開）"), cmd)

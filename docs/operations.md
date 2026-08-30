@@ -15,7 +15,7 @@
 |------|--------|--------|------|------|----------|
 | 速報 | Cloudflare Worker → R2 | 地点別 10 分値 | 10 分ごと | 実況ページ・Flet 版 | 実況が古くなる。10 日で取り返せなくなる |
 | 統計 | **tgsvr が直接** | map 毎正時 ＋ 確定値 CSV | 1 日 1 回（1 時以降） | `observations.nc` | 7 日以内の再開なら自力で埋まる |
-| 公開 | dev | tgsvr の生成物 | 手動 | Cloudflare Pages | サイトが更新されない |
+| 公開 | tgsvr | 自分の生成物 | 10 分ごと・毎時 | Cloudflare Pages | サイトが更新されない |
 
 **速報と統計を分けてある。** 10 分値は実況用の速報で、統計には使わない。
 分けていないと、10 分値の収集が止まったときに統計まで欠ける。
@@ -61,11 +61,11 @@ cd ~/dev/weather/WeatherStatic
 # 2. ソースを送って tgsvr で実データで確認
 ./.venv/bin/python sync_to_tgsvr.py            # 下見
 ./.venv/bin/python sync_to_tgsvr.py --apply
-ssh tgsvr 'cd dev/weather/WeatherStatic && ./.venv/bin/python build_site.py'
+ssh tgsvr 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py'
 
 # 3. tgsvr から Cloudflare へ
-ssh tgsvr 'cd dev/weather/WeatherStatic && ./.venv/bin/python build_site.py --dry-run'
-ssh tgsvr 'cd dev/weather/WeatherStatic && ./.venv/bin/python build_site.py --publish'
+ssh tgsvr 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --dry-run'
+ssh tgsvr 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --publish'
 ```
 
 そのあとは cron が 10 分ごと・毎時に同じことを行う。手順を踏むのは、
@@ -90,21 +90,21 @@ cron が止まっているときや、tgsvr を経由せず確かめたいとき
 
 ```cron
 # 10分毎: 地点別 10 分値を集める（速報）
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_points.py >> $HOME/dev/weather/logs/points.log 2>&1
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_points.py >> $HOME/dev/weather/logs/points.log 2>&1
 # 10分毎: 10 分値を複製し半月 NetCDF へ封入
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_amedas_mirror.py >> $HOME/dev/weather/logs/amedas_mirror.log 2>&1
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_amedas_mirror.py >> $HOME/dev/weather/logs/amedas_mirror.log 2>&1
 # 10分毎: 現在値だけ更新（トップページが読む public/data/current.json）
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
 # 10分毎: 実況ページを作って公開。収集の後に回す
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && ./.venv/bin/python generate_status.py && ./.venv/bin/python build_site.py --skip-build --publish >> $HOME/dev/weather/logs/status.log 2>&1
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && ../.venv/bin/python generate_status.py && ../.venv/bin/python build_site.py --skip-build --publish >> $HOME/dev/weather/logs/status.log 2>&1
 # 毎時50分: 最新CSV・予報・現在天気 → サイト再生成 → 公開
-52 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py && ./.venv/bin/python build_site.py --publish >> $HOME/dev/weather/logs/publish.log 2>&1
+52 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_data.py && ../.venv/bin/python build_site.py --publish >> $HOME/dev/weather/logs/publish.log 2>&1
 # 日次 1:30: 統計の蓄積（気象庁の 1 時更新の後）
-30 1 * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python accumulate.py >> $HOME/dev/weather/logs/accumulate.log 2>&1
+30 1 * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python accumulate.py >> $HOME/dev/weather/logs/accumulate.log 2>&1
 # 毎月2日 03:30: 前月分を etrn 確定値で置換
-30 3 2 * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python backfill_etrn.py --from $(date -d "-1 month" +\%Y-\%m) --to $(date -d "-1 month" +\%Y-\%m) --force >> $HOME/dev/weather/logs/etrn_monthly.log 2>&1
+30 3 2 * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python backfill_etrn.py --from $(date -d "-1 month" +\%Y-\%m) --to $(date -d "-1 month" +\%Y-\%m) --force >> $HOME/dev/weather/logs/etrn_monthly.log 2>&1
 # 日次: 投票集計（Workers+KV 版。要 VOTES_KV_NAMESPACE_ID）
-15 1 * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python aggregate_votes.py --kv
+15 1 * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python aggregate_votes.py --kv
 ```
 
 **ロックはスクリプト自身が取る。** `observations.nc` は「コピー → 更新 →
@@ -245,16 +245,15 @@ Flet が HTTP で読みに行くときだけ。
 | 場所 | ファイル | 中身 |
 |------|----------|------|
 | dev | `pages.env` | Pages（既存のまま） |
-| dev | `worker.env` | Workers ＋ R2。`deploy_worker.py` がこちらを先に見る |
-| tgsvr | `pages.env` | Pages ＋ R2 |
+| dev | `worker.env` | Workers ＋ R2 ＋ `WEATHER_WORKER_TOKEN`。`deploy_worker.py` がこちらを先に見る |
+| tgsvr | `pages.env` | Pages ＋ R2 ＋ `WEATHER_WORKER_URL` ＋ `WEATHER_WORKER_TOKEN` |
 
 `worker.env` を分けるのは、既存の Pages トークンに Workers の権限を足したく
 ない場合の措置。1 つにまとめてもよい（その場合 `pages.env` に全権限）。
 
-Worker の合言葉は Cloudflare の資格情報ではない。tgsvr だけが Worker を
-呼べるようにするためのもので、`~/.config/weather/points.env` に
-`WEATHER_WORKER_URL` と `WEATHER_WORKER_TOKEN` として置く。API トークンを
-ここに流用してはいけない（呼び出しのたびに HTTP ヘッダで飛ぶ）。
+**Cloudflare まわりの設定は `~/.config/cloudflare/` に集める。** tgsvr では
+`pages.env` に資格情報と合わせて Worker の URL と合言葉を置く
+（`fetch_points.py` がここを読む）。
 
 **二種類の秘密を混ぜない。**
 

@@ -43,7 +43,6 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
 WORKER_DIR = BASE / "workers" / "amedas-point"
-VENV = BASE / ".venv" / "bin" / "cf-publish"
 
 # Worker 用。Cloudflare の資格情報（デプロイ権限）と合言葉をここに置く。
 # Pages 用とは要る権限が違うので分けてある。
@@ -106,13 +105,19 @@ def init_token() -> int:
 
 
 def find_cf_publish() -> str:
-    if VENV.is_file():
-        return str(VENV)
+    """cf-publish の場所。**実行中のインタプリタと同じ bin を先に見る。**
+
+    venv の場所を決め打ちすると、別の venv から呼んだときに古い cf-publish が
+    使われる。実際 tgsvr には venv が 2 つあり、片方だけ更新されていた。
+    """
+    here = Path(sys.executable).parent / "cf-publish"
+    if here.is_file():
+        return str(here)
     from shutil import which
     found = which("cf-publish")
     if not found:
         sys.exit("cf-publish が見つかりません。"
-                 f"{VENV} を作るか、PATH に入れてください")
+                 "この python と同じ venv に入れるか、PATH に入れてください")
     return found
 
 
