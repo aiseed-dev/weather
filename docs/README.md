@@ -5,6 +5,7 @@
 | | 内容 |
 |---|---|
 | [operations.md](operations.md) | **個人開発気象統計の運用手順書。**観測の収集からサイト公開まで。cron・障害時の対処・無料枠の実測 |
+| [web.md](web.md) | **サイトの構成。**ページ一覧・テンプレート・CSS・ブラウザ側で動くもの |
 | [operations-forecast.md](operations-forecast.md) | 数値予報の配信、観測データの R2 配布、世界天気 |
 | [r2-deployment.md](r2-deployment.md) | R2 バケットの作成と公開設定 |
 
@@ -34,5 +35,8 @@ WeatherStatic 固有の設計は同ディレクトリ内にある。
 
 ## 最初に読むもの
 
-動かすだけなら [operations.md](operations.md) の「全体の形」と「公開の手順」。
+**動かす**なら [operations.md](operations.md) の「全体の形」と「公開の手順」。
 この 2 節で、何がどこで動いていて、どうすれば公開できるかが分かる。
+
+**サイトを直す**なら [web.md](web.md)。どのページをどのテンプレートが作り、
+何がサーバー側で何がブラウザ側かが分かる。
