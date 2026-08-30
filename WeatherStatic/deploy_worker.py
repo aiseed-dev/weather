@@ -15,16 +15,19 @@
     失うものを「その Worker を呼べる」だけに留める。
 
 置き場所（値は表示しない）
-    dev   ~/.config/cloudflare/worker.env  デプロイ用の資格情報と合言葉
-    tgsvr ~/.config/cloudflare/pages.env   合言葉と Worker の URL
-                                           （fetch_points.py が読む）
+    Cloudflare まわりは **1 マシン 1 ファイル**にする。
 
-    Worker のデプロイには Pages 用と違う権限（Workers Scripts: Edit、
-    バケット作成には Workers R2 Storage: Edit）が要るので、worker.env に
-    分けて置く。無ければ cf-publish が既定の pages.env を読む。
+        dev   ~/.config/cloudflare/pages.env  資格情報 ＋ WEATHER_WORKER_TOKEN
+        tgsvr ~/.config/cloudflare/pages.env  資格情報 ＋ 同じ TOKEN ＋ URL
 
-    **worker.env を tgsvr へ丸ごと配らない。** 向こうの pages.env には
-    向こうの資格情報が入っている。足すのは 2 行だけ。
+    このファイルは cf-publish が既定で読むので、資格情報をここから渡す必要は
+    ない（あちらが自分で読む）。渡すのは合言葉だけ。
+
+    dev のトークンには Pages に加えて Workers Scripts: Edit が要る
+    （バケットを作らせるなら Workers R2 Storage: Edit も）。
+
+    **pages.env を tgsvr へ丸ごう配らない。** 向こうには向こうの資格情報が
+    入っている。足すのは WEATHER_WORKER_URL と WEATHER_WORKER_TOKEN の 2 行。
 
     合言葉は Worker 側の secret と tgsvr が送る値が**同じでなければならない**。
     手で二度打つと食い違うので、ここで読んだものをそのまま secret にする。
@@ -44,17 +47,16 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 WORKER_DIR = BASE / "workers" / "amedas-point"
 
-# Worker 用。Cloudflare の資格情報（デプロイ権限）と合言葉をここに置く。
-# Pages 用とは要る権限が違うので分けてある。
-CF_ENV = Path.home() / ".config" / "cloudflare" / "worker.env"
+# Cloudflare まわりは 1 マシン 1 ファイル。cf-publish が既定で読む場所でもある
+# ので、資格情報はここから渡さなくてよい（あちらが自分で読む）。
+CF_ENV = Path.home() / ".config" / "cloudflare" / "pages.env"
 # tgsvr 側で fetch_points.py が読むファイル。**丸ごと配らない** —
-# 向こうの pages.env には向こうの資格情報が入っているので、
+# 向こうには向こうの資格情報が入っているので、
 # WEATHER_WORKER_URL と WEATHER_WORKER_TOKEN の 2 行だけを足す。
 REMOTE_ENV = "~/.config/cloudflare/pages.env"
 
 TOKEN_KEY = "WEATHER_WORKER_TOKEN"
 URL_KEY = "WEATHER_WORKER_URL"
-CF_KEYS = ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID")
 
 
 def log(msg: str) -> None:
@@ -137,23 +139,10 @@ def deploy(apply: bool) -> int:
     if not apply:
         cmd.append("--dry-run")
 
-    # 合言葉は同名の環境変数として渡す。引数に置くと ps で見えてしまう
+    # 合言葉は同名の環境変数として渡す。引数に置くと ps で見えてしまう。
+    # Cloudflare の資格情報は渡さない — cf-publish が CF_ENV を既定で読む。
     env = dict(os.environ, TOKEN=token)
-
-    # Cloudflare の資格情報。Worker のデプロイには Pages 用と違う権限が要るので、
-    # worker.env があればそちらを優先する。無ければ cf-publish が既定の
-    # pages.env を読む。
-    cf = read_env_file(CF_ENV)
-    supplied = [k for k in CF_KEYS if cf.get(k)]
-    if supplied:
-        env.update({k: cf[k] for k in supplied})
-        log(f"Cloudflare 資格情報: {CF_ENV} から {'・'.join(supplied)}")
-    elif any(os.environ.get(k) for k in CF_KEYS):
-        log("Cloudflare 資格情報: 環境変数")
-    else:
-        log("Cloudflare 資格情報: cf-publish の既定（~/.config/cloudflare/pages.env）")
-        log("  Worker のデプロイには Workers Scripts: Edit が要ります。"
-            "Pages 用のトークンでは足りません")
+    log(f"Cloudflare 資格情報: cf-publish が {CF_ENV} を読みます")
     log(("上げます" if apply else "下見します") + f": {WORKER_DIR.name}")
     r = subprocess.run(cmd, env=env, capture_output=True, text=True)
     out = (r.stdout or "") + (r.stderr or "")

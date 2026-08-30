@@ -38,9 +38,9 @@
     AMEDAS_R2_BASE       R2 の公開ベース。**取り寄せる場合だけ**要る
 
     環境変数か ~/.config/cloudflare/pages.env から読む。値は表示しない。
-    tgsvr には既に pages.env があるので、そこに 2 行足せばよい。
-    デプロイ側（dev）の資格情報は ~/.config/cloudflare/worker.env に分けてある
-    （Worker のデプロイは Pages と違う権限が要るため。deploy_worker.py 参照）。
+    Cloudflare まわりは 1 マシン 1 ファイルなので、既にある pages.env に
+    2 行足せばよい。合言葉は dev 側と同じ値でなければならない
+    （deploy_worker.py が dev の値をそのまま Worker の secret にする）。
 
 R2 に独自ドメインは要らない
     Worker → R2 はバインディングで書くので、ドメインが無くても収集は動く。
