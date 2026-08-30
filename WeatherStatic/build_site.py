@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
-"""site を生成して点検する。tgsvr で操作する道具（手元でも生成の確認に使える）。
-
-公開手順は dev(テストデータ) → tgsvr(実データ) → Cloudflare の 3 段。
-このスクリプトは 2 段目まで。Cloudflare へ上げるのは手元の release.py。
+"""site を生成し、点検して、Cloudflare Pages へ上げる。
 
     dev    make_testdata.py   作り物のデータで見た目を確かめる
     dev    sync_to_tgsvr.py   ソースを送る
-    tgsvr  build_site.py      実データで生成して点検する      ← これ
-    dev    release.py         生成物を取り寄せて Cloudflare へ
+    tgsvr  build_site.py      実データで生成・点検・公開      ← これ
+    dev    release.py         手元から公開する（臨時・確認用）
 
-なぜ公開まで持たないか
-    Cloudflare への送信は単なるアップロードで、tgsvr である必要がない。
-    tgsvr にも Cloudflare のトークンはあるが、あれはデータ用（観測値の R2 同期と
-    Worker 起動）。ここで Pages へ公開すると、そのトークンに Pages:Edit まで
-    持たせることになる。公開を手元に置けば、tgsvr のトークンはデータ用の権限に
-    絞ったままにできる。
+**定期公開はここが行う。** サイトは 10 分ごとに更新されるので、生成だけして
+誰も上げない形は成り立たない。cron から --publish で呼ぶ。そのため tgsvr の
+トークンには Pages:Edit が要る。
+
+release.py（手元から）は、tgsvr の生成物を取り寄せて上げる別経路。定期運用は
+こちらではなく build_site.py --publish。手元からの公開は、tgsvr を経由せずに
+確かめたいときや、cron が止まっているときの手当てに使う。
+
+点検を通らなければ公開しない
+    - index.html が無い / Cloudflare の上限（20,000 ファイル・25 MiB）超え
+    - ページ数が目安（500）を下回る（生成が途中で失敗している）
+    - master/stations.json の _meta.source が TESTDATA（作り物）
+    generate_status.py が 10 分値を見つけられず区画を飛ばした場合も、
+    向こうが終了コード 1 を返すのでここで止まる。古い実況は公開されない。
 
 使い方
-    python build_site.py               # 生成して点検
-    python build_site.py --skip-build  # 生成済みを点検するだけ
+    python build_site.py               # 生成して点検（公開しない）
+    python build_site.py --publish     # 生成・点検・公開（cron はこれ）
+    python build_site.py --dry-run     # 上げる中身を見る
+    python build_site.py --skip-build --publish   # 生成済みを公開
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +39,8 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 PUBLIC = BASE / "public"
 MASTER = BASE / "master"
+
+PROJECT = os.environ.get("WEATHER_CF_PROJECT", "weather")
 
 # Cloudflare Pages（無料枠）の制限。超えると公開が途中で失敗する
 MAX_FILES = 20_000
@@ -100,9 +110,29 @@ def inspect(public: Path = PUBLIC) -> dict:
     return {"pages": len(pages), "files": len(files), "problems": problems}
 
 
+def publish(project: str, dry: bool) -> int:
+    """Cloudflare Pages へ上げる。定期運用ではここまでが 1 続き。
+
+    サイトは 10 分ごとに更新されるので、生成だけして誰も上げない形は
+    成り立たない。cron から --publish で呼ぶ。
+    """
+    cf = BASE / ".venv" / "bin" / "cf-publish"
+    cmd = [str(cf) if cf.is_file() else "cf-publish",
+           "public", "--project", project]
+    if dry:
+        cmd.append("--dry-run")
+    run("cf-publish" + ("（下見）" if dry else "（公開）"), cmd)
+    return 0
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="site を生成して点検する")
+    ap = argparse.ArgumentParser(description="site を生成して点検し、必要なら公開する")
     ap.add_argument("--skip-build", action="store_true", help="生成を飛ばして点検だけ")
+    ap.add_argument("--publish", action="store_true",
+                    help="点検を通ったら Cloudflare Pages へ上げる（cron はこれ）")
+    ap.add_argument("--dry-run", action="store_true", help="公開はせず、上げる中身を見る")
+    ap.add_argument("--project", default=PROJECT,
+                    help=f"Pages プロジェクト名（既定 {PROJECT}）")
     args = ap.parse_args()
 
     source = data_source()
@@ -124,12 +154,19 @@ def main() -> int:
         return fail("", f"ページ数が {info['pages']} 件しかありません（目安 {MIN_PAGES} 件以上）。",
                     "  生成が途中で失敗している可能性があります。")
 
-    print("\n生成と点検が終わりました。")
+    if not (args.publish or args.dry_run):
+        print("\n生成と点検が終わりました。公開はしていません。")
+        if source == "TESTDATA":
+            print("  作り物のデータなので、これは公開できません（見た目の確認用）。")
+        else:
+            print("  公開するには --publish を付けてください。")
+        return 0
+
+    # --- ここから先は外向きの操作 ---
     if source == "TESTDATA":
-        print("  作り物のデータなので、これは公開できません（見た目の確認用）。")
-    else:
-        print("  公開は手元から: python release.py --publish")
-    return 0
+        return fail("", "作り物のデータで生成されています。公開しません。",
+                    "  実データのある環境で生成してから公開してください。")
+    return publish(args.project, args.dry_run)
 
 
 if __name__ == "__main__":

@@ -33,13 +33,18 @@ tgsvr は生産者であって配信者ではない。押し出したあとは�
 |------|------|----------|
 | dev | `make_testdata.py` | 作り物のデータを置く。見た目の確認用 |
 | dev | `sync_to_tgsvr.py` | ソースを送る。**自分と release.py は送らない** |
-| dev | `release.py` | tgsvr の生成物を取り寄せて Cloudflare へ |
+| dev | `deploy_worker.py` | Worker を Cloudflare へデプロイする |
+| dev | `release.py` | tgsvr の生成物を取り寄せて公開（臨時・確認用） |
 | tgsvr | `fetch_points.py` | Worker を呼んで 10 分値を集める（速報） |
 | tgsvr | `fetch_amedas_mirror.py` | 10 分値を複製し半月 NetCDF へ封入 |
 | tgsvr | `accumulate.py` | map 毎正時と確定値 CSV から `observations.nc` を作る（統計） |
 | tgsvr | `fetch_data.py` | 現在値・予報・現在天気 |
-| tgsvr | `build_site.py` | 生成して点検する（公開はしない） |
+| tgsvr | `build_site.py --publish` | 生成・点検・**定期公開**。cron はこれ |
 | Worker | `workers/amedas-point/` | 渡された地点を取り、渡された名前で R2 に 1 本置く |
+
+**定期公開は tgsvr が行う。** サイトは 10 分ごとに更新されるので、生成だけ
+して誰も上げない形は成り立たない。`release.py`（手元から）は臨時の経路で、
+tgsvr を経由せず確かめたいときや cron が止まっているときに使う。
 
 **Worker に判断を持たせない。** いつ・何を取るか、失敗をどう呼び直すかは
 すべて tgsvr が決める。Worker は重い取得を肩代わりする手足に徹する。
@@ -58,17 +63,20 @@ cd ~/dev/weather/WeatherStatic
 ./.venv/bin/python sync_to_tgsvr.py --apply
 ssh tgsvr 'cd dev/weather/WeatherStatic && ./.venv/bin/python build_site.py'
 
-# 3. 手元から Cloudflare へ
-./.venv/bin/python release.py                  # 取り寄せて点検（公開しない）
-./.venv/bin/python release.py --publish
+# 3. tgsvr から Cloudflare へ
+ssh tgsvr 'cd dev/weather/WeatherStatic && ./.venv/bin/python build_site.py --dry-run'
+ssh tgsvr 'cd dev/weather/WeatherStatic && ./.venv/bin/python build_site.py --publish'
 ```
 
-`release.py` は `_meta.source` が `TESTDATA` なら公開を拒む。ページ数が
-目安（500）を下回るときも拒む。生成が途中で失敗したものを上げないため。
+そのあとは cron が 10 分ごと・毎時に同じことを行う。手順を踏むのは、
+**コードを変えたとき**だけ。データの更新は cron に任せる。
 
-**公開は手元から行う。** tgsvr にも Cloudflare のトークンはあるが、あれは
-データ用（R2 同期と Worker 起動）。site の公開までそこでやると、同じ
-トークンに `Pages:Edit` まで持たせることになる。
+公開の前に点検を通る必要がある。`_meta.source` が `TESTDATA` なら拒む。
+ページ数が目安（500）を下回るときも拒む。生成が途中で失敗したものを
+上げないため。
+
+`release.py`（手元から）は臨時の経路。tgsvr の `public/` を取り寄せて上げる。
+cron が止まっているときや、tgsvr を経由せず確かめたいときに使う。
 
 `sync_to_tgsvr.py --stale` で「向こうにだけあるファイル」を調べられる。
 こちらで消したものが残っていると、古いコードからデプロイしてしまう。
@@ -87,10 +95,10 @@ ssh tgsvr 'cd dev/weather/WeatherStatic && ./.venv/bin/python build_site.py'
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_amedas_mirror.py >> $HOME/dev/weather/logs/amedas_mirror.log 2>&1
 # 10分毎: 現在値だけ更新（トップページが読む public/data/current.json）
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
-# 10分毎: 実況ページ。収集の後に回す
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && ./.venv/bin/python generate_status.py >> $HOME/dev/weather/logs/status.log 2>&1
-# 毎時50分: 最新CSV・予報・現在天気 → サイト再生成
-52 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py && ./.venv/bin/python generate.py
+# 10分毎: 実況ページを作って公開。収集の後に回す
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && ./.venv/bin/python generate_status.py && ./.venv/bin/python build_site.py --skip-build --publish >> $HOME/dev/weather/logs/status.log 2>&1
+# 毎時50分: 最新CSV・予報・現在天気 → サイト再生成 → 公開
+52 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_data.py && ./.venv/bin/python build_site.py --publish >> $HOME/dev/weather/logs/publish.log 2>&1
 # 日次 1:30: 統計の蓄積（気象庁の 1 時更新の後）
 30 1 * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python accumulate.py >> $HOME/dev/weather/logs/accumulate.log 2>&1
 # 毎月2日 03:30: 前月分を etrn 確定値で置換
@@ -217,14 +225,36 @@ Flet が HTTP で読みに行くときだけ。
 
 ## 資格情報の置き場所（値は書かない）
 
+**分ける軸はサービスではなくマシン。** トークンが漏れる単位はマシンなので、
+同じマシンに 3 つ置いても被害範囲は変わらない。各マシンが実際に行う操作から
+必要な権限を決める。
+
+| マシン | すること | 要る権限 |
+|--------|----------|----------|
+| dev | `deploy_worker.py`（Worker のデプロイ・バケット作成） | `Workers Scripts: Edit` ＋ `Workers R2 Storage: Edit` |
+| dev | `release.py`（臨時の公開・確認） | `Cloudflare Pages: Edit` |
+| tgsvr | `build_site.py --publish`（**定期公開**） | `Cloudflare Pages: Edit` |
+| tgsvr | `cf-publish r2 sync`（予報パック・過去観測） | `Workers R2 Storage: Edit` |
+
+**tgsvr にも `Pages:Edit` が要る。** サイトは 10 分ごとに更新されるので、
+定期公開は tgsvr が行う。手元からしか上げられない形にすると、dev の電源が
+入っているときしか site が更新されない。
+
+置き場所（`~/.config/cloudflare/`。cf-publish は `pages.env` を既定で読む）:
+
 | 場所 | ファイル | 中身 |
 |------|----------|------|
-| dev | `~/.config/cloudflare/pages.env` | サイト公開用（`Pages:Edit`） |
-| dev | `~/.config/cloudflare/worker.env` | Worker のデプロイ用（`Workers Scripts: Edit` ＋ `Workers R2 Storage: Edit`）と `WEATHER_WORKER_TOKEN` |
-| tgsvr | `~/.config/cloudflare/pages.env` | データ用（R2 同期）＋ `WEATHER_WORKER_URL` と `WEATHER_WORKER_TOKEN` |
+| dev | `pages.env` | Pages（既存のまま） |
+| dev | `worker.env` | Workers ＋ R2。`deploy_worker.py` がこちらを先に見る |
+| tgsvr | `pages.env` | Pages ＋ R2 |
 
-権限は用途で分ける。tgsvr のトークンに `Pages:Edit` を持たせない。
-Worker のデプロイは Pages と要る権限が違うので `worker.env` に分ける。
+`worker.env` を分けるのは、既存の Pages トークンに Workers の権限を足したく
+ない場合の措置。1 つにまとめてもよい（その場合 `pages.env` に全権限）。
+
+Worker の合言葉は Cloudflare の資格情報ではない。tgsvr だけが Worker を
+呼べるようにするためのもので、`~/.config/weather/points.env` に
+`WEATHER_WORKER_URL` と `WEATHER_WORKER_TOKEN` として置く。API トークンを
+ここに流用してはいけない（呼び出しのたびに HTTP ヘッダで飛ぶ）。
 
 **二種類の秘密を混ぜない。**
 
