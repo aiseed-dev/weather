@@ -44,6 +44,8 @@ DEV_ONLY = {Path(__file__).name, "release.py"}
 
 HOST = os.environ.get("WEATHER_SYNC_HOST", "tgsvr")
 DEST = os.environ.get("WEATHER_SYNC_PATH", "dev/weather/WeatherStatic")
+# 向こうの python。venv は repo 直下に 1 つ（WeatherStatic からは 1 つ上）
+REMOTE_PY = os.environ.get("WEATHER_SYNC_PY", "../.venv/bin/python")
 
 # 余分なファイルを探す範囲。運用データの置き場は見ない
 STALE_SCAN = ("templates", "assets", "weatherlib", "workers", "wwwroot", "tests")
@@ -171,9 +173,11 @@ def main() -> int:
     if not args.apply:
         print("\n下見だけです。送るには --apply を付けてください。")
     elif n:
-        print("\n送信は完了しました。次は向こうで生成:")
-        print(f"    ssh {HOST} 'cd {DEST} && ./.venv/bin/python build_site.py'")
-        print("  そのあと手元から公開: python release.py --publish")
+        print("\n送信は完了しました。次は向こうで生成して点検:")
+        print(f"    ssh {HOST} 'cd {DEST} && {REMOTE_PY} build_site.py'")
+        print("  問題なければ公開:")
+        print(f"    ssh {HOST} 'cd {DEST} && {REMOTE_PY} build_site.py --publish'")
+        print("  以後は cron が 10 分ごと・毎時に同じことを行う")
     return 0
 
 

@@ -185,7 +185,7 @@ def deploy(apply: bool) -> int:
         log("公開 URL を読み取れませんでした。上の出力を確認してください")
 
     log("次: ssh tgsvr 'cd dev/weather/WeatherStatic && "
-        "./.venv/bin/python fetch_points.py --dry-run'")
+        "../.venv/bin/python fetch_points.py --dry-run'")
     return 0
 
 

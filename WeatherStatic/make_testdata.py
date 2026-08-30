@@ -515,7 +515,8 @@ def main() -> int:
     print(f"  public_amedas/point/   {n_area} エリア束（{n_groups} エリア）")
     print(f"  master/area_map.json   {n_groups} エリア")
     print(f"  public_amedas/extra/   {n_extra} スロット（map 由来の補完分）")
-    print(f"\n次: ./.venv/bin/python generate.py")
+    # 実行中の python をそのまま案内する（venv を決め打ちしない）
+    print(f"\n次: {sys.executable} build_site.py")
     return 0
 
 
