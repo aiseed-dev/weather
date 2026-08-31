@@ -40,6 +40,12 @@ Web は「気象庁の観測をどこまで個人が扱えるか」の実証で�
 | [forecast-distribution.md](forecast-distribution.md) | 予報パックの配信設計 |
 | [forecast-charts.md](forecast-charts.md) | 予報図の描画 |
 
+利用者向けの文書は **Web が載せる**: `/App/`（紹介）と `/App/Develop/`
+（開発マニュアル）。テンプレートは
+[../WeatherStatic/templates/app/](../WeatherStatic/templates/app/) にあり、
+内容の正本はリポジトリの README / AGENTS / CLAUDE。向こうを変えたら
+ページも直す。
+
 ## 読み物
 
 | | 内容 |

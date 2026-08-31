@@ -1,0 +1,150 @@
+{#
+  AIseed Weather の開発マニュアル。/App/（紹介）の下に置く。
+
+  内容の正本はリポジトリの README.md / AGENTS.md / CLAUDE.md。ここは
+  「開発に参加する人がブラウザだけで全体像を掴める」ための写しなので、
+  向こうを変えたらこちらも直すこと。
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .app-sec { margin: 0 10px 26px; }
+    .app-sec h3 { font-size: 19px; border-left: 4px solid var(--accent);
+        padding-left: 10px; margin: 0 0 12px; }
+    .app-table { width: 100%; border-collapse: collapse; background: var(--card);
+        border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .app-table th, .app-table td { border-bottom: 1px solid var(--border);
+        padding: 9px 12px; font-size: 13.5px; text-align: left; vertical-align: top; }
+    .app-table th { background: var(--th-bg); color: var(--th-text); white-space: nowrap; }
+    .app-table tr:last-child td { border-bottom: none; }
+    .app-note { background: var(--panel); border: 1px solid var(--border);
+        border-left: 4px solid var(--accent); border-radius: 8px;
+        padding: 12px 16px; font-size: 13.5px; color: var(--muted); line-height: 1.7; }
+    .app-code { background: var(--panel); border: 1px solid var(--border);
+        border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+    .app-code pre { margin: 0; background: none; border: none; padding: 0;
+        font-size: 13px; color: var(--text); white-space: pre; }
+    .app-links a { display: inline-block; margin: 0 14px 8px 0; font-size: 14px; }
+    .app-badge { display: inline-block; background: var(--accent-light); color: var(--accent-dark);
+        border-radius: 999px; padding: 2px 11px; font-size: 12px; margin-right: 6px; }
+    .app-lede { margin: 14px 10px 22px; font-size: 15px; max-width: 46em; }
+    .app-kbd { font-family: ui-monospace, monospace; font-size: 12.5px;
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 5px; padding: 1px 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="clearfix">
+
+    <h2 style="margin: 16px 10px 4px;">AIseed Weather 開発マニュアル</h2>
+    <p class="app-lede">
+        <span class="app-badge">初期開発段階</span>
+        コードは AGPL-3.0-or-later で公開している。このページは開発に参加する
+        （あるいは自分用に改造する）人向けで、使い方は <a href="/App/">紹介ページ</a>にある。
+        内容の正本はリポジトリの README.md / AGENTS.md / CLAUDE.md。
+    </p>
+
+    <div class="app-sec">
+        <h3>環境構築</h3>
+        <p>環境はリポジトリの中に <span class="app-kbd">./.venv</span> として作る。
+           名前つきのグローバル環境にはしない。</p>
+        <div class="app-code"><pre>mamba env create --prefix ./.venv -f environment.yml
+mamba activate ./.venv
+python -m aiseed_weather.main</pre></div>
+        <p style="font-size: 13.5px; margin-top: 10px;">
+            パッケージは <strong>Miniforge / conda-forge</strong>（uv ではない）。
+            cartopy と cfgrib はネイティブ依存（PROJ・GEOS・ecCodes）を持ち、
+            pip だけで揃えるのが難しいため。
+            <span class="app-kbd">environment.yml</span> が開発環境の正本で、
+            <span class="app-kbd">pyproject.toml</span> は配布メタデータ。</p>
+    </div>
+
+    <div class="app-sec">
+        <h3>リポジトリの構成</h3>
+        <table class="app-table">
+            <tr><th>場所</th><th>中身</th></tr>
+            <tr><td>src/aiseed_weather/</td>
+                <td>アプリ本体。components（UI 部品）/ figures（描画）/
+                    models / products / services（データ取得）に分かれる。
+                    入口は main.py</td></tr>
+            <tr><td>.agents/skills/</td>
+                <td>領域ごとの開発ガイド 13 本（下記）</td></tr>
+            <tr><td>WeatherStatic/</td>
+                <td>Web サイト（個人開発気象統計）。アプリとはデータ基盤を共有する</td></tr>
+            <tr><td>docs/</td>
+                <td>運用手順・配信仕様。アプリが読むデータの形はここで決まる</td></tr>
+        </table>
+    </div>
+
+    <div class="app-sec">
+        <h3>進め方 — スキルを読んでから書く</h3>
+        <p>変更する領域に対応するスキル（<span class="app-kbd">.agents/skills/</span>）を
+           <strong>編集の前に読む</strong>。これが唯一のハードルール。
+           Flet の API 取り違えなど、実際に起きたバグはどれも読んでいれば防げた。</p>
+        <table class="app-table">
+            <tr><th>順</th><th>スキル</th><th>何のガイドか</th></tr>
+            <tr><td>1</td><td>aiseed-conventions</td><td>プロジェクト全体の決まりと想定利用者</td></tr>
+            <tr><td>2</td><td>flet-declarative / flet-component-basics</td><td>Flet 0.85+ の書き方（宣言的 UI・hooks）</td></tr>
+            <tr><td>3</td><td>user-action-fetch</td><td>いつデータを取ってよいか（全ビューに関係）</td></tr>
+            <tr><td>4</td><td>first-run-setup</td><td>初回起動と config.toml</td></tr>
+            <tr><td>5</td><td>ecmwf-data-access / climatology-analysis</td><td>ECMWF Open Data と ERA5（中核）</td></tr>
+            <tr><td>6</td><td>jma-data-access / open-meteo-access</td><td>気象庁・Open-Meteo</td></tr>
+            <tr><td>7</td><td>weather-rendering / chart-base-design</td><td>総観規模の描画と図の層構造</td></tr>
+            <tr><td>8</td><td>figure-export / data-flow</td><td>書き出しとデータの流れ</td></tr>
+        </table>
+    </div>
+
+    <div class="app-sec">
+        <h3>二つの設計原則</h3>
+        <table class="app-table">
+            <tr><th>1</th>
+                <td><strong>データソースは利用者が選ぶ。</strong>
+                    <span class="app-kbd">~/.config/aiseed-weather/config.toml</span> を
+                    起動前に編集する。アプリは勝手に選ばないし、設定 UI も出さない。
+                    気象庁だけは機能ごとに有効（公開・無料の API のため設定キー不要）</td></tr>
+            <tr><th>2</th>
+                <td><strong>取得は利用者の操作時だけ。</strong>
+                    ビューを開く・更新を押す・パラメータを変える。
+                    バックグラウンドポーリングなし、自動更新なし、先読みなし</td></tr>
+        </table>
+    </div>
+
+    <div class="app-sec">
+        <h3>データ層（それぞれ役割が違う）</h3>
+        <table class="app-table">
+            <tr><th>層</th><th>出所</th><th>役割</th></tr>
+            <tr><td>予報格子</td><td>ECMWF Open Data（AWS S3）</td><td>未来・地図ビュー</td></tr>
+            <tr><td>気候値・アノマリ</td><td>ERA5（AWS）</td><td>歴史的文脈。差別化の核</td></tr>
+            <tr><td>日本の現況</td><td>気象庁レーダー ＋ AMeDAS</td><td>「いま」のナウキャスト</td></tr>
+            <tr><td>地点予報</td><td>Open-Meteo</td><td>補助ビュー</td></tr>
+        </table>
+        <p class="app-note" style="margin-top: 12px;">
+            AMeDAS はこのサイトの裏で動く収集基盤（R2 ミラー）からも読める。
+            気象庁のサーバーに全員が直接取りに行かなくて済むようにするためのもの。
+            配信の形は <a href="/About/">このサイトについて</a>と docs/ を参照。</p>
+    </div>
+
+    <div class="app-sec">
+        <h3>ライセンスと帰属</h3>
+        <table class="app-table">
+            <tr><th>コード</th><td>AGPL-3.0-or-later</td></tr>
+            <tr><th>ECMWF・Open-Meteo のデータ</th><td>CC-BY-4.0。書き出す図に帰属を埋め込む</td></tr>
+            <tr><th>気象庁のデータ</th><td>出典: 気象庁ホームページ（加工した場合はその旨も）</td></tr>
+        </table>
+        <p style="font-size: 13.5px; margin-top: 10px;">
+            帰属表示は UI と書き出した図の両方に入る。ここは削らない。</p>
+    </div>
+
+    <div class="app-sec">
+        <h3>リンク</h3>
+        <p class="app-links">
+            <a href="https://github.com/aiseed-dev/weather">GitHub リポジトリ</a>
+            <a href="/App/">アプリの紹介</a>
+            <a href="/About/">このサイトについて</a>
+        </p>
+    </div>
+
+</div>
+{% endblock %}

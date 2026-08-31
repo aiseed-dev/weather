@@ -1313,10 +1313,16 @@ def build_forecast(env: Environment) -> None:
 
 
 def build_app(env: Environment) -> None:
-    """AIseed Weather（Flet アプリ）の紹介ページ。観測データを使わないので
-    fetch 層に依存せず、テンプレートだけで描ける。"""
+    """AIseed Weather（Flet アプリ）の紹介と開発マニュアル。観測データを
+    使わないので fetch 層に依存せず、テンプレートだけで描ける。
+
+    普通の人にはデスクトップ版を勧める位置づけなので、アプリの文書は
+    このサイトが載せる。内容の正本はリポジトリの README / AGENTS / CLAUDE。"""
     write("App/index.html", env.get_template("app/index.html").render(
         page_title="AIseed Weather — 天気図スタジオ",
+        nav_active="app", build_year=datetime.now().year))
+    write("App/Develop/index.html", env.get_template("app/develop.html").render(
+        page_title="AIseed Weather 開発マニュアル",
         nav_active="app", build_year=datetime.now().year))
 
 
@@ -1336,7 +1342,7 @@ def build_seo(env: Environment, stations: dict) -> None:
             "/Temperature/HighsList/", "/Temperature/LowsList/",
             "/Summer/Ranking/", "/Winter/LowestList/", "/Climate/",
             "/Stations/", "/Monthly/", "/Monthly/Latest/",
-            "/Precipitation/", "/App/", "/About/"]
+            "/Precipitation/", "/App/", "/App/Develop/", "/About/"]
     urls += [f"/Monthly/Heinenti{m:02d}{l}/" for m in range(1, 13) for l in ("", "l")]
     targets = climate_targets(stations)
     urls += [f"/Climate/Chart/{s}/" for _, _, _, s in targets]
