@@ -256,7 +256,7 @@ def make_env() -> Environment:
 
 def copy_assets() -> None:
     # 黙って飛ばすと全ページのロゴと天気アイコンが壊れたまま公開されるので、
-    # 見つからなければ止める（2026-08-28、tgsvr に wwwroot が無く実際に起きた）。
+    # 見つからなければ止める（2026-08-28、当時の tgsvr に wwwroot が無く実際に起きた）。
     if not WWWROOT.is_dir():
         raise SystemExit(
             f"アセットが見つかりません: {WWWROOT}\n"

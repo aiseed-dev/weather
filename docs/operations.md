@@ -14,40 +14,40 @@
 | 経路 | 取得者 | 取得元 | 頻度 | 用途 | 止まると |
 |------|--------|--------|------|------|----------|
 | 速報 | Cloudflare Worker → R2 | 地点別 10 分値 | 10 分ごと | 実況ページ・Flet 版 | 実況が古くなる。10 日で取り返せなくなる |
-| 統計 | **tgsvr が直接** | map 毎正時 ＋ 確定値 CSV | 1 日 1 回（1 時以降） | `observations.nc` | 7 日以内の再開なら自力で埋まる |
-| 公開 | tgsvr | 自分の生成物 | 10 分ごと・毎時 | Cloudflare Pages | サイトが更新されない |
+| 統計 | **dev2 が直接** | map 毎正時 ＋ 確定値 CSV | 1 日 1 回（1 時以降） | `observations.nc` | 7 日以内の再開なら自力で埋まる |
+| 公開 | dev2 | 自分の生成物 | 10 分ごと・毎時 | Cloudflare Pages | サイトが更新されない |
 
 **速報と統計を分けてある。** 10 分値は実況用の速報で、統計には使わない。
 分けていないと、10 分値の収集が止まったときに統計まで欠ける。
 2026-08-29 に実際に 2 日止まり、実況ページだけが古いまま公開された。
 
-tgsvr は生産者であって配信者ではない。押し出したあとは落ちていても
-利用者は困らない。**tgsvr を公開する必要はない**（アウトバウンドのみ）。
+dev2 は生産者であって配信者ではない。押し出したあとは落ちていても
+利用者は困らない。**dev2 を公開する必要はない**（アウトバウンドのみ）。
 
 ## 道具と置き場所
 
-道具は動く場所で分かれている。手元専用のものは tgsvr へ送らない
+道具は動く場所で分かれている。手元専用のものは dev2 へ送らない
 （向こうに置かなければ向こうで動かせない）。
 
 | 場所 | 道具 | すること |
 |------|------|----------|
 | dev | `make_testdata.py` | 作り物のデータを置く。見た目の確認用 |
-| dev | `sync_to_tgsvr.py` | ソースを送る。**自分と release.py は送らない** |
+| dev | `sync_to_server.py` | ソースを送る。**自分と release.py は送らない** |
 | dev | `deploy_worker.py` | Worker を Cloudflare へデプロイする |
-| dev | `release.py` | tgsvr の生成物を取り寄せて公開（臨時・確認用） |
-| tgsvr | `fetch_points.py` | Worker を呼んで 10 分値を集める（速報） |
-| tgsvr | `fetch_amedas_mirror.py` | 10 分値を複製し半月 NetCDF へ封入 |
-| tgsvr | `accumulate.py` | map 毎正時と確定値 CSV から `observations.nc` を作る（統計） |
-| tgsvr | `fetch_data.py` | 現在値・予報・現在天気 |
-| tgsvr | `build_site.py --publish` | 生成・点検・**定期公開**。cron はこれ |
+| dev | `release.py` | dev2 の生成物を取り寄せて公開（臨時・確認用） |
+| dev2 | `fetch_points.py` | Worker を呼んで 10 分値を集める（速報） |
+| dev2 | `fetch_amedas_mirror.py` | 10 分値を複製し半月 NetCDF へ封入 |
+| dev2 | `accumulate.py` | map 毎正時と確定値 CSV から `observations.nc` を作る（統計） |
+| dev2 | `fetch_data.py` | 現在値・予報・現在天気 |
+| dev2 | `build_site.py --publish` | 生成・点検・**定期公開**。cron はこれ |
 | Worker | `workers/amedas-point/` | 渡された地点を取り、渡された名前で R2 に 1 本置く |
 
-**定期公開は tgsvr が行う。** サイトは 10 分ごとに更新されるので、生成だけ
+**定期公開は dev2 が行う。** サイトは 10 分ごとに更新されるので、生成だけ
 して誰も上げない形は成り立たない。`release.py`（手元から）は臨時の経路で、
-tgsvr を経由せず確かめたいときや cron が止まっているときに使う。
+dev2 を経由せず確かめたいときや cron が止まっているときに使う。
 
 **Worker に判断を持たせない。** いつ・何を取るか、失敗をどう呼び直すかは
-すべて tgsvr が決める。Worker は重い取得を肩代わりする手足に徹する。
+すべて dev2 が決める。Worker は重い取得を肩代わりする手足に徹する。
 そうしないと、地点の増減のたびに Worker の再デプロイが要る。
 
 ## 公開の手順（3 段。飛ばさない）
@@ -58,14 +58,14 @@ cd ~/dev/weather/WeatherStatic
 ./.venv/bin/python make_testdata.py --force
 ./.venv/bin/python build_site.py
 
-# 2. ソースを送って tgsvr で実データで確認
-./.venv/bin/python sync_to_tgsvr.py            # 下見
-./.venv/bin/python sync_to_tgsvr.py --apply
-ssh tgsvr 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py'
+# 2. ソースを送って dev2 で実データで確認
+./.venv/bin/python sync_to_server.py            # 下見
+./.venv/bin/python sync_to_server.py --apply
+ssh dev2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py'
 
-# 3. tgsvr から Cloudflare へ
-ssh tgsvr 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --dry-run'
-ssh tgsvr 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --publish'
+# 3. dev2 から Cloudflare へ
+ssh dev2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --dry-run'
+ssh dev2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --publish'
 ```
 
 そのあとは cron が 10 分ごと・毎時に同じことを行う。手順を踏むのは、
@@ -75,13 +75,13 @@ ssh tgsvr 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --p
 ページ数が目安（500）を下回るときも拒む。生成が途中で失敗したものを
 上げないため。
 
-`release.py`（手元から）は臨時の経路。tgsvr の `public/` を取り寄せて上げる。
-cron が止まっているときや、tgsvr を経由せず確かめたいときに使う。
+`release.py`（手元から）は臨時の経路。dev2 の `public/` を取り寄せて上げる。
+cron が止まっているときや、dev2 を経由せず確かめたいときに使う。
 
-`sync_to_tgsvr.py --stale` で「向こうにだけあるファイル」を調べられる。
+`sync_to_server.py --stale` で「向こうにだけあるファイル」を調べられる。
 こちらで消したものが残っていると、古いコードからデプロイしてしまう。
 
-## cron（tgsvr）
+## cron（dev2）
 
 **cron の設定は運用者が行う。** ここに載せるのは照合用の一覧で、
 道具や手順書がこれを自動で登録することはしない。二重登録すると同じ処理が
@@ -194,9 +194,9 @@ D1."）。地点ごとに置くと fetch N ＋ put N ＝ 2N になり 25 地点�
 | | 回数 | 誰が |
 |---|---|---|
 | 地点別 10 分値 | 1,286 × 144 | Worker |
-| map（速報の補完） | 144 | tgsvr |
-| map（統計の時別） | 168 | tgsvr |
-| 確定値 CSV | 14 | tgsvr |
+| map（速報の補完） | 144 | dev2 |
+| map（統計の時別） | 168 | dev2 |
+| 確定値 CSV | 14 | dev2 |
 
 ## デプロイ（cf-publish。wrangler は使わない）
 
@@ -210,7 +210,7 @@ D1."）。地点ごとに置くと fetch N ＋ put N ＝ 2N になり 25 地点�
 `deploy_worker.py` はどのディレクトリから実行してもよい。既定は下見で、
 `--apply` を付けたときだけ上げる。合言葉がまだ無ければ `--init-token` で作る
 （値は表示しない）。デプロイ後に `workers.dev` の URL を拾って `pages.env` に
-書き戻し、tgsvr へ足す 2 行を表示する。
+書き戻し、dev2 へ足す 2 行を表示する。
 
 R2 バケット `weather-amedas` は `wrangler.toml` に書いてあるので、無ければ
 cf-publish が作る（トークンに `Workers R2 Storage: Edit` が要る）。
@@ -220,7 +220,7 @@ cf-publish が作る（トークンに `Workers R2 Storage: Edit` が要る）�
 `wrangler.toml` から拾う既定にも `[[services]]` は含まれない。
 
 **R2 に独自ドメインは要らない**（収集には）。Worker → R2 はバインディング、
-tgsvr → Worker は `*.workers.dev` で足りる。ドメインが要るのは、ブラウザや
+dev2 → Worker は `*.workers.dev` で足りる。ドメインが要るのは、ブラウザや
 Flet が HTTP で読みに行くときだけ。
 
 ## 資格情報の置き場所（値は書かない）
@@ -233,14 +233,14 @@ Flet が HTTP で読みに行くときだけ。
 |--------|----------|----------|
 | dev | `deploy_worker.py`（Worker のデプロイ・バケット作成） | `Workers Scripts: Edit` ＋ `Workers R2 Storage: Edit` |
 | dev | `release.py`（臨時の公開・確認） | `Cloudflare Pages: Edit` |
-| tgsvr | `build_site.py --publish`（**定期公開**） | `Cloudflare Pages: Edit` |
-| tgsvr | `cf-publish r2 sync`（予報パック・過去観測） | `Workers R2 Storage: Edit` |
+| dev2 | `build_site.py --publish`（**定期公開**） | `Cloudflare Pages: Edit` |
+| dev2 | `cf-publish r2 sync`（予報パック・過去観測） | `Workers R2 Storage: Edit` |
 
-トークンは 1 マシン 1 本。dev は上の 2 行ぶんを合わせた権限、tgsvr は下の
+トークンは 1 マシン 1 本。dev は上の 2 行ぶんを合わせた権限、dev2 は下の
 2 行ぶんを合わせた権限を持たせる。
 
-**tgsvr にも `Pages:Edit` が要る。** サイトは 10 分ごとに更新されるので、
-定期公開は tgsvr が行う。手元からしか上げられない形にすると、dev の電源が
+**dev2 にも `Pages:Edit` が要る。** サイトは 10 分ごとに更新されるので、
+定期公開は dev2 が行う。手元からしか上げられない形にすると、dev の電源が
 入っているときしか site が更新されない。
 
 置き場所（`~/.config/cloudflare/`。cf-publish は `pages.env` を既定で読む）:
@@ -251,11 +251,11 @@ Flet が HTTP で読みに行くときだけ。
 | 場所 | 中身 |
 |------|------|
 | dev | `CLOUDFLARE_API_TOKEN`（Pages ＋ Workers ＋ R2）／`CLOUDFLARE_ACCOUNT_ID`／`WEATHER_WORKER_TOKEN` |
-| tgsvr | `CLOUDFLARE_API_TOKEN`（Pages ＋ R2）／`CLOUDFLARE_ACCOUNT_ID`／`WEATHER_WORKER_TOKEN`／`WEATHER_WORKER_URL` |
+| dev2 | `CLOUDFLARE_API_TOKEN`（Pages ＋ R2）／`CLOUDFLARE_ACCOUNT_ID`／`WEATHER_WORKER_TOKEN`／`WEATHER_WORKER_URL` |
 
-`WEATHER_WORKER_TOKEN` は**両マシンで同じ値**（Worker 側の secret と tgsvr が
+`WEATHER_WORKER_TOKEN` は**両マシンで同じ値**（Worker 側の secret と dev2 が
 送る値が一致していないと 403 になる）。`deploy_worker.py` が dev のこの値を
-そのまま Worker の secret にするので、tgsvr へは同じ値を書き写す。
+そのまま Worker の secret にするので、dev2 へは同じ値を書き写す。
 
 **ファイルごと配らない。** 向こうには向こうの資格情報が入っている。足すのは
 `WEATHER_WORKER_URL` と `WEATHER_WORKER_TOKEN` の 2 行だけ。
@@ -263,13 +263,13 @@ Flet が HTTP で読みに行くときだけ。
 **二種類の秘密を混ぜない。**
 
 - Cloudflare API トークン … デプロイする権限。アカウントを操作できる
-- `WEATHER_WORKER_TOKEN` … tgsvr だけが Worker を呼べるようにする合言葉
+- `WEATHER_WORKER_TOKEN` … dev2 だけが Worker を呼べるようにする合言葉
 
-後者に前者を流用しない。合言葉は tgsvr の設定と Worker の環境の両方に置かれ、
+後者に前者を流用しない。合言葉は dev2 の設定と Worker の環境の両方に置かれ、
 呼び出しのたびに HTTP ヘッダで飛ぶ。漏れたときに失うものを「その Worker を
 呼べる」だけに留める。
 
-Worker 側の secret と tgsvr が送る値は同じでなければならない。手で二度打つと
+Worker 側の secret と dev2 が送る値は同じでなければならない。手で二度打つと
 食い違うので、`deploy_worker.py` が dev の `pages.env` の値をそのまま
 secret にする。
 
@@ -293,9 +293,11 @@ secret にする。
 生成を飛ばしたら終了コード 1 を返し、`build_site.py` がそこで止まる。
 黙って飛ばすと前回の生成物が残ったまま公開され、古い実況が出続ける。
 
-## 観測ストアの由来（tgsvr、2026-08-26 稼働開始）
+## 観測ストアの由来
 
-観測ストア（`store/observations.nc` ＋ `weather.sqlite`）の正本は tgsvr。
+観測ストア（`store/observations.nc` ＋ `weather.sqlite`）の正本は
+**dev2（192.168.100.3）**。2026-08-26 に tgsvr で稼働を始め、
+2026-10-01 に dev2 へ移した。
 
 - 初期データ: 旧 WeatherCore の pg_dump（weather.gz）の jma_daily を
   `backfill_daily.py` で投入済み（1880-11-01〜2022-03-14、69.1M セル）
@@ -303,6 +305,17 @@ secret にする。
   再取得して置換済み（値訂正 8 件・品質フラグ更新 5 件・欠測補完 10 件）
 - ギャップ（2022-04〜2026-07）は `backfill_etrn.py` で取得
 - 進行中の月は etrn 対象外のため、月初の穴は毎月 2 日の月次 cron が埋める
+
+### tgsvr → dev2 移行の記録（2026-10-01）
+
+- store / public_amedas / master / data を rsync で移した。store は
+  `store.lock` を取って取得し、**md5 が両端で一致**することを確認した
+- コードは git で揃えた（dev2 には git がある。tgsvr には無かった）
+- **tgsvr の蓄積は 2026-08-30 で止まっていた。** crontab が venv 統一前の
+  `./.venv/bin/python` を指したままで、毎時 exec 失敗していた
+  （cron のパスは手順書の一覧と必ず照合すること）。9 月の時別値・10 分値は
+  気象庁の保持期間を過ぎて回復不能。**日別の最高・最低は etrn から回復できる**:
+  `backfill_etrn.py --from 2026-08 --to 2026-09 --force`
 
 ## まだ手つかず
 

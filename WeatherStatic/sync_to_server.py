@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""ソースを tgsvr へ送る。rsync を毎回手で打たないための道具。
+"""ソースを dev2 へ送る。rsync を毎回手で打たないための道具。
 
 送るもの
     git が知っているファイル。git ls-files を出処にしているので、.gitignore に
     ある store/ data/ public/ master/ logs/ は自動的に外れる。運用データは
-    tgsvr のもの、ソースは手元のもの、という区切りが .gitignore と一致する。
+    dev2 のもの、ソースは手元のもの、という区切りが .gitignore と一致する。
 
-    観測所情報 stations/ も送る。tgsvr の crontab は accumulate.py と
-    backfill_etrn.py だけで watch_stations.py を回していないので、tgsvr が
+    観測所情報 stations/ も送る。dev2 の crontab は accumulate.py と
+    backfill_etrn.py だけで watch_stations.py を回していないので、dev2 が
     stations/ を書き換えることはない。検知用の控え .amedastable.prev.adoc は
-    .gitignore にあるため、送っても tgsvr 側の基準は保たれる。
+    .gitignore にあるため、送っても dev2 側の基準は保たれる。
 
 手元専用の道具（このファイルと release.py）は送らない。向こうに置かなければ
 向こうでは動かせない。
-2026-08-28 に dev 向けのコマンド列を tgsvr のシェルに貼って tgsvr→tgsvr の
+2026-08-28 に dev 向けのコマンド列をサーバー(当時 tgsvr)のシェルに貼ってサーバー→サーバーの
 rsync が走りかけたが、道具が向こうに無ければその事故は起こりようがない。
 
-tgsvr でしかできないこと（実データでの生成と点検）は build_site.py。
-あちらは tgsvr で動かす前提なので、送る対象に入れてある。
+dev2 でしかできないこと（実データでの生成と点検）は build_site.py。
+あちらは dev2 で動かす前提なので、送る対象に入れてある。
 
 安全のための決まり
     - 既定は下見だけ。実際に送るのは --apply を付けたときだけ
@@ -25,9 +25,9 @@ tgsvr でしかできないこと（実データでの生成と点検）は buil
     - 生成はしない。送るところで止める（続けて何が起きるか分からない状態にしない）
 
 使い方
-    python sync_to_tgsvr.py            # 何が変わるかを見るだけ
-    python sync_to_tgsvr.py --apply    # 実際に送る
-    python sync_to_tgsvr.py --stale    # 向こうに残っている余分なファイルを調べる
+    python sync_to_server.py            # 何が変わるかを見るだけ
+    python sync_to_server.py --apply    # 実際に送る
+    python sync_to_server.py --stale    # 向こうに残っている余分なファイルを調べる
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ REPO = BASE.parent                              # …/weather
 # 手元でしか使わない道具は送らない。向こうに置かなければ向こうでは動かせない。
 DEV_ONLY = {Path(__file__).name, "release.py"}
 
-HOST = os.environ.get("WEATHER_SYNC_HOST", "tgsvr")
+HOST = os.environ.get("WEATHER_SYNC_HOST", "dev2")
 DEST = os.environ.get("WEATHER_SYNC_PATH", "dev/weather/WeatherStatic")
 # 向こうの python。venv は repo 直下に 1 つ（WeatherStatic からは 1 つ上）
 REMOTE_PY = os.environ.get("WEATHER_SYNC_PY", "../.venv/bin/python")
@@ -97,7 +97,10 @@ def warn_uncommitted() -> None:
 
 
 def rsync(rels: list[str], apply: bool) -> int:
-    cmd = ["rsync", "-a", "--itemize-changes", "--files-from=-",
+    # -c（内容比較）が要る。dev2 は git clone なので mtime が checkout 時刻に
+    # なっており、既定の size+mtime 判定だと同内容でも全ファイル送り直しになる。
+    # 対象は 230 ファイル程度なので checksum の計算コストは気にならない。
+    cmd = ["rsync", "-ac", "--itemize-changes", "--files-from=-",
            str(BASE) + "/", f"{HOST}:{DEST}/"]
     if not apply:
         cmd.insert(2, "--dry-run")
@@ -105,12 +108,15 @@ def rsync(rels: list[str], apply: bool) -> int:
     if r.returncode != 0:
         die(f"rsync が失敗しました (終了コード {r.returncode}):\n{r.stderr.strip()}")
 
-    # itemize-changes は変わったものだけ出す。書式は 11 桁の記号＋空白＋名前で、
-    # 2 桁目が種別（f=ファイル d=ディレクトリ L=シンボリックリンク）。
-    # ディレクトリは中身の更新に伴って必ず出るので、数えると実態とずれる。
+    # itemize-changes は変わったものだけ出す。書式は 11 桁の記号＋空白＋名前。
+    # 1 桁目が向きで、**こちらから送る転送は `<`**（`>` は受け取り。直感と逆）、
+    # `.` は属性だけの更新。2 桁目が種別（f=ファイル d=ディレクトリ）。
+    # ディレクトリは中身の更新に伴って必ず出るし、git clone 先は mtime が
+    # 揃わないので「.f..t……（時刻だけ直す）」が全ファイルぶん出る。
+    # 本文が転送される f の行だけを数えないと、表示が実態とずれる。
     changed = []
     for line in r.stdout.splitlines():
-        if len(line) < 12 or line[1] == "d":
+        if line[:2] not in ("<f", ">f"):
             continue
         changed.append(line[11:].strip())
     if changed:

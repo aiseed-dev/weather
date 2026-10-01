@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""tgsvr から生成物を取り寄せて Cloudflare Pages へ公開する。手元で操作する道具。
+"""dev2 から生成物を取り寄せて Cloudflare Pages へ公開する。手元で操作する道具。
 
-公開手順 dev(テストデータ) → tgsvr(実データ) → Cloudflare の 3 段目。
+公開手順 dev(テストデータ) → dev2(実データ) → Cloudflare の 3 段目。
 
     dev    make_testdata.py   作り物のデータで見た目を確かめる
-    dev    sync_to_tgsvr.py   ソースを送る
-    tgsvr  build_site.py      実データで生成して点検する
+    dev    sync_to_server.py   ソースを送る
+    dev2  build_site.py      実データで生成して点検する
     dev    release.py         生成物を取り寄せて Cloudflare へ      ← これ
 
 なぜ手元から上げるか
-    Cloudflare への送信は単なるアップロードで、tgsvr である必要がない。
-    tgsvr にも Cloudflare のトークンはあるが、あれはデータ用（観測値の R2 同期と
+    Cloudflare への送信は単なるアップロードで、dev2 である必要がない。
+    dev2 にも Cloudflare のトークンはあるが、あれはデータ用（観測値の R2 同期と
     Worker 起動）。site の公開までそこでやると、同じトークンに Pages:Edit まで
     持たせることになる。生成物を取り寄せる一手間と引き換えに、権限を
-    データ用（tgsvr）と公開用（手元）に分けたままにできる。
+    データ用（dev2）と公開用（手元）に分けたままにできる。
 
 置き場所
     取り寄せ先は release/（.gitignore 済み）。public/ とは分ける。
@@ -25,7 +25,7 @@
     自分で読む。このスクリプトは値に触れないし、表示もしない。
     手元に置いていなければ cf-publish が自分で知らせる。
 
-このファイルは tgsvr へ送らない（sync_to_tgsvr.py の DEV_ONLY を参照）。
+このファイルは dev2 へ送らない（sync_to_server.py の DEV_ONLY を参照）。
 
 使い方
     python release.py                  # 取り寄せて点検（公開しない）
@@ -46,13 +46,13 @@ from build_site import MIN_PAGES, fail, find_cf_publish, inspect, run
 BASE = Path(__file__).resolve().parent
 RELEASE = BASE / "release"
 
-HOST = os.environ.get("WEATHER_SYNC_HOST", "tgsvr")
+HOST = os.environ.get("WEATHER_SYNC_HOST", "dev2")
 REMOTE = os.environ.get("WEATHER_SYNC_PATH", "dev/weather/WeatherStatic") + "/public/"
 PROJECT = os.environ.get("WEATHER_CF_PROJECT", "weather")
 
 
 def pull(apply: bool = True) -> None:
-    """tgsvr の public/ を release/ に鏡写しする。
+    """dev2 の public/ を release/ に鏡写しする。
 
     --delete を付ける。消えたページが残ったまま公開されると、存在しないはずの
     地点ページが site に居座る。取り寄せ先は release/ 専用なので、
@@ -96,7 +96,7 @@ def main() -> int:
 
     if info["pages"] < MIN_PAGES:
         return fail("", f"ページ数が {info['pages']} 件しかありません（目安 {MIN_PAGES} 件以上）。",
-                    "  tgsvr の生成が途中で失敗しているか、作り物のデータで",
+                    "  dev2 の生成が途中で失敗しているか、作り物のデータで",
                     "  生成されている可能性があります。公開しません。")
 
     if not (args.publish or args.dry_run):

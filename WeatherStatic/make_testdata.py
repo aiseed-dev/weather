@@ -2,15 +2,15 @@
 """手元（dev）で site を生成して見た目を確かめるための、作り物の観測データを置く。
 
 なぜ要るか
-    実データは tgsvr にしかない。手元に何も無いと generate.py が動かず、
-    見た目の確認が tgsvr 頼みになって、公開直前まで問題に気づけない。
-    公開手順は dev(テストデータ) → tgsvr(実データ) → Cloudflare の 3 段で、
+    実データは dev2 にしかない。手元に何も無いと generate.py が動かず、
+    見た目の確認が dev2 頼みになって、公開直前まで問題に気づけない。
+    公開手順は dev(テストデータ) → dev2(実データ) → Cloudflare の 3 段で、
     その 1 段目を成り立たせるのがこのスクリプト。
 
 置き場所
     store/ master/ data/ public_amedas/ に直接置く。いずれも .gitignore に
     あるので repo は汚れないし、generate.py を 1 行も変えずに済む。
-    tgsvr では同じ場所に実データが入る——コードから見れば同じ形。
+    dev2 では同じ場所に実データが入る——コードから見れば同じ形。
 
 作り物であることを隠さない
     地点数を絞り（既定 40）、地点名の先頭に印は付けないが、_meta.source を
@@ -360,7 +360,7 @@ def write_mirror(master: dict, rng: random.Random, slots: int = 8) -> None:
     """アメダスの 10 分値を**地点別・エリア束**の形で置く。
 
     本番と同じ形にしておかないとテストにならない。Worker が R2 に置き、
-    tgsvr が取り寄せたあとの姿を再現する:
+    dev2 が取り寄せたあとの姿を再現する:
 
         public_amedas/point/{YYYYMMDD}/{HH}/{area_code}.json
         中身は {アメダス番号: {時刻(14桁): {要素: [値, 品質]}}}

@@ -2,16 +2,16 @@
 """site を生成し、点検して、Cloudflare Pages へ上げる。
 
     dev    make_testdata.py   作り物のデータで見た目を確かめる
-    dev    sync_to_tgsvr.py   ソースを送る
-    tgsvr  build_site.py      実データで生成・点検・公開      ← これ
+    dev    sync_to_server.py   ソースを送る
+    dev2  build_site.py      実データで生成・点検・公開      ← これ
     dev    release.py         手元から公開する（臨時・確認用）
 
 **定期公開はここが行う。** サイトは 10 分ごとに更新されるので、生成だけして
-誰も上げない形は成り立たない。cron から --publish で呼ぶ。そのため tgsvr の
+誰も上げない形は成り立たない。cron から --publish で呼ぶ。そのため dev2 の
 トークンには Pages:Edit が要る。
 
-release.py（手元から）は、tgsvr の生成物を取り寄せて上げる別経路。定期運用は
-こちらではなく build_site.py --publish。手元からの公開は、tgsvr を経由せずに
+release.py（手元から）は、dev2 の生成物を取り寄せて上げる別経路。定期運用は
+こちらではなく build_site.py --publish。手元からの公開は、dev2 を経由せずに
 確かめたいときや、cron が止まっているときの手当てに使う。
 
 点検を通らなければ公開しない
@@ -54,7 +54,7 @@ def find_cf_publish() -> str:
     """cf-publish の場所。**実行中のインタプリタと同じ bin を先に見る。**
 
     venv の場所を決め打ちすると、別の venv から呼んだときに古い cf-publish が
-    使われる。実際 tgsvr には venv が 2 つあり、片方だけ更新されていた
+    使われる。実際 旧サーバー(tgsvr) には venv が 2 つあり、片方だけ更新されていた
     （2026-08-29: ~/dev/weather/.venv が 0.3.1、WeatherStatic/.venv が 0.3.0）。
     """
     here = Path(sys.executable).parent / "cf-publish"

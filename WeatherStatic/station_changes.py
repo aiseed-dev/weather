@@ -169,7 +169,7 @@ def main() -> int:
     cur = load_adoc(adoc)
 
     # 前回の版。git があれば HEAD、無ければ控えのファイルを使う。
-    # **git に依存させない** — 運用機（tgsvr）に git が入っていないことがあり、
+    # **git に依存させない** — 運用機（dev2）に git が入っていないことがあり、
     # そこで動かないと変更に気づけない（気づかないことが最大の失敗）。
     prev = _previous(adoc)
     if prev is None:
