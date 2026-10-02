@@ -36,7 +36,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import numpy as np
 
-from weatherlib.ncstore import FILL, FILL_B, NcStore, date_index
+from weatherlib.ncstore import FILL, FILL_B, NcStore, date_index, normalize_extents
 from weatherlib.store import open_store
 from weatherlib.storelock import store_lock
 
@@ -183,7 +183,9 @@ def main() -> int:
             nst = max(rowmap.values()) + 1
             nst = max(nst, ds.dimensions["station"].size)
 
-            # 既存データを読み（無ければ FILL）、空セルだけ埋める
+            # 既存データを読み（無ければ FILL）、空セルだけ埋める。
+            # 実寸外のブロック読みはゴミを返すので、先に実寸を次元へ揃える
+            normalize_extents(ds)
             blocks = {}
             has_dates = ds.dimensions["date"].size
             for var in list(FIELD_MAP) + list(Q_VARS.values()) + ["precip_none"]:

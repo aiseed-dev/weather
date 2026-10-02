@@ -20,10 +20,12 @@ backfill_daily.py の初回取込は欠測ガードが甘く（-999 だけを見
     日本記録（最高 41.8℃ / 最低 -41.0℃）の外だが 60℃ 未満の値は報告だけ
     する。本物の異常値か転記ミスかは人が判断する。
 
-読み書きは行単位で行う。libnetcdf 4.10.1（HDF5 2.2.0）には、変数自身の
-書込み済み範囲より unlimited 次元が大きいとき、2 次元の広域読みが行の
-詰め直しを誤り「ずれた配列＋未初期化メモリ」を返すバグがある（2026-10-02
-に最小再現で確認）。行読み・書込み済み範囲内の読みは正しい。
+読みは行単位か 1 セル単位で行う。libnetcdf（4.9.2〜4.10.1 で確認）には、
+変数自身の書込み済み範囲より unlimited 次元が大きいとき、範囲を越える読みが
+「ずれた配列＋未初期化メモリ」を返すバグがある。常に正しいのは 1 セル読みと
+1 行読みだけ（詳細は ncstore.normalize_extents と tests/test_nc_read_bug.py）。
+蓄積がこのバグで書いたゴミ列（2026-08-26〜29 の tmax/tmin など）も、
+ここで一緒に掃除する。
 
 使い方（ダンプは dev にしかないので dev で動かす）:
     python repair_sentinels.py ../weather.gz --store <storeのコピー>   # 下見
@@ -99,14 +101,28 @@ def to_int(s) -> int | None:
 
 # ---------------------------------------------------------------- ダンプ走査
 
-def bad_cells_from_dump(path: Path):
-    """修正後ガードなら捨てたはずの var → {(code, 日index): (折り返し値, 品質)}。
+class Truth:
+    """ダンプ期（〜2022-03-14）に、修正後の取込が書いたはずの値・品質・降水なし。"""
 
+    def __init__(self, nst: int):
+        shape = (nst, DUMP_END)
+        self.v = {var: np.full(shape, FILL, np.int16) for var in FIELD_MAP}
+        self.q = {var: np.full(shape, FILL_B, np.int8) for var in FIELD_MAP}
+        self.pn = np.full(shape, FILL_B, np.int8)
+
+
+def bad_cells_from_dump(path: Path, code_row: dict[int, int], nst: int):
+    """ダンプを 1 回走査して (ガード違反セル, Truth) を返す。
+
+    ガード違反セル: 修正後ガードなら捨てたはずの
+        var → {(code, 日index): (折り返し値, 品質)}
     weather.gz（全 DB の平文 pg_dump）の COPY jma_daily ブロックだけを読む。
+    ダンプに (地点, 日) の重複行は無い（2026-10-03 確認）ので先勝ちは考えない。
     """
     opener = gzip.open if path.suffix == ".gz" else open
     bad: dict[str, dict[tuple[int, int], tuple[int, int | None]]] = {
         var: {} for var in FIELD_MAP}
+    truth = Truth(nst)
     n_rows = 0
     with opener(path, "rt", encoding="utf-8", errors="replace") as f:
         cols = None
@@ -126,6 +142,8 @@ def bad_cells_from_dump(path: Path):
                 continue
             n_rows += 1
             dj = date_index(date.fromisoformat(d_s))
+            row = code_row.get(code)
+            known = row is not None and row < nst and dj < DUMP_END
             for var, (vcol, qcol) in FIELD_MAP.items():
                 v = to_int(r.get(vcol))
                 q = to_int(r.get(qcol))
@@ -133,9 +151,16 @@ def bad_cells_from_dump(path: Path):
                     continue
                 if v <= -999 or (q is not None and q < 1) or (var == "precip" and v < 0):
                     bad[var][(code, dj)] = (cast16(v), q)
+                elif known:
+                    truth.v[var][row, dj] = v
+                    if q is not None:
+                        truth.q[var][row, dj] = q
+            pn = to_int(r.get("降水無"))
+            if known and pn is not None:
+                truth.pn[row, dj] = pn      # 取込は値の可否と無関係に書く
     log(f"ダンプ: {n_rows:,} 行を走査、ガード違反 "
         + " ".join(f"{var} {len(c):,}" for var, c in bad.items()))
-    return bad
+    return bad, truth
 
 
 # ---------------------------------------------------------------- 本体
@@ -232,10 +257,16 @@ def clean_extreme_events(ds, var: str, events: set[int], names, apply: bool) -> 
     v_q = ds[Q_VARS[var]]
     v_min = ds[f"{var}_minutes"]
     n_cleaned = 0
+    nst = ds.dimensions["station"].size
+
+    def column(v, dj):
+        # 列読みは日付方向の実寸より外だと壊れるので、常に正しい 1 セル読みで組む
+        return np.array([v[r, dj] for r in range(nst)], dtype=v.dtype)
+
     for dj in sorted(events):
-        vals = v_val[:, dj]              # 列読みは詰め直しバグを踏まない
-        qs = v_q[:, dj]
-        mins = v_min[:, dj]
+        vals = column(v_val, dj)
+        qs = column(v_q, dj)
+        mins = column(v_min, dj)
         ok = (np.abs(vals) < TEMP_IMPOSSIBLE) & (qs >= 1) & (qs <= 8) \
             & ((mins == FILL) | ((mins >= 0) & (mins <= 1440)))
         bad = (vals != FILL) & ~ok
@@ -253,6 +284,88 @@ def clean_extreme_events(ds, var: str, events: set[int], names, apply: bool) -> 
             v_min[:, dj] = mins
     log(f"{var}: ゴミ列イベント {len(events)} 日から範囲内の破片 {n_cleaned} セルを追加で欠測に")
     return n_cleaned
+
+
+def rebuild_flags(ds, truth: Truth, apply: bool) -> None:
+    """降水なしフラグ（precip_none）をダンプから作り直し、品質（*_q）を点検する。
+
+    初回のダンプ取込（backfill_daily.py の年ブロック読み）も同じ読み出しバグを
+    踏み、当時まだ誰も書いていなかった tavg_q / precip_q / precip_none の
+    ブロックを乱数のまま書き戻した。値のあるセルの品質はダンプの品質で上書き
+    されたので正しい（値のないセルの乱数は clean_orphans が消す）。
+    precip_none は「空いているときだけ書く」なので、乱数に阻まれて本物が
+    入っていない。配布パック（export_dist.py）に出る変数なので直す。
+
+    ダンプ期:
+      品質  … 書き換えない。値がダンプどおりで品質だけ違うセルは、etrn が
+              速報値の品質（4/5）を確定（8）に更新したもの（2022-03 の 37 セル）
+      降水なし … ダンプの値に合わせる。ダンプに行が無い所は欠測。
+              etrn が降水量を書き換えたセルで 0/1 が入っていればそれを残す
+    ダンプ期より後:
+      降水なし … etrn は「降水なし」のとき降水量 0 と一緒に 1 を書くだけなので、
+              降水量 0 かつ 1 のセルだけ残し、ほかは欠測に戻す
+    """
+    nst = ds.dimensions["station"].size
+    for var in FIELD_MAP:                        # 品質は点検だけ（書き換えない）
+        v_val, v_q = ds[var], ds[Q_VARS[var]]
+        n = 0
+        for row in range(nst):
+            vals = v_val[row, :DUMP_END]         # 1 行読みは常に正しい
+            qs = v_q[row, :DUMP_END]
+            intact = (vals != FILL) & (vals == truth.v[var][row])
+            n += int((intact & (qs != truth.q[var][row])).sum())
+        log(f"{var}: 値はダンプどおりで品質だけ違うセル {n:,}（etrn の確定品質。残します）")
+
+    v_p, v_pn = ds["precip"], ds["precip_none"]
+    n_dump = n_after = 0
+    for row in range(nst):
+        pv = v_p[row, :]
+        pn = v_pn[row, :]
+        new = pn.copy()
+        etrn = (pv[:DUMP_END] != FILL) & (pv[:DUMP_END] != truth.v["precip"][row]) \
+            & ((pn[:DUMP_END] == 0) | (pn[:DUMP_END] == 1))
+        new[:DUMP_END] = np.where(etrn, pn[:DUMP_END], truth.pn[row])
+        new[DUMP_END:] = np.where((pn[DUMP_END:] == 1) & (pv[DUMP_END:] == 0), 1, FILL_B)
+        n_dump += int((new[:DUMP_END] != pn[:DUMP_END]).sum())
+        n_after += int((new[DUMP_END:] != pn[DUMP_END:]).sum())
+        if apply and (new != pn).any():
+            v_pn[row, :] = new
+    log(f"precip_none: ダンプ期 {n_dump:,} セル・それ以降 {n_after:,} セルを作り直し")
+
+
+def clean_orphans(ds, apply: bool) -> int:
+    """値が欠測なのに品質・起時だけ残っているセル（孤児）を欠測に揃える。
+
+    どの書き手（ダンプ取込・確定値 CSV・etrn）も品質と起時は値と一緒にしか
+    書かないので、「値が FILL なら品質・起時も FILL」は不変条件。ゴミ列は
+    値がたまたま FILL でも品質・起時にゴミを残す（2026-08-26 がこの形）。
+    etrn の再取得は値と品質しか書かないため、起時のゴミは先に消しておく。
+    下見では、この実行で消す予定のセルぶんは数に入らない（既存の孤児だけ）。
+    """
+    nst = ds.dimensions["station"].size
+    total = 0
+    for var in FIELD_MAP:
+        v_val, v_q = ds[var], ds[Q_VARS[var]]
+        v_min = ds[f"{var}_minutes"] if f"{var}_minutes" in ds.variables else None
+        n = 0
+        for row in range(nst):
+            gone = v_val[row, :] == FILL
+            qs = v_q[row, :]
+            orphan_q = gone & (qs != FILL_B)
+            mins = orphan_m = None
+            if v_min is not None:
+                mins = v_min[row, :]
+                orphan_m = gone & (mins != FILL)
+            n += int((orphan_q | orphan_m).sum() if orphan_m is not None else orphan_q.sum())
+            if apply and orphan_q.any():
+                qs[orphan_q] = FILL_B
+                v_q[row, :] = qs
+            if apply and orphan_m is not None and orphan_m.any():
+                mins[orphan_m] = FILL
+                v_min[row, :] = mins
+        log(f"{var}: 値なしで品質・起時だけ残る孤児 {n:,} セルを欠測に")
+        total += n
+    return total
 
 
 def verify(nc_path: Path):
@@ -277,6 +390,11 @@ def verify(nc_path: Path):
         unit = "mm" if var == "precip" else "℃"
         log(f"検証 {var}: {lo / 10:.1f} 〜 {hi / 10:.1f} {unit}")
     ds.close()
+    ds = nc.Dataset(nc_path, "r")
+    ds.set_auto_mask(False)
+    left = clean_orphans(ds, apply=False)
+    ds.close()
+    assert left == 0, f"孤児セルが {left} 件残っています"
 
 
 def main() -> int:
@@ -295,12 +413,15 @@ def main() -> int:
             return 1
     started = time.monotonic()
 
-    bad = bad_cells_from_dump(args.dump)
-
     conn = sqlite3.connect(sq_path)
     code_row = dict(conn.execute("SELECT code, row FROM stations WHERE code IS NOT NULL"))
     names = dict(conn.execute("SELECT row, COALESCE(name, '?') FROM stations"))
     conn.close()
+
+    import netCDF4 as nc
+    with nc.Dataset(nc_path, "r") as probe:
+        nst = probe.dimensions["station"].size
+    bad, truth = bad_cells_from_dump(args.dump, code_row, nst)
 
     # (code, dj) → (row ごとの dj 辞書) へ変換
     by_var_row: dict[str, dict[int, dict[int, tuple[int, int | None]]]] = {}
@@ -317,7 +438,6 @@ def main() -> int:
     if unknown:
         log(f"注意: ストアに無い地点コード {len(unknown)} 件（無視します）")
 
-    import netCDF4 as nc
     work = nc_path.with_suffix(".nc.work")
     if args.apply:
         shutil.copy2(nc_path, work)
@@ -329,6 +449,8 @@ def main() -> int:
         n_fix, events = repair_var(ds, var, by_var_row[var], names, args.apply)
         total += n_fix
         total += clean_extreme_events(ds, var, events, names, args.apply)
+    rebuild_flags(ds, truth, args.apply)
+    n_orphan = clean_orphans(ds, args.apply)
     if args.apply:
         # 全変数の実寸を次元に揃える。これを済ませたストアは、生成側の
         # 広域読み（generate.py の [:, j0:j1] 等）が詰め直しバグを踏まない
@@ -340,11 +462,11 @@ def main() -> int:
         with store_lock(log=log):
             work.replace(nc_path)
         verify(nc_path)
-        log(f"完了: {total:,} セルを FILL に戻しました "
+        log(f"完了: 値 {total:,} セルを FILL に戻し、孤児 {n_orphan:,} セルを掃除しました "
             f"({time.monotonic() - started:.1f} 秒)")
     else:
-        log(f"下見だけです（{total:,} セルが対象、--apply で書き換え。"
-            f"{time.monotonic() - started:.1f} 秒）")
+        log(f"下見だけです（値 {total:,} セルが対象、既存の孤児 {n_orphan:,} セル。"
+            f"--apply で書き換え。{time.monotonic() - started:.1f} 秒）")
     return 0
 
 

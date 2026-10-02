@@ -187,6 +187,9 @@ class NcStore:
         for a in data:
             self.station_index(a)
         nst = self._nst()
+        # 直前の書込みが次元だけ伸ばしていると、下の列読みが実寸外になり
+        # ゴミを返す（それを書き戻して列ごと汚した: 2026-08-26〜29）
+        normalize_extents(self.ds)
 
         v_val = self.ds[kind]
         old = v_val[:nst, j] if self.ds.dimensions["date"].size > j else np.full(nst, FILL)
@@ -224,6 +227,7 @@ class NcStore:
         if self.ds.dimensions["time"].size < j1:
             return 0
         nst = self._nst()
+        normalize_extents(self.ds)       # 新地点で station 次元だけ伸びた直後の読みを守る
         temp = self.ds["temp"][:nst, j0:j1]
         prec = self.ds["precip1h"][:nst, j0:j1]
         sun = self.ds["sun1h"][:nst, j0:j1]
@@ -263,15 +267,18 @@ def normalize_extents(ds) -> int:
     """全 2 次元変数の実寸（HDF5 データセットの現在形状）を次元いっぱいに揃える。
 
     unlimited 次元が変数自身の書込み済み範囲より大きいと、その範囲を越える
-    2 次元の読み（var[:] や [:, j0:j1]）は行の詰め直しを誤り、ずれた配列と
-    未初期化メモリの中身を返す（netCDF4-python 1.6.5〜1.7.4 ×
-    libnetcdf 4.9.2〜4.10.1 で確認。tests/test_nc_read_bug.py に最小再現）。
-    1 行・1 列の読みと、実寸内に収まる読みは正しい。
+    読みは libnetcdf の nc_get_vara が詰め直しと fill 埋めを誤り、ずれた配列と
+    手つかずのバッファ（＝未初期化メモリ）を rc=0 で返す。libnetcdf 4.9.2〜
+    4.10.1 で確認。C を直接呼んでも再現するので netCDF4-python の問題ではない
+    （tests/test_nc_read_bug.py に最小再現と総当たり）。
 
-    各変数の最終行を読み（行読みは安全）、角の 1 セルを書き戻すことで
-    実寸を次元に揃える。実寸は縮まないので、書込みセッションの終わりに
-    これを呼んでおけば、以後のあらゆる範囲読みが安全になる。
-    戻り値は触った変数の数。"""
+    安全なのは 1 セル読みと 1 行読み（1×n）、および実寸内に収まる読みだけ。
+    **列読み（n×1）は、その列が日付方向の実寸より外にあると壊れる。**
+    実寸＝次元なら全ての読みが正しい。
+
+    各変数の角の 1 セルを読んで書き戻し、実寸を次元に揃える。実寸は縮まないが
+    次元は他の変数の書込みで伸びるので、**ストアを読む直前**（read-modify-write
+    の前と、close の前）に呼ぶこと。戻り値は触った変数の数。"""
     n = 0
     for name, v in ds.variables.items():
         if v.ndim != 2:
@@ -280,7 +287,6 @@ def normalize_extents(ds) -> int:
         n1 = ds.dimensions[v.dimensions[1]].size
         if not n0 or not n1:
             continue
-        last = v[n0 - 1, :]              # 行読みは詰め直しバグを踏まない
-        v[n0 - 1, n1 - 1] = last[n1 - 1]
+        v[n0 - 1, n1 - 1] = v[n0 - 1, n1 - 1]    # 1 セル読みは常に正しい
         n += 1
     return n
