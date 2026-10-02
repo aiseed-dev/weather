@@ -317,13 +317,40 @@ secret にする。
   気象庁の保持期間を過ぎて回復不能。**日別の最高・最低は etrn から回復できる**:
   `backfill_etrn.py --from 2026-08 --to 2026-09 --force`
 
+## バックアップ（dev2 → dev）
+
+tgsvr は main PC に転用する予定なので、転用後は観測データの実コピーが
+**dev2 の 1 か所だけ**になる。日別値は weather.gz ＋ etrn でほぼ再建できるが、
+**時別値・10 分値の蓄積（store と data）は消えたら戻らない**。
+量は小さい（store 83MB ＋ data ＋ master ＋ public_amedas ≒ 170MB）ので、
+日付つきの世代で丸ごと取る。
+
+dev で実行:
+
+```bash
+d=~/backup/weather/$(date +%Y%m%d)
+mkdir -p "$d"
+ssh dev2 'flock ~/dev/weather/WeatherStatic/store.lock \
+    tar -C ~/dev/weather/WeatherStatic -cf - store data master public_amedas' \
+    | tar -xf - -C "$d"
+```
+
+- ロックを取るのは、書込ジョブ（copy→rename）の最中に写すと半端なファイルを
+  拾うため。ロックの実体は `WeatherStatic/store.lock`
+  （`weatherlib/storelock.py` の既定。リポジトリ直下ではない）
+- 頻度は週 1 回を目安に手で。自動化するなら **dev 側の** cron に入れる
+  （dev2 の crontab は収集系の台帳なので混ぜない）
+- 古い世代の削除は人が決める。道具からは消さない
+
+復元（dev2 の cron を止めてから。既存を上書きする）:
+
+```bash
+tar -C "$d" -cf - store data master public_amedas \
+    | ssh dev2 'tar -xf - -C ~/dev/weather/WeatherStatic'
+```
+
 ## まだ手つかず
 
-- **Worker が未デプロイ**。デプロイするまで地点別データは集まらない。
-  その間は `pointstore` が map ミラーへ退避する（移行のための仮の道）
-- `fetch_amedas_mirror.py` が map のまま。地点別へ移すのは別の塊
-- 実況ページ 1,293 枚を 10 分ごとに作り直している（43MB）。R2 直読みにすれば
-  この山は消えるが、検索の入口も消える。分け方の検討が要る
 - **Worker が未デプロイ**。デプロイするまで地点別データは集まらない。
   その間は `pointstore` が map ミラーへ退避する（移行のための仮の道）
 - `fetch_amedas_mirror.py` が map のまま。地点別へ移すのは別の塊
