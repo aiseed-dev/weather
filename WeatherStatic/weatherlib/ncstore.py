@@ -80,7 +80,8 @@ class NcStore:
     def __init__(self, path: Path, sqlite_conn, mode: str = "a"):
         self.conn = sqlite_conn
         create = not Path(path).exists()
-        self.ds = nc.Dataset(path, "w" if create else mode, format="NETCDF4")
+        self.mode = "w" if create else mode
+        self.ds = nc.Dataset(path, self.mode, format="NETCDF4")
         self.ds.set_auto_mask(False)
         if create:
             self._create_schema()
@@ -253,4 +254,33 @@ class NcStore:
         return int((t_cnt > 0).sum())
 
     def close(self):
+        if self.mode != "r":
+            normalize_extents(self.ds)
         self.ds.close()
+
+
+def normalize_extents(ds) -> int:
+    """全 2 次元変数の実寸（HDF5 データセットの現在形状）を次元いっぱいに揃える。
+
+    unlimited 次元が変数自身の書込み済み範囲より大きいと、その範囲を越える
+    2 次元の読み（var[:] や [:, j0:j1]）は行の詰め直しを誤り、ずれた配列と
+    未初期化メモリの中身を返す（netCDF4-python 1.6.5〜1.7.4 ×
+    libnetcdf 4.9.2〜4.10.1 で確認。tests/test_nc_read_bug.py に最小再現）。
+    1 行・1 列の読みと、実寸内に収まる読みは正しい。
+
+    各変数の最終行を読み（行読みは安全）、角の 1 セルを書き戻すことで
+    実寸を次元に揃える。実寸は縮まないので、書込みセッションの終わりに
+    これを呼んでおけば、以後のあらゆる範囲読みが安全になる。
+    戻り値は触った変数の数。"""
+    n = 0
+    for name, v in ds.variables.items():
+        if v.ndim != 2:
+            continue
+        n0 = ds.dimensions[v.dimensions[0]].size
+        n1 = ds.dimensions[v.dimensions[1]].size
+        if not n0 or not n1:
+            continue
+        last = v[n0 - 1, :]              # 行読みは詰め直しバグを踏まない
+        v[n0 - 1, n1 - 1] = last[n1 - 1]
+        n += 1
+    return n
