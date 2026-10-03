@@ -268,9 +268,12 @@ def normalize_extents(ds) -> int:
 
     unlimited 次元が変数自身の書込み済み範囲より大きいと、その範囲を越える
     読みは libnetcdf の nc_get_vara が詰め直しと fill 埋めを誤り、ずれた配列と
-    手つかずのバッファ（＝未初期化メモリ）を rc=0 で返す。libnetcdf 4.9.2〜
-    4.10.1 で確認。C を直接呼んでも再現するので netCDF4-python の問題ではない
-    （tests/test_nc_read_bug.py に最小再現と総当たり）。
+    手つかずのバッファ（＝未初期化メモリ）を rc=0 で返す。原因は
+    libhdf5/hdf5var.c の NC4_get_vars: 実データを切り詰めた形のまま先頭に詰め、
+    その後ろに fill を Π(fill_value_size or 1) 個だけ置く。unlimited 次元が
+    先頭の 1 つだけなら正しいが、2 つ目の unlimited 次元は実寸内だと係数が
+    count でなく 1 になる。main でも未修正（2026-10-04 確認）。libnetcdf
+    4.9.2〜4.10.1 で再現（tests/test_nc_read_bug.py に最小再現と総当たり）。
 
     安全なのは 1 セル読みと 1 行読み（1×n）、および実寸内に収まる読みだけ。
     **列読み（n×1）は、その列が日付方向の実寸より外にあると壊れる。**
