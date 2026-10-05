@@ -162,3 +162,53 @@ def month_table(kind: str, month: int) -> dict:
             row.append(None if c is None or np.isnan(c).all() else int((c >= thr).sum()))
         grid.append(row)
     return {"kind": kind, "title": title, "month": month, "years": years, "grid": grid}
+
+
+MONTH_TOP = 100             # 月のランキングの上位何位まで（旧サイトと同じ）
+MIN_COVER = 0.8             # 月の平均に含める地点: その期間の 8 割以上の日に値がある
+
+
+def month_ranking(high: bool, year: int, month: int) -> dict | None:
+    """その月の日最高・日平均・日最低気温の平均の、高い順（high）か低い順の上位。
+
+    旧 /Monthly/Monthly/{YYYYMM}（高い順）・/Monthly/MonthlyL/{YYYYMM}（低い順）。
+    平均は日々の値の単純平均を小数 1 桁に丸める（2018 年 7 月で旧サイトと一致）。
+    今月は昨日までで集計する。"""
+    yd = year_data(year)
+    if yd is None:
+        return None
+    first = date(year, month, 1)
+    last = (date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1))
+    last = min(last, date.today() - timedelta(days=1))
+    if last < first:
+        return None
+    j0, j1 = (first - yd.first).days, (last - yd.first).days + 1
+    if j0 < 0 or j1 > yd.n_days:
+        return None
+    info, slugs = meta()
+    n_days = j1 - j0
+    tables = []
+    for var, label in (("tmax", "日最高気温の平均"), ("tavg", "日平均気温の平均"), ("tmin", "日最低気温の平均")):
+        block = yd.vals[var][:, j0:j1]
+        n = (~np.isnan(block)).sum(axis=1)
+        ok = n >= MIN_COVER * n_days
+        if not ok.any():
+            tables.append({"title": label, "rows": []})
+            continue
+        means = np.full(len(yd.codes), np.nan)
+        means[ok] = np.nanmean(block[ok], axis=1)
+        rows = [{**_station(yd.codes[i], info, slugs),
+                 "value": round(float(means[i]) + (1e-9 if means[i] >= 0 else -1e-9), 1)}
+                for i in np.nonzero(ok)[0]]
+        if not high:
+            for r in rows:
+                r["value"] = -r["value"]
+        rows = _ranked(rows, "value")
+        if not high:
+            for r in rows:
+                r["value"] = -r["value"]
+        tables.append({"title": label, "rows": [r for r in rows if r["rank"] <= MONTH_TOP]})
+    if not any(t["rows"] for t in tables):
+        return None
+    return {"high": high, "year": year, "month": month, "first": first, "last": last,
+            "tables": tables}

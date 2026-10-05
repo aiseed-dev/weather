@@ -174,6 +174,13 @@ def past_max_age(d: date) -> int:
 
 DAY = re.compile(r"^/temperature/summerday/([abcd])(\d{8})/?$", re.I)
 MONTH = re.compile(r"^/temperature/summermonth/([abcd])/(\d{1,2})/?$", re.I)
+MONTHLY = re.compile(r"^/monthly/(monthly|monthlyl)/(\d{4})(\d{2})/?$", re.I)
+SEASON = re.compile(r"^/(summer|winter)/([a-z]+)/(\d{4})/?$", re.I)
+# 季節のページの正しい綴り（旧 URL の大文字小文字を問わず受ける）
+SEASON_KINDS = {
+    "summer": {k.lower(): k for k in ("Ranking", "SummerDayList", "Hottest", "HottestList")},
+    "winter": {k.lower(): k for k in ("Ranking", "WinterDayList", "Coldest", "LowestList")},
+}
 
 
 def day_page(kind: str, ymd: str) -> Response:
@@ -206,6 +213,66 @@ def month_page(kind: str, month: str) -> Response:
                 t=t, kinds=kinds, months=months)
 
 
+def monthly_page(which: str, y: str, m: str) -> Response:
+    year, month = int(y), int(m)
+    if not 1 <= month <= 12:
+        return not_found()
+    high = which.lower() == "monthly"
+    r = history.month_ranking(high, year, month)
+    if r is None:
+        return not_found()
+    prev_ = date(year, month, 1) - timedelta(days=1)
+    next_ = date(year + (month == 12), month % 12 + 1, 1)
+    base = "Monthly" if high else "MonthlyL"
+    return page("history/monthly.html", past_max_age(r["last"]),
+                page_title=f"{year}年{month}月の{'気温' if high else '低気温'}のランキング",
+                nav_active="monthly", r=r,
+                prev_url=f"/Monthly/{base}/{prev_:%Y%m}", next_url=f"/Monthly/{base}/{next_:%Y%m}",
+                other_url=f"/Monthly/{'MonthlyL' if high else 'Monthly'}/{year}{month:02d}")
+
+
+_SEASON_CACHE: dict = {}
+
+
+def season_pages(part: str, year: int) -> dict[str, str]:
+    """過去の年の夏・冬の 4 ページ（生成側の build_season_pages に年を渡して作る）。
+
+    今季のページと同じ計算・同じテンプレートなので、今季と過去で作り方がずれない。
+    観測ストアが書き換わるまで覚えておく（同じ年の 4 ページはまとめて計算される）。"""
+    import generate
+    store = BASE / "store" / "observations.nc"
+    key = (part, year, store.stat().st_mtime if store.is_file() else 0)
+    if key in _SEASON_CACHE:
+        return _SEASON_CACHE[key]
+    stations = generate.load_stations()
+    generate.climate_targets(stations)                 # 地点の URL 名を先に決める
+    _, meta = generate.load_today()
+    pages: dict[str, str] = {}
+    hist = generate.History()
+    try:
+        generate.build_season_pages(env(), meta, stations, hist, year=year, part=part,
+                                    emit=lambda path, html: pages.__setitem__(path, html))
+    finally:
+        hist.close()
+    if len(_SEASON_CACHE) > 32:
+        _SEASON_CACHE.clear()
+    _SEASON_CACHE[key] = pages
+    return pages
+
+
+def season_page(part: str, kind: str, y: str) -> Response:
+    part = part.lower()
+    canon = SEASON_KINDS[part].get(kind.lower())
+    year = int(y)
+    if canon is None or not 1880 <= year <= date.today().year + 1:
+        return not_found()
+    html = season_pages(part, year).get(f"{part.capitalize()}/{canon}/index.html")
+    if html is None:
+        return not_found()
+    end = date(year, 12, 31) if part == "summer" else date(year, 7, 31)
+    return HTMLResponse(html, headers={"Cache-Control": f"public, max-age={past_max_age(end)}"})
+
+
 # ---------------------------------------------------------------- 入口
 
 @app.api_route("/{path:path}", methods=["GET", "HEAD"])
@@ -227,6 +294,10 @@ async def serve(path: str, request: Request) -> Response:
         return day_page(m.group(1).lower(), m.group(2))
     if m := MONTH.match(url):
         return month_page(m.group(1).lower(), m.group(2))
+    if m := MONTHLY.match(url):
+        return monthly_page(m.group(1), m.group(2), m.group(3))
+    if (m := SEASON.match(url)) and m.group(2).lower() in SEASON_KINDS[m.group(1).lower()]:
+        return season_page(m.group(1), m.group(2), m.group(3))
 
     # 3. 旧サイトの URL の転送（生成済みの _redirects）
     if hit := REDIRECTS.match(url):
