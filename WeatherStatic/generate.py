@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import shutil
 import warnings
 from datetime import date, datetime, timedelta
@@ -1618,7 +1619,6 @@ def legacy_redirects(targets: list) -> list[str]:
         "/Summer/Nettaiya /Temperature/TodayLowsDec/ 301",
         # 予報図は扱わない（気象業務法）。予報はデスクトップアプリで
         "/Gfs /App/ 301",
-        "/Gfs/* /App/ 301",
     ]
     for m in range(1, 13):
         lines.append(f"/Monthly/Heinenti/{m:02d} /Monthly/Heinenti{m:02d}/ 301")
@@ -1636,26 +1636,47 @@ def legacy_redirects(targets: list) -> list[str]:
                 lines.append(f"/Stations/JP/{slug} {to} 301")
             if slug not in have_cl:
                 lines.append(f"/Climate/Chart/{slug} /Climate/ 301")
-    # まだ作っていない過去のページ（一時）
-    for kind in ("Ranking", "SummerDayList", "Hottest", "HottestList"):
-        lines.append(f"/Summer/{kind}/:year /Summer/{kind}/ 302")
-    for kind in ("Ranking", "WinterDayList", "Coldest", "LowestList"):
-        lines.append(f"/Winter/{kind}/:year /Winter/{kind}/ 302")
+        # 旧サイトが自分のリンクで使っていた別名（akita・Tokyoold など）
+        for alias, slug in leg.get("aliases", {}).items():
+            st_to = (f"/Stations/JP/{slug}/" if slug in have_st else
+                     f"/Climate/Chart/{slug}/" if slug in have_cl else "/Stations/")
+            cl_to = f"/Climate/Chart/{slug}/" if slug in have_cl else "/Climate/"
+            lines.append(f"/Stations/JP/{alias} {st_to} 301")
+            lines.append(f"/Climate/Chart/{alias} {cl_to} 301")
+    # まだ作っていない過去のページ（一時）。固定のもの
     lines += [
-        "/Monthly/Monthly/:ym /Monthly/Latest/ 302",
-        "/Monthly/MonthlyL/:ym /Monthly/Latest/ 302",
-        "/Temperature/SummerDay/:day /Temperature/HighsList/ 302",
-        "/Temperature/SummerMonth/:k/:m /Summer/Ranking/ 302",
-        "/Temperature/SummerMonth/:m /Summer/Ranking/ 302",
         "/Temperature/SummerMonth /Summer/Ranking/ 302",
         "/Temperature/SummerMonth/ /Summer/Ranking/ 302",
-        "/Temperature/WinterMonth/:k/:m /Winter/Ranking/ 302",
-        "/Temperature/WinterMonth/:m /Winter/Ranking/ 302",
         "/Temperature/WinterMonth /Winter/Ranking/ 302",
         "/Temperature/WinterMonth/ /Winter/Ranking/ 302",
     ]
     lines += [f"/Summer/SummerMonth{y} /Summer/Ranking/ 302" for y in range(2010, date.today().year + 1)]
-    n_dyn = sum(1 for l in lines if ":" in l.split()[0] or "*" in l.split()[0])
+    # ここからパターン付き。Pages は固定のものを先に置く決まり。名前付きの置き場所
+    # （:year）は転送先でも使わないと無効になる（2026-10-05、使っていなかった行が
+    # すべて効かなかった）ので、元の値をクエリに付けて残す（ページ側は無視する）
+    lines.append("/Gfs/* /App/ 301")
+    for kind in ("Ranking", "SummerDayList", "Hottest", "HottestList"):
+        lines.append(f"/Summer/{kind}/:year /Summer/{kind}/?year=:year 302")
+    for kind in ("Ranking", "WinterDayList", "Coldest", "LowestList"):
+        lines.append(f"/Winter/{kind}/:year /Winter/{kind}/?year=:year 302")
+    lines += [
+        "/Monthly/Monthly/:ym /Monthly/Latest/?ym=:ym 302",
+        "/Monthly/MonthlyL/:ym /Monthly/Latest/?ym=:ym 302",
+        "/Temperature/SummerDay/:day /Temperature/HighsList/?day=:day 302",
+        "/Temperature/SummerMonth/:k/:m /Summer/Ranking/?k=:k&m=:m 302",
+        "/Temperature/SummerMonth/:m /Summer/Ranking/?m=:m 302",
+        "/Temperature/WinterMonth/:k/:m /Winter/Ranking/?k=:k&m=:m 302",
+        "/Temperature/WinterMonth/:m /Winter/Ranking/?m=:m 302",
+    ]
+    def is_dyn(l: str) -> bool:
+        return ":" in l.split()[0] or "*" in l.split()[0]
+    first_dyn = next((i for i, l in enumerate(lines) if is_dyn(l)), len(lines))
+    assert not any(not is_dyn(l) for l in lines[first_dyn:]), "固定の転送はパターン付きより前に置く"
+    for l in lines:
+        src, dst = l.split()[:2]
+        for ph in re.findall(r":[A-Za-z]\w*", src):
+            assert ph in dst, f"名前付きの置き場所 {ph} を転送先で使っていない: {l}"
+    n_dyn = sum(1 for l in lines if is_dyn(l))
     assert len(lines) - n_dyn <= 2000 and n_dyn <= 100, "Pages の _redirects の上限を超える"
     print(f"  [seo] _redirects（旧サイトの URL: 固定 {len(lines) - n_dyn} 件・パターン {n_dyn} 件）")
     return lines

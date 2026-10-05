@@ -103,11 +103,14 @@ def main() -> int:
 
     if args.write:
         OUT.parent.mkdir(parents=True, exist_ok=True)
+        # 別名（旧サイトを巡回して集めたもの）は一覧からは作れないので、書き直しても残す
+        prev = json.loads(OUT.read_text(encoding="utf-8")) if OUT.is_file() else {}
         OUT.write_text(json.dumps({
             "source": f"{OLD}/Stations/JP と {OLD}/Climate（旧 WeatherCore）",
             "note": "地点番号（code）→ 旧サイトの URL 名。/Stations/JP/{名}・/Climate/Chart/{名}",
             "slugs": dict(sorted(mapping.items(), key=lambda x: int(x[0]))),
             "unmatched": [{"slug": s, "prec_no": k[0], "name": k[1]} for s, k in unmatched],
+            **{k: prev[k] for k in ("aliases", "aliases_note") if k in prev},
         }, ensure_ascii=False, indent=1), encoding="utf-8")
         print(f"{OUT.relative_to(BASE)} を書きました")
     return 0
