@@ -1,0 +1,125 @@
+{#
+  アメダス 10 分値アーカイブ（半月ごとの NetCDF）の配布ページ。
+  気象庁の 10 分値は約 9 日で消えるので、保持期間を過ぎた分をここで配る。
+  ファイルの一覧と変数の表は生成時に archive/ の実物から作る（手で書き写さない）。
+#}
+{% extends "_layout.html" %}
+{% block head_extra %}
+<style>
+    .ab { margin: 0 10px 24px; max-width: 52em; }
+    .ab h2 { font-size: 22px; margin: 6px 0 14px; }
+    .ab h3 { font-size: 17px; border-left: 4px solid var(--accent);
+        padding-left: 9px; margin: 24px 0 10px; }
+    .ab p, .ab li { font-size: 14px; line-height: 1.85; }
+    .ab table { width: 100%; border-collapse: collapse; background: var(--card);
+        border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .ab th, .ab td { border-bottom: 1px solid var(--border); padding: 7px 10px;
+        font-size: 13.5px; text-align: left; vertical-align: top; }
+    .ab th { background: var(--th-bg); color: var(--th-text); white-space: nowrap; }
+    .ab tr:last-child td { border-bottom: none; }
+    .ab td.num { text-align: right; white-space: nowrap; }
+    .ab .gap td { color: var(--muted, #888); }
+    .ab pre { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+        padding: 12px 14px; font-size: 12.5px; overflow-x: auto; line-height: 1.6; }
+    .ab code { font-size: 12.5px; }
+    .ab-note { background: var(--panel); border: 1px solid var(--border);
+        border-left: 4px solid var(--accent); border-radius: 8px; padding: 12px 16px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="ab">
+    <h2>アメダス 10 分値アーカイブ</h2>
+
+    <p>
+        気象庁のアメダス 10 分値（全国 約 {{ n_stations }} 地点）は、気象庁のサイトでは
+        <strong>約 9 日間</strong>しか公開されません。当サイトでは取得した 10 分値を
+        半月ごとに NetCDF-4 ファイルへまとめ、保持期間を過ぎた後も取得できるようにしています。
+    </p>
+
+    <div class="ab-note">
+        <p style="margin:0">
+            出典: <a href="https://www.jma.go.jp/">気象庁ホームページ</a>（アメダス 10 分値
+            <code>https://www.jma.go.jp/bosai/amedas/data/map/{時刻}.json</code>）。<br>
+            このファイルは気象庁のデータを<strong>編集・加工したもの</strong>です
+            （形式の変換と半月ごとの集約）。編集・加工の責任は当サイトにあり、
+            気象庁が作成したものではありません。
+        </p>
+    </div>
+
+    <h3>ファイル</h3>
+    {% if periods %}
+    <table>
+        <tr><th>期間</th><th>ファイル</th><th>スロット数</th><th>大きさ</th></tr>
+        {% for p in periods %}
+        {% if p.path %}
+        <tr><td>{{ p.start }} 〜 {{ p.end }}</td>
+            <td><a href="/Data/AMeDAS/{{ p.path }}">{{ p.path.split('/')[-1] }}</a></td>
+            <td class="num">{{ "{:,}".format(p.slots) }} / {{ "{:,}".format(p.expected) }}</td>
+            <td class="num">{{ p.size }}</td></tr>
+        {% elif p.pending %}
+        <tr class="gap"><td>{{ p.start }} 〜 {{ p.end }}</td>
+            <td colspan="3">まとめる前（{{ p.pending }}ごろ公開）</td></tr>
+        {% else %}
+        <tr class="gap"><td>{{ p.start }} 〜 {{ p.end }}</td>
+            <td colspan="3">欠け（収集が止まっていた期間。気象庁の保持期間を過ぎたため取り戻せません）</td></tr>
+        {% endif %}
+        {% endfor %}
+    </table>
+    <p>
+        スロット数は「収めた 10 分値の時刻の数 / その期間の本来の数」です。収集を始めた期間や、
+        収集が途中で止まった期間は本来の数に満ちません。進行中の半月分は、期間が終わってから
+        まとめて置きます。機械向けの一覧は <a href="/Data/AMeDAS/index.json">index.json</a> です。
+    </p>
+    {% else %}
+    <p>まだ公開できる期間がありません。半月分がそろった時点で置きます。</p>
+    {% endif %}
+
+    <h3>中身</h3>
+    <ul>
+        <li>次元は <code>station</code>（地点）× <code>time</code>（10 分ごとの時刻）。</li>
+        <li><code>station_id</code> はアメダス観測所番号です。地点名・緯度経度は
+            <a href="/Data/AMeDAS/station/index.json">station/index.json</a> にあります。</li>
+        <li><code>time</code> は期間の初めからの分（日本時間）。単位は属性 <code>units</code> に入っています。</li>
+        <li>値は整数で格納し、属性 <code>scale_factor</code> を掛けると下の単位の値になります。
+            欠測は <code>_FillValue</code> です（気象庁の配信に値が無かった時刻）。</li>
+        <li>要素ごとに品質フラグ <code>{要素}_q</code> があります（気象庁の配信のまま。0 が正常）。</li>
+        <li>天気（<code>weather</code>）は毎正時のスロットにしか入りません。
+            積雪は観測している地点・季節にしか入りません。</li>
+    </ul>
+
+    <table>
+        <tr><th>変数</th><th>単位</th><th>倍率</th></tr>
+        {% for v in variables %}
+        <tr><td><code>{{ v.name }}</code></td><td>{{ v.units }}</td><td class="num">{{ v.scale }}</td></tr>
+        {% endfor %}
+    </table>
+
+    <h3>読み方（Python）</h3>
+<pre>import netCDF4
+
+ds = netCDF4.Dataset("{{ example_file }}")      # scale_factor と _FillValue は自動で適用される
+ids = list(ds["station_id"][:])
+i = ids.index("44132")                          # 東京
+temp = ds["temp"][i, :]                         # ℃。欠測はマスクされる
+minutes = ds["time"][:]                         # 期間の初め（日本時間）からの分
+print(ds["time"].units, temp[:6])</pre>
+
+    <h3>注意</h3>
+    <ul>
+        <li>収めているのは、当サイトが取得した時点の値です。気象庁は過去の時刻のデータを
+            後から配信し直すことがあり、その後の修正は反映されていません。</li>
+        <li>10 分値には速報値が含まれます。日別の確定値が必要な場合は、気象庁の
+            <a href="https://www.data.jma.go.jp/stats/etrn/">過去の気象データ検索</a>をご利用ください。</li>
+        <li>当サイトは個人が運用している非公式のサイトです。継続や完全性は保証できません。</li>
+    </ul>
+
+    <h3>利用条件</h3>
+    <p>
+        気象庁ホームページのコンテンツは
+        <a href="https://www.jma.go.jp/jma/kishou/info/coment.html">公共データ利用規約（第1.0版）</a>
+        に準拠した条件で利用できます。このファイルを利用・再配布する際も、同規約に従って
+        出典（気象庁ホームページ）を記載し、気象庁のデータを編集・加工したものであることを
+        示してください。国（気象庁）が作成したかのような形で公表・利用することはできません。
+    </p>
+</div>
+{% endblock %}

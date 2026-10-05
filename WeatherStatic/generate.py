@@ -1331,6 +1331,116 @@ def build_about(env: Environment) -> None:
         nav_active="about", build_year=datetime.now().year))
 
 
+AMEDAS_SRC = BASE / "public_amedas"          # fetch_amedas_mirror.py の出力
+AMEDAS_URL = "Data/AMeDAS"
+
+
+def _half_month(d: date) -> tuple[date, date]:
+    """その日が属する半月（1〜15 日 / 16 日〜月末）の初日と末日。"""
+    if d.day <= 15:
+        return d.replace(day=1), d.replace(day=15)
+    nxt = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return d.replace(day=16), nxt - timedelta(days=1)
+
+
+def build_data_amedas(env: Environment) -> None:
+    """アメダス 10 分値アーカイブ（半月ごとの NetCDF）を配る。
+
+    気象庁の 10 分値は約 9 日で消える。fetch_amedas_mirror.py が半月ごとに
+    封入した NetCDF を、説明ページ・機械向けの索引・地点一覧と一緒に
+    /Data/AMeDAS/ に置く。生の 10 分値 JSON（map/）は気象庁が配っている
+    期間と重なるので配らない。
+
+    一覧と変数の表は archive/ の実物から作る（書き写すとずれに気づけない）。
+    欠けた半月（収集が止まっていた期間）も一覧に出し、黙って飛ばさない。
+    """
+    out = PUBLIC / AMEDAS_URL
+    src_index = AMEDAS_SRC / "index.json"
+    meta = json.loads(src_index.read_text(encoding="utf-8")) if src_index.is_file() else {}
+    archive = sorted(meta.get("archive", []), key=lambda a: a["start"])
+
+    # NetCDF は大きく増えていくので、同じ大きさ・時刻のものは写し直さない
+    n_copied = 0
+    for a in archive:
+        s, d = AMEDAS_SRC / a["path"], out / a["path"]
+        if not s.is_file():
+            continue
+        if d.is_file() and d.stat().st_size == s.stat().st_size \
+                and int(d.stat().st_mtime) == int(s.stat().st_mtime):
+            continue
+        d.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(s, d)
+        n_copied += 1
+    st_src = AMEDAS_SRC / "station" / "index.json"
+    n_stations = 0
+    if st_src.is_file():
+        (out / "station").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(st_src, out / "station" / "index.json")
+
+    # 欠けも含めた半月の並び（最初の封入から、終わっている最後の半月まで）。
+    # ミラーは半月の最終日が取得窓から外れてから封入するので、それまでの期間は
+    # 「欠け」ではなく「まとめる前」（封入の予定日を出す）
+    window = int(meta.get("fetch_window_days", 10))
+    periods = []
+    if archive:
+        have = {a["start"]: a for a in archive}
+        last_done = _half_month(date.today())[0] - timedelta(days=1)
+        d = date.fromisoformat(archive[0]["start"])
+        while d <= last_done:
+            first, last = _half_month(d)
+            a = have.get(first.isoformat())
+            expected = ((last - first).days + 1) * 144
+            if a:
+                size = a["bytes"]
+                periods.append({"start": a["start"], "end": a["end"], "path": a["path"],
+                                "slots": a["slots"], "expected": expected,
+                                "size": f"{size / 1024 / 1024:.1f} MB" if size >= 1024 * 1024
+                                        else f"{size / 1024:.0f} KB"})
+            else:
+                due = last + timedelta(days=window + 1)
+                periods.append({"start": first.isoformat(), "end": last.isoformat(),
+                                "path": None,
+                                "pending": f"{due.month}月{due.day}日" if due >= date.today() else None})
+            d = last + timedelta(days=1)
+
+    # 変数の表は最新のファイルの属性から
+    variables, example = [], "08-2.nc"
+    if archive and (AMEDAS_SRC / archive[-1]["path"]).is_file():
+        import netCDF4
+        example = archive[-1]["path"].split("/")[-1]
+        with netCDF4.Dataset(AMEDAS_SRC / archive[-1]["path"]) as ds:
+            n_stations = ds.dimensions["station"].size
+            for name, v in ds.variables.items():
+                if name in ("station_id", "time") or name.endswith("_q"):
+                    continue
+                variables.append({"name": name, "units": getattr(v, "units", ""),
+                                  "scale": f"{float(getattr(v, 'scale_factor', 1.0)):g}"})
+
+    index = {
+        "dataset": "JMA AMeDAS 10-minute observations — half-month archive (NetCDF-4)",
+        "attribution": meta.get("attribution_archive", "出典: 気象庁ホームページ"),
+        "license": "公共データ利用規約（第1.0版）に準拠（気象庁ホームページのコンテンツ）。"
+                   "利用時は出典と、編集・加工したデータであることを記載すること",
+        "source_url": meta.get("source_url"),
+        "slot_minutes": meta.get("slot_minutes", 10),
+        "elements": meta.get("elements", []),
+        "generated_at": meta.get("generated_at"),
+        "archive": [{**a, "url": f"/{AMEDAS_URL}/{a['path']}"} for a in archive],
+        "missing_periods": [{"start": p["start"], "end": p["end"]}
+                            for p in periods if not p["path"] and not p["pending"]],
+    }
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=1),
+                                    encoding="utf-8")
+    write(f"{AMEDAS_URL}/index.html", env.get_template("data/amedas.html").render(
+        page_title="アメダス 10 分値アーカイブ（NetCDF）", nav_active="about",
+        build_year=datetime.now().year, periods=periods, variables=variables,
+        n_stations=f"{n_stations:,}" if n_stations else "1,290", example_file=example))
+    print(f"  [data] {AMEDAS_URL}/: 半月 {len(archive)} 本（今回写したもの {n_copied}）"
+          f" / 欠け {sum(1 for p in periods if not p['path'] and not p['pending'])} 期間"
+          f" / まとめる前 {sum(1 for p in periods if p.get('pending'))} 期間")
+
+
 def build_seo(env: Environment, stations: dict) -> None:
     """sitemap.xml・_redirects（旧URL誘導）・404.html。Pages 移行のサイトインフラ。"""
     import os
@@ -1340,7 +1450,7 @@ def build_seo(env: Environment, stations: dict) -> None:
             "/Temperature/HighsList/", "/Temperature/LowsList/",
             "/Summer/Ranking/", "/Winter/LowestList/", "/Climate/",
             "/Stations/", "/Monthly/", "/Monthly/Latest/",
-            "/Precipitation/", "/App/", "/App/Develop/", "/About/"]
+            "/Precipitation/", "/App/", "/App/Develop/", "/About/", f"/{AMEDAS_URL}/"]
     urls += [f"/Monthly/Heinenti{m:02d}{l}/" for m in range(1, 13) for l in ("", "l")]
     targets = climate_targets(stations)
     urls += [f"/Climate/Chart/{s}/" for _, _, _, s in targets]
@@ -1365,6 +1475,19 @@ def build_seo(env: Environment, stations: dict) -> None:
             lines.append(f"/Climate/Chart/{old} /Climate/Chart/{slug}/ 301")
     (PUBLIC / "_redirects").write_text("\n".join(lines[:2000]), encoding="utf-8")
     print(f"  [seo] _redirects ({min(len(lines), 2000)} 行)")
+
+    # 配布ファイルのヘッダ。NetCDF は形式を明示し、他所のページやツールからも
+    # 読めるよう CORS を開ける。封入済みの半月分は変わらないので長めに持たせる
+    (PUBLIC / "_headers").write_text("\n".join([
+        f"/{AMEDAS_URL}/*",
+        "  Access-Control-Allow-Origin: *",
+        f"/{AMEDAS_URL}/archive/*",
+        "  Content-Type: application/x-netcdf",
+        "  Cache-Control: public, max-age=86400",
+        f"/{AMEDAS_URL}/index.json",
+        "  Cache-Control: public, max-age=600",
+        "",
+    ]), encoding="utf-8")
 
     write("404.html",
           '<!doctype html><meta charset="utf-8"><title>404</title>'
@@ -1416,6 +1539,7 @@ def main() -> None:
         build_precipitation(env, stations)
         build_app(env)
         build_about(env)
+        build_data_amedas(env)
         build_seo(env, stations)
         build_home(env, today, meta, fc, stations, hist)
     finally:
