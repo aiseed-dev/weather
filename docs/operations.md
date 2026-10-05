@@ -197,13 +197,31 @@ WantedBy=default.target
 `systemctl --user daemon-reload && systemctl --user enable --now weather-server` で起動。
 コードを pull したあとは `systemctl --user restart weather-server`。
 
-**外に出すのは Cloudflare Tunnel。** 家のルーターに穴を開けず、`cloudflared` が deb2 から
-Cloudflare へ外向きにつなぐ。まず別のホスト名（例 `new.weather.time-j.net`）で確かめ、
-問題なければ `weather.time-j.net` を旧システムから切り替える。キャッシュは各応答の
-`Cache-Control` に従う（生成済みの HTML は 60 秒、確定した過去のページは 1 日）。
+**前段は deb2 で既に動いている Caddy。** 443 番で、Cloudflare の経由で来た接続を受ける
+（Cloudflare のオリジン証明書、接続元は `CF-Connecting-IP`）。`office.aiseed.dev` などと同じく、
+site ブロックを 1 つ足して FastAPI へ渡す。Caddyfile は `02-web.sh` から作る決まりなので、
+足すのはスクリプトの側（運用者の作業）。Tunnel は使わない。
 
-**可用性。** deb2 が止まると、Tunnel 経由のサイトも止まる。Cloudflare Pages への公開は
-続けているので、そのあいだは `weather-dj7.pages.dev` で同じ内容（過去のページを除く）が見られる。
+```caddy
+weather.time-j.net {
+	tls /etc/caddy/certs/time-j.net.pem /etc/caddy/certs/time-j.net.key
+	encode zstd gzip
+	header -Server
+	reverse_proxy 127.0.0.1:8770
+}
+```
+
+- 今のオリジン証明書（`origin.pem`）は `*.aiseed.dev` と `aiseed.dev` だけが対象
+  （2026-10-05 確認）。**試すだけなら aiseed.dev のサブドメイン**（例 `weather.aiseed.dev`、
+  `import cf` で足りる）で出せる
+- `weather.time-j.net` で出すときは、Cloudflare で time-j.net 用のオリジン証明書を発行して
+  置き、DNS を旧システムから deb2 へ切り替える（Cloudflare の経由＝プロキシを有効に）
+- サーバーの転送は相対 URL で返すので、前段の名前が変わっても直す所は無い
+- キャッシュは各応答の `Cache-Control` に従う（生成済みの HTML は 60 秒、確定した過去の
+  ページは 1 日）
+
+**可用性。** deb2 が止まるとサイトも止まる。Cloudflare Pages への公開は続けているので、
+そのあいだは `weather-dj7.pages.dev` で同じ内容（過去のページを除く）が見られる。
 
 ## いつ何を取りに行くか
 
