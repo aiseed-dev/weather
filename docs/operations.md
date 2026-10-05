@@ -161,10 +161,22 @@ backfill_etrn が自前で使う。**cron に flock を書く必要はない。*
 1 つの入口で、次の順に判定する。
 
 1. 生成済みのファイル（`public/`）がその URL にあれば返す（ディレクトリはスラッシュ付きへ）
-2. 過去のページならその場で作る（`server/history.py`。配布用の日別データ
-   `dist/daily/years/` から）。いまは「その日の猛暑日などの地点」
-   （`/Temperature/SummerDay/{a|b|c|d}{YYYYMMDD}`）と「月の日ごとの地点数」
-   （`/Temperature/SummerMonth/{a|b|c|d}/{月}`）
+2. 過去のページならその場で作る。いまあるのは次のとおり
+   - その日の猛暑日などの地点 `/Temperature/SummerDay/{a|b|c|d}{YYYYMMDD}` と、
+     月の日ごとの地点数 `/Temperature/SummerMonth/{a|b|c|d}/{月}`
+     （`server/history.py`。配布用の日別データ `dist/daily/years/` から）
+   - 月の平均気温のランキング `/Monthly/Monthly/{YYYYMM}`（高い順）・
+     `/Monthly/MonthlyL/{YYYYMM}`（低い順）（同上）
+   - 過去の年の夏・冬のページ `/Summer/{Ranking|SummerDayList|Hottest|HottestList}/{年}`・
+     `/Winter/{Ranking|WinterDayList|Coldest|LowestList}/{年}`（冬は寒候年。生成側の
+     `build_season_pages` に年を渡して作るので、今季のページと同じ計算。過去の年は
+     廃止された地点も載せる）
+
+   資料不足値（気象庁の品質 4 以下）は気象庁と同じに扱う。その日の地点の一覧には
+   「]」を付けて載せ、月平均・期間の極値・日数には使わない。旧サイトとの突き合わせ
+   （2018 年の各ページ・2014 年冬の一覧）では、この扱いで値がほぼ一致する。残る差は
+   地点名の改称（加賀菅谷→加賀中津原など）、元データの違い、旧サイトの日ごとの一覧に
+   南鳥島が無いこと、旧サイトの冬の一覧に夏の値が混じっていた地点（木曽福島・栗栖川）
 3. 生成済みの `_redirects` に当たれば転送（Pages と同じ規則）
 4. 大文字小文字だけ違うファイルがあれば正しい URL へ 301
 5. どれにも当たらなければ 404

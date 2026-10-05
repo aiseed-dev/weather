@@ -48,7 +48,7 @@
     </tr>
     {% for s in g.stations %}
     <tr>
-        <td class="stations"><a href="/Stations/JP/{{ s.place }}">{{ s.name }}</a></td>
+        <td class="stations">{% if s.place %}<a href="/Stations/JP/{{ s.place }}">{{ s.name }}</a>{% else %}{{ s.name }}{% endif %}</td>
         {% for val, d in s.pairs %}
         <td class="wright">{{ val }}</td>
         <td class="wright">{{ d | jdate }}</td>

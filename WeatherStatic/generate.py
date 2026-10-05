@@ -716,6 +716,74 @@ def build_rankings(env: Environment, today: dict, meta: dict, stations: dict) ->
 
 # ---------------------------------------------------------------- ページ: 夏/冬ランキング
 
+def closed_stations(recs: dict) -> list[tuple[int, dict]]:
+    """観測ストアにあって今の地点一覧（master/stations.json）に無い地点。
+
+    廃止された地点は一覧から消えるが、観測ストアには行が残っている。行と地点番号の
+    対応は帳簿（store/weather.sqlite）、府県番号と名前は master/station_codes.json。"""
+    import sqlite3
+    db = BASE / "store" / "weather.sqlite"
+    if not db.is_file():
+        return []
+    codes = {}
+    scp = MASTER / "station_codes.json"
+    if scp.is_file():
+        for e in json.loads(scp.read_text(encoding="utf-8"))["entries"]:
+            try:
+                codes[int(e["block_no"])] = e
+            except (KeyError, ValueError):
+                pass
+    votes: dict[int, dict[str, int]] = {}             # 府県番号 → 府県名（現行の地点の多数決）
+    for r in recs.values():
+        p = (r.get("etrn") or {}).get("prec_no")
+        if p is not None and r.get("pref"):
+            votes.setdefault(p, {}).setdefault(r["pref"], 0)
+            votes[p][r["pref"]] += 1
+    pref_of = {p: max(v, key=v.get) for p, v in votes.items()}
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        rows = conn.execute("SELECT row, code, name FROM stations WHERE code IS NOT NULL").fetchall()
+    finally:
+        conn.close()
+    known = {r["row"] for r in recs.values()}
+    out = []
+    for row, code, name in rows:
+        if row in known:
+            continue
+        e = codes.get(int(code), {})
+        prec = e.get("prec_no", 99)
+        out.append((int(code), {"name": name or e.get("name") or str(code),
+                                "pref": pref_of.get(prec, ""), "amedas": None, "row": row,
+                                "etrn": {"prec_no": prec}, "elements": {"temp": False}}))
+    return out
+
+
+def season_stations(stations: dict, past: bool) -> list[tuple[int, dict]]:
+    """季節のページで集計する地点を、府県の順・地点番号の順に。
+
+    今季は気温を測っている現行の地点。過去の年は、その後に廃止された地点や気温の
+    観測をやめた地点も含める（旧サイトと同じく、その年に観測していた地点を載せる）。
+    その期間にデータがあるかは集計側で見る。
+
+    府県のまとまり（group_prec）は府県名で決める。etrn の府県番号は富士山を山梨県
+    （49）に置くが、地点名の府県は静岡県で、旧サイトも静岡県に載せていた。"""
+    recs = stations["stations"]
+    out = [(int(c), r) for c, r in recs.items() if past or r["elements"]["temp"]]
+    if past:
+        out += closed_stations(recs)
+    votes: dict[str, dict[int, int]] = {}
+    for r in recs.values():
+        p = (r.get("etrn") or {}).get("prec_no")
+        if p is not None and r.get("pref"):
+            votes.setdefault(r["pref"], {}).setdefault(p, 0)
+            votes[r["pref"]][p] += 1
+    pref_prec = {pref: max(v, key=v.get) for pref, v in votes.items()}
+    out = [(c, {**r, "group_prec": pref_prec.get(r.get("pref"), r.get("etrn", {}).get("prec_no", 99))})
+           for c, r in out]
+    out.sort(key=lambda x: (x[1]["group_prec"], x[1].get("amedas") or f"~{x[0]:05d}"))
+    return out
+
+
 def build_season_pages(env: Environment, meta: dict, stations: dict, hist: History, *,
                        year: int | None = None, part: str | None = None, emit=None) -> None:
     """Summer/Winter の日数・気温のランキングと一覧（計 8 ページ）を nc の履歴から生成する。
@@ -733,9 +801,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
     emit = emit or write
     sfx = f"/{year}" if year else ""          # 過去の年のページ同士をつなぐ
 
-    temp_st = [(int(c), r) for c, r in stations["stations"].items()
-               if r["elements"]["temp"]]
-    temp_st.sort(key=lambda x: (x[1].get("etrn", {}).get("prec_no", 99), x[1]["amedas"]))
+    temp_st = season_stations(stations, past=bool(year))
     rows_idx = np.array([r["row"] for _, r in temp_st])
 
     def season(start: datetime, end: datetime):
@@ -749,7 +815,13 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         if m["tmax"].shape[0] <= rows_idx.max():
             return None
         sel = {v: arr[rows_idx] for v, arr in m.items()}
-        ok = {v: (a != FILL) for v, a in sel.items()}
+        # 資料不足値（品質 4 以下）は日数にも極値にも使わない（気象庁の統計と旧サイトと同じ）。
+        # 品質の無い値（-1。毎時値から求めた直近の日平均など）は使う
+        ok = {}
+        for v, a in sel.items():
+            q = hist.matrix(f"{v}_q", start.date(), end.date())
+            good = (q[rows_idx] >= 5) | (q[rows_idx] < 0) if q is not None else True
+            ok[v] = (a != FILL) & good
         qual = ok["tmax"].sum(axis=1) >= period_days / 2   # 充足地点のみ集計
 
         def counts(v, th, ge=True):
@@ -757,11 +829,10 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
             return np.where(qual, c, -1)
 
         def extreme(v, highest=True):
+            # 同じ値が何日もあれば新しい方の日を起日にする（気象庁・旧サイトと同じ）
             has = ok[v].any(axis=1) & qual
-            if highest:
-                idx = np.where(ok[v], sel[v], -32768).argmax(axis=1)
-            else:
-                idx = np.where(ok[v], sel[v], 32767).argmin(axis=1)
+            rev = np.where(ok[v], sel[v], -32768 if highest else 32767)[:, ::-1]
+            idx = rev.shape[1] - 1 - (rev.argmax(axis=1) if highest else rev.argmin(axis=1))
             vals = sel[v][np.arange(len(rows_idx)), idx]
             return vals, idx, has
 
@@ -784,7 +855,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
                 break
             code, rec = temp_st[oi]
             out.append({"rank": rank, "name": rec["pref"] + rec["name"],
-                        "place": station_slug(rec),
+                        "place": place_of(rec),
                         "val": fmt(v)})
         return out
 
@@ -794,7 +865,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
             s = make_station(i, rec)
             if s is None:
                 continue
-            prec = rec.get("etrn", {}).get("prec_no", 99)
+            prec = rec["group_prec"]
             g = groups.setdefault(prec, {"prec_no": prec, "pref": rec["pref"],
                                          "region": region_of(prec), "stations": []})
             g["stations"].append(s)
@@ -804,7 +875,10 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         return f"{v / 10:.1f}"
 
     def place_of(rec):
-        return station_slug(rec)
+        """地点ページの URL 名。ページの無い地点（廃止・気温なし）は None。"""
+        if not rec["elements"].get("temp"):
+            return None
+        return _SLUG_BY_AMEDAS.get(str(rec.get("amedas")))
 
     common = {"nav_active": "ranking", "build_year": now.year,
               "region_filters": [(k, n) for k, n, _, _ in REGIONS]}

@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
@@ -33,7 +34,12 @@ MAX_RUN = 200                # 連続日数を数える上限（遡る日数）
 
 
 class YearData:
-    """1 年分の日別値。値は物理量（℃）で、欠測は NaN。"""
+    """1 年分の日別値。値は物理量（℃）で、欠測は NaN。
+
+    資料不足値（品質 4 以下）の扱いは気象庁と同じにする。その日の地点の一覧には
+    載せて「]」を付け（short）、月平均などの統計には使わない（stat）。旧サイトもこの
+    分け方で、2018 年 7 月 23 日の地点一覧と、同じ月の京田辺の月平均が一致する。
+    品質の無い値（毎時値から求めた直近の値など）は正常として扱う。"""
 
     def __init__(self, year: int, path: Path):
         import netCDF4
@@ -42,14 +48,32 @@ class YearData:
             self.codes = [int(c) for c in ds["station_code"][:]]
             self.first = date(1870, 1, 1) + timedelta(days=int(ds["time"][0]))
             self.n_days = ds.dimensions["time"].size
-            self.vals = {v: np.ma.filled(ds[v][:].astype(np.float64), np.nan)
-                         for v in ("tmax", "tmin", "tavg")}
+            self.vals, self.short = {}, {}
+            for v in ("tmax", "tmin", "tavg"):
+                self.vals[v] = np.ma.filled(ds[v][:].astype(np.float64), np.nan)
+                if f"{v}_q" in ds.variables:
+                    q = np.ma.filled(ds[f"{v}_q"][:].astype(np.int16), -1)
+                    self.short[v] = (q >= 0) & (q <= 4)
+                else:
+                    self.short[v] = np.zeros(self.vals[v].shape, dtype=bool)
+        self._stat: dict[str, np.ndarray] = {}
+
+    def stat(self, var: str) -> np.ndarray:
+        """統計用の値（資料不足値を NaN にしたもの）。"""
+        if var not in self._stat:
+            a = self.vals[var].copy()
+            a[self.short[var]] = np.nan
+            self._stat[var] = a
+        return self._stat[var]
 
     def col(self, var: str, d: date) -> np.ndarray | None:
         j = (d - self.first).days
         if not 0 <= j < self.n_days:
             return None
         return self.vals[var][:, j]
+
+    def col_short(self, var: str, d: date) -> np.ndarray:
+        return self.short[var][:, (d - self.first).days]
 
 
 @lru_cache(maxsize=6)
@@ -72,7 +96,11 @@ def last_year() -> int:
 @lru_cache(maxsize=2)
 def _meta(mtime_st: float, mtime_slug: float) -> tuple[dict, dict]:
     st = json.loads((DIST / "stations.json").read_text(encoding="utf-8"))["stations"]
-    pref_of_prec = {s["prec_no"]: s["pref"] for s in st if s.get("prec_no") and s.get("pref")}
+    # 府県番号 → 府県名は多数決（富士山は府県番号 49＝山梨県だが府県名は静岡県）
+    votes = Counter((s["prec_no"], s["pref"]) for s in st if s.get("prec_no") and s.get("pref"))
+    pref_of_prec = {}
+    for (prec, pref), _ in votes.most_common():
+        pref_of_prec.setdefault(prec, pref)
     meta = {}
     for s in st:
         pref = s.get("pref") or pref_of_prec.get(s.get("prec_no")) or ""
@@ -96,10 +124,11 @@ def _station(code: int, info: dict, slugs: dict) -> dict:
             "url": f"/Stations/JP/{slug}/" if slug else None}
 
 
-def _ranked(rows: list[dict], key: str) -> list[dict]:
+def _ranked(rows: list[dict], key: str, tie: str | None = None) -> list[dict]:
     """値の大きい順に並べ、同じ値は同じ順位にする（1, 2, 2, 4 …）。
-    同じ値の中は府県番号順・地点番号順（旧サイトと同じく北から）。"""
-    rows.sort(key=lambda r: (-r[key], r["order"]))
+    同じ値の中は tie（丸める前の値など）の大きい順、その次に府県番号順・地点番号順
+    （旧サイトと同じく北から）。"""
+    rows.sort(key=lambda r: (-r[key], -r[tie] if tie else 0, r["order"]))
     prev, rank = None, 0
     for i, r in enumerate(rows, 1):
         if r[key] != prev:
@@ -120,8 +149,9 @@ def day_ranking(kind: str, d: date) -> dict | None:
     info, slugs = meta()
     codes = yd.codes            # 地点の並びはどの年のファイルでも同じ（export_dist.py）
     hit = np.nonzero(col >= thr)[0]
-    by_value = [{**_station(codes[i], info, slugs), "value": round(float(col[i]), 1)}
-                for i in hit]
+    short = yd.col_short(var, d)
+    by_value = [{**_station(codes[i], info, slugs), "value": round(float(col[i]), 1),
+                 "short": bool(short[i])} for i in hit]
 
     # 連続日数: その日から遡って条件を満たし続けた日数（年をまたいで数える）
     runs = np.zeros(len(codes), dtype=int)
@@ -172,8 +202,9 @@ def month_ranking(high: bool, year: int, month: int) -> dict | None:
     """その月の日最高・日平均・日最低気温の平均の、高い順（high）か低い順の上位。
 
     旧 /Monthly/Monthly/{YYYYMM}（高い順）・/Monthly/MonthlyL/{YYYYMM}（低い順）。
-    平均は日々の値の単純平均を小数 1 桁に丸める（2018 年 7 月で旧サイトと一致）。
-    今月は昨日までで集計する。"""
+    平均は日々の値の単純平均を小数 1 桁に丸め、丸めた値で順位を付ける。同じ順位の中は
+    丸める前の平均の順（2018 年 7 月で旧サイトと一致）。表は高い順なら最高・平均・最低、
+    低い順なら最低・平均・最高の順に並べる（旧サイトと同じ）。今月は昨日までで集計する。"""
     yd = year_data(year)
     if yd is None:
         return None
@@ -188,8 +219,9 @@ def month_ranking(high: bool, year: int, month: int) -> dict | None:
     info, slugs = meta()
     n_days = j1 - j0
     tables = []
-    for var, label in (("tmax", "日最高気温の平均"), ("tavg", "日平均気温の平均"), ("tmin", "日最低気温の平均")):
-        block = yd.vals[var][:, j0:j1]
+    order = [("tmax", "日最高気温の平均"), ("tavg", "日平均気温の平均"), ("tmin", "日最低気温の平均")]
+    for var, label in (order if high else order[::-1]):
+        block = yd.stat(var)[:, j0:j1]
         n = (~np.isnan(block)).sum(axis=1)
         ok = n >= MIN_COVER * n_days
         if not ok.any():
@@ -198,15 +230,15 @@ def month_ranking(high: bool, year: int, month: int) -> dict | None:
         means = np.full(len(yd.codes), np.nan)
         means[ok] = np.nanmean(block[ok], axis=1)
         rows = [{**_station(yd.codes[i], info, slugs),
-                 "value": round(float(means[i]) + (1e-9 if means[i] >= 0 else -1e-9), 1)}
+                 "value": round(float(means[i]) + (1e-9 if means[i] >= 0 else -1e-9), 1),
+                 "raw": float(means[i])}
                 for i in np.nonzero(ok)[0]]
-        if not high:
-            for r in rows:
-                r["value"] = -r["value"]
-        rows = _ranked(rows, "value")
-        if not high:
-            for r in rows:
-                r["value"] = -r["value"]
+        sign = 1 if high else -1
+        for r in rows:
+            r["value"], r["raw"] = sign * r["value"], sign * r["raw"]
+        rows = _ranked(rows, "value", tie="raw")
+        for r in rows:
+            r["value"], r["raw"] = sign * r["value"], sign * r["raw"]
         tables.append({"title": label, "rows": [r for r in rows if r["rank"] <= MONTH_TOP]})
     if not any(t["rows"] for t in tables):
         return None

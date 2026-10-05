@@ -40,7 +40,7 @@
         <tr>
             <td class="wright">{% if s.rank <= 3 %}<span class="rank-badge r{{ s.rank }}">{{ s.rank }}</span>{% else %}{{ s.rank }}{% endif %}</td>
             <td>{{ s.pref }}{% if s.url %}<a href="{{ s.url }}">{{ s.name }}</a>{% else %}{{ s.name }}{% endif %}</td>
-            <td class="wright">{{ "%.1f"|format(s.value) }}</td>
+            <td class="wright">{{ "%.1f"|format(s.value) }}{% if s.short %} ]{% endif %}</td>
         </tr>
         {% endfor %}
     </tbody></table>
@@ -68,6 +68,7 @@
 <div id="info">
     <h5>データについての説明</h5>
     <p>出典: 気象庁ホームページ（過去の気象データ・最新の気象データ）。気象庁のデータを編集・加工しています。
-       直近の値は速報値で、後日確定値に置き換わることがあります。連続日数は 2 日以上の地点を載せています。</p>
+       直近の値は速報値で、後日確定値に置き換わることがあります。連続日数は 2 日以上の地点を載せています。
+       「]」は資料不足値（観測が一部欠けた日の値）です。</p>
 </div>
 {% endblock %}
