@@ -1563,7 +1563,7 @@ def build_data_daily(env: Environment) -> None:
     print(f"  [data] {DAILY_URL}/: 年 {len(years)} 本・地点 {len(st)} 本（今回写したもの {n_copied}）")
 
 
-def prune_station_pages(targets: list) -> None:
+def prune_station_pages(targets: list, stations: dict) -> None:
     """Stations/JP と Climate/Chart から、今の地点に当たらない古いページを片付ける。
 
     生成は古いファイルを消さないので、slug が変わると古い URL のページが残り、
@@ -1571,7 +1571,10 @@ def prune_station_pages(targets: list) -> None:
     URL 名に揃えたときに起きる）。この 2 つのディレクトリの、index.html だけを
     持つ地点ディレクトリに限って消す。"""
     keep_of = {"Stations/JP": {slug for _, r, _, slug in targets if r["elements"].get("temp")},
-               "Climate/Chart": {slug for _, _, _, slug in targets}}
+               "Climate/Chart": {slug for _, _, _, slug in targets},
+               # 実況の地点ページ（generate_status.py）は同じ slug、平年値の無い地点はアメダス番号
+               "Status/Station": {slug for _, _, _, slug in targets}
+                                 | {str(r.get("amedas")) for r in stations["stations"].values()}}
     n = 0
     for sub, keep in keep_of.items():
         root = PUBLIC / sub
@@ -1682,7 +1685,7 @@ def build_seo(env: Environment, stations: dict) -> None:
     (PUBLIC / "sitemap.xml").write_text("\n".join(xml), encoding="utf-8")
     print(f"  [seo] sitemap.xml ({len(urls)} URL)")
 
-    prune_station_pages(targets)
+    prune_station_pages(targets, stations)
     (PUBLIC / "_redirects").write_text("\n".join(legacy_redirects(targets)), encoding="utf-8")
 
     # 配布ファイルのヘッダ。NetCDF は形式を明示し、他所のページやツールからも
