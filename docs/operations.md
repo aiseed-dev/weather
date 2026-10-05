@@ -247,6 +247,13 @@ D1."）。地点ごとに置くと fetch N ＋ put N ＝ 2N になり 25 地点�
 R2 バケット `weather-amedas` は `wrangler.toml` に書いてあるので、無ければ
 cf-publish が作る（トークンに `Workers R2 Storage: Edit` が要る）。
 
+**前提: アカウントで R2 を有効にしておく**（ダッシュボードの「R2 Object
+Storage」。無料枠でも一度有効化が要る）。未有効だと API はエラー 10042 の
+403 を返し、cf-publish はそれを「トークンの権限不足」と表示する。
+`deploy_worker.py` は上げる前に読み取りだけの API で Workers と R2 に届くかを
+点検し、Cloudflare の本当の理由を出す（2026-10-05、権限は揃っていたのに
+R2 未有効で止まった）。
+
 **cf-publish 0.3.1 に Service Binding の対応は無い**（`--service` は存在
 しない）。Worker が別の Worker を呼ぶ構成はこの道具ではデプロイできない。
 `wrangler.toml` から拾う既定にも `[[services]]` は含まれない。

@@ -76,6 +76,60 @@ def read_env_file(path: Path = CF_ENV) -> dict[str, str]:
     return out
 
 
+def preflight() -> bool:
+    """Cloudflare 側の前提を読み取りだけの API で確かめ、本当の理由を出す。
+
+    cf-publish はバケット確認の 403 を一律に「トークンの権限不足」と表示する。
+    2026-10-05 は権限が揃っていたのに、実際の理由は「アカウントで R2 が
+    未有効（エラー 10042）」だった。権限を足しに行かせる遠回りを防ぐ。
+    トークンの値は表示しない。"""
+    import json
+    import urllib.error
+    import urllib.request
+    env = read_env_file()
+    tok = os.environ.get("CLOUDFLARE_API_TOKEN") or env.get("CLOUDFLARE_API_TOKEN")
+    acct = os.environ.get("CLOUDFLARE_ACCOUNT_ID") or env.get("CLOUDFLARE_ACCOUNT_ID")
+    if not tok or not acct:
+        log(f"CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID がありません（{CF_ENV}）")
+        return False
+
+    def get(path: str) -> tuple[int, list]:
+        req = urllib.request.Request("https://api.cloudflare.com/client/v4" + path,
+                                     headers={"Authorization": f"Bearer {tok}"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return r.status, []
+        except urllib.error.HTTPError as e:
+            try:
+                return e.code, json.loads(e.read()).get("errors", [])
+            except ValueError:
+                return e.code, []
+        except Exception as e:                     # 回線など。点検できないだけで止めない
+            return 0, [{"code": None, "message": str(e)[:80]}]
+
+    ok = True
+    for label, path, need in (
+            ("Workers", f"/accounts/{acct}/workers/scripts", "Workers Scripts: Edit"),
+            ("R2", f"/accounts/{acct}/r2/buckets", "Workers R2 Storage: Edit")):
+        status, errors = get(path)
+        codes = {e.get("code") for e in errors}
+        if status == 200:
+            log(f"  点検: {label} に届く")
+        elif 10042 in codes:
+            log(f"  点検: アカウントで R2 が有効になっていません（Cloudflare エラー 10042）。")
+            log("        ダッシュボードの「R2 Object Storage」で有効にしてください。")
+            log("        トークンの権限の問題ではありません。")
+            ok = False
+        elif status in (401, 403):
+            log(f"  点検: {label} を断られました（HTTP {status} {sorted(c for c in codes if c)}）。"
+                f"トークンに「{need}」があるか確かめてください。")
+            ok = False
+        else:
+            msg = "; ".join(str(e.get("message")) for e in errors)[:120]
+            log(f"  点検: {label} を確かめられませんでした（HTTP {status} {msg}）。続けます")
+    return ok
+
+
 def find_token() -> tuple[str | None, str]:
     """合言葉と、それをどこから読んだか。値は返すが表示はしない。"""
     if os.environ.get(TOKEN_KEY):
@@ -133,6 +187,8 @@ def deploy(apply: bool) -> int:
         log("  作るには: python WeatherStatic/deploy_worker.py --init-token")
         return 1
     log(f"合言葉: {where} から読みました（値は表示しません）")
+    if not preflight():
+        return 1
 
     cmd = [find_cf_publish(), "worker", "deploy", str(WORKER_DIR),
            "--secret", "TOKEN", "--workers-dev"]
