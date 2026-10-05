@@ -1,0 +1,58 @@
+{#
+  その月の、日ごと・年ごとの「条件を満たした地点数」（旧 /Temperature/SummerMonth/{a|b|c|d}/{月}）。
+  server/history.py の month_table がその場で作る。
+
+  コンテキスト: t（month_table の結果）, kinds（[(記号, 見出し, url)]）, months（[(月, url)]）
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .mtable { border-collapse: collapse; empty-cells: show; }
+    .mtable th, .mtable td { padding: 2px 7px; font-size: 90%; text-align: right; white-space: nowrap;
+        border-bottom: 1px solid var(--border); }
+    .mtable th { text-align: center; }
+    .mtable td.zero { color: var(--muted, #999); }
+    .hist-nav a { margin-right: 12px; }
+    .hist-note { background: var(--panel); border: 1px solid var(--border);
+        border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; margin: 14px 0; }
+    .hist-note p { margin: 0; font-size: 13.5px; line-height: 1.75; }
+    .mwrap { overflow-x: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>{{ t.month }}月の{{ t.title }}の日別の地点数</h2>
+<p class="hist-nav">
+    {% for k, label, url in kinds %}<a href="{{ url }}">{% if k == t.kind %}<b>{{ label }}</b>{% else %}{{ label }}{% endif %}</a>{% endfor %}
+</p>
+<p class="hist-nav">
+    {% for m, url in months %}<a href="{{ url }}">{% if m == t.month %}<b>{{ m }}月</b>{% else %}{{ m }}月{% endif %}</a>{% endfor %}
+</p>
+
+{% include "history/_app_note.html" %}
+
+<div class="mwrap">
+<table class="mtable"><tbody>
+    <tr><th>日</th>{% for y in t.years %}<th>{{ y }}</th>{% endfor %}</tr>
+    {% for row in t.grid %}
+    {% set dd = loop.index %}
+    <tr>
+        <td>{{ dd }}</td>
+        {% for n in row %}
+        {% set y = t.years[loop.index0] %}
+        {% if n is none %}<td></td>
+        {% elif n == 0 %}<td class="zero">0</td>
+        {% else %}<td><a href="/Temperature/SummerDay/{{ t.kind }}{{ y }}{{ "%02d"|format(t.month) }}{{ "%02d"|format(dd) }}">{{ n }}</a></td>{% endif %}
+        {% endfor %}
+    </tr>
+    {% endfor %}
+</tbody></table>
+</div>
+
+<div id="info">
+    <h5>データについての説明</h5>
+    <p>出典: 気象庁ホームページ（過去の気象データ・最新の気象データ）。気象庁のデータを編集・加工しています。
+       数字をクリックすると、その日に該当した地点の一覧を表示します。空欄はデータの無い日です。</p>
+</div>
+{% endblock %}

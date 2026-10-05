@@ -1713,6 +1713,12 @@ def build_seo(env: Environment, stations: dict) -> None:
     print(f"  [seo] sitemap.xml ({len(urls)} URL)")
 
     prune_station_pages(targets, stations)
+    # 地点番号 → URL 名（サーバー側でページを作るときにリンクを張るため。server/）
+    (PUBLIC / "data").mkdir(parents=True, exist_ok=True)
+    (PUBLIC / "data" / "slugs.json").write_text(json.dumps({
+        "stations": {str(c): s for c, r, _, s in targets if r["elements"].get("temp")},
+        "climate": {str(c): s for c, _, _, s in targets},
+    }, ensure_ascii=False, sort_keys=True), encoding="utf-8")
     (PUBLIC / "_redirects").write_text("\n".join(legacy_redirects(targets)), encoding="utf-8")
 
     # 配布ファイルのヘッダ。NetCDF は形式を明示し、他所のページやツールからも
