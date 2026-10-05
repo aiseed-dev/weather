@@ -69,6 +69,11 @@ from weatherlib import jma
 BASE = Path(__file__).resolve().parent
 OUT = BASE / "public_amedas"
 MAP = OUT / "map"
+# 気象庁で 404 が確定したスロットの記録（公開しないので public_amedas の外に置く）
+GONE = BASE / "data" / "amedas_mirror_gone.json"
+# 出てからこれ以上たったスロットの 404 は「もう出ない」とみなす。気象庁は約 6 分半
+# 遅れで出すので、1 時間たっても無いものは待っても来ない
+GONE_AFTER = timedelta(hours=1)
 MASTER = BASE / "master"
 
 JST = ZoneInfo("Asia/Tokyo")
@@ -188,13 +193,32 @@ def wanted_slots(latest: datetime) -> list[datetime]:
     return out
 
 
-def fetch_slot(name: str) -> tuple[bytes | None, str]:
+def load_gone(latest: datetime) -> set[str]:
+    """404 が確定したスロット。取得窓より古いものは捨てる（窓の外は元から見ない）。"""
+    try:
+        names = set(json.loads(GONE.read_text(encoding="utf-8")))
+    except (FileNotFoundError, ValueError):
+        return set()
+    oldest = slot_name(latest - timedelta(days=WINDOW_DAYS))
+    return {n for n in names if n > oldest}
+
+
+def save_gone(names: set[str]) -> None:
+    GONE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = GONE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(sorted(names)), encoding="utf-8")
+    tmp.replace(GONE)
+
+
+def fetch_slot(name: str, settled: bool = False) -> tuple[bytes | None, str]:
     """1 スロットを取る。R2（Worker が収集済み）を先に見て、無ければ気象庁へ。
 
     R2 を優先するのは、収集を Worker に寄せて気象庁への往復を 1 系統に保つため。
     気象庁へ退避するのは、Worker が黙って止まっていた場合に**取り返しのつかない
     欠測**になるのを防ぐため（10 分値は 10 日で消える）。
     戻り値は (本文, 取得元)。取れなければ (None, 理由)。
+    settled（出てから GONE_AFTER 以上たった）なら、気象庁の 404 は確定なので
+    やり直さない（既定のやり直しは 2 秒待って同じものをもう一度取りに行く）。
     """
     if R2_BASE:
         try:
@@ -204,18 +228,27 @@ def fetch_slot(name: str) -> tuple[bytes | None, str]:
         except Exception:
             pass                                        # 未収集スロット → 気象庁で拾う
     try:
-        return jma.http_get(jma.URL_AMEDAS_MAP.format(ts=name)), "JMA"
+        return jma.http_get(jma.URL_AMEDAS_MAP.format(ts=name),
+                            retry=0 if settled else 1), "JMA"
     except Exception as exc:                            # 欠番スロットは正常に起こりうる
         return None, str(exc)
 
 
 def fetch_missing(latest: datetime, dry: bool) -> tuple[int, int]:
-    """未取得スロットを新しい順に埋める。取り逃しは次回以降の実行で自然に回復する。"""
+    """未取得スロットを新しい順に埋める。取り逃しは次回以降の実行で自然に回復する。
+
+    気象庁で 404 が確定したスロット（出てから GONE_AFTER 以上たっても無い）は
+    記録して、以後は取りに行かない。記録しないと、保持期間を過ぎて二度と
+    取れない欠けを毎回 60 件ずつ問い合わせ続ける（2026-10-05、移行で止まって
+    いた期間の欠けについて、1 回 118 リクエスト・1 日 約 1.7 万回の 404 だった）。
+    """
     MAP.mkdir(parents=True, exist_ok=True)
+    gone = load_gone(latest)
 
     missing = [ts for ts in wanted_slots(latest)
                if not period_path(period_of(ts.date())).exists()   # 封入済みは取り直さない
-               and not (MAP / f"{slot_name(ts)}.json").exists()]
+               and not (MAP / f"{slot_name(ts)}.json").exists()
+               and slot_name(ts) not in gone]
     if len(missing) > MAX_FETCH_PER_RUN:
         log(f"未取得 {len(missing)} スロットのうち新しい {MAX_FETCH_PER_RUN} 件のみ取得（残りは次回）")
         missing = missing[:MAX_FETCH_PER_RUN]
@@ -225,11 +258,17 @@ def fetch_missing(latest: datetime, dry: bool) -> tuple[int, int]:
         return 0, 0
 
     got = from_jma = 0
+    n_gone = 0
     for ts in missing:
         name = slot_name(ts)
-        payload, origin = fetch_slot(name)
+        settled = latest - ts >= GONE_AFTER
+        payload, origin = fetch_slot(name, settled)
         if payload is None:
-            log(f"  {name}: 取得できず（{origin}）")
+            if settled and "404" in origin:
+                gone.add(name)
+                n_gone += 1
+            else:
+                log(f"  {name}: 取得できず（{origin}）")
             continue
         try:
             json.loads(payload)                        # 壊れた応答を配信しない
@@ -239,6 +278,10 @@ def fetch_missing(latest: datetime, dry: bool) -> tuple[int, int]:
         (MAP / f"{name}.json").write_bytes(payload)
         got += 1
         from_jma += origin == "JMA"
+    if n_gone:
+        log(f"  気象庁で 404 が確定したスロット {n_gone} 件を記録（以後は取りに行かない。"
+            f"記録中 {len(gone)} 件）")
+    save_gone(gone)
     return got, from_jma
 
 
