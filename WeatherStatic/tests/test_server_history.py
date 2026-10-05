@@ -10,7 +10,8 @@
   4. 月の平均気温のランキングは丸めた値で順位を付け、同じ順位の中は丸める前の値の順。
      資料不足値（品質 4 以下）は使わない。
      低い順のページは表を最低・平均・最高の順に並べる（旧サイトと同じ）
-  5. 季節のページの府県のまとまりは府県名で決める（富士山は静岡県）
+  5. 日ごとのページに入れない地点（DAY_EXCLUDE）は、その日の地点にも月の表の数にも入らない
+  6. 季節のページの府県のまとまりは府県名で決める（富士山は静岡県）
 """
 import json
 import sys
@@ -123,7 +124,22 @@ def main() -> int:
         check("低い順: 同じ 30.0 の中は丸める前の低い稚内が先",
               rows == [(1, "熊谷"), (2, "稚内"), (2, "東京")])
 
-    print("5. 季節のページの府県のまとまり")
+        print("5. 日ごとのページに入れない地点")
+        saved = history.DAY_EXCLUDE
+        history.DAY_EXCLUDE = frozenset({47401})            # 稚内を外してみる
+        history._load_year.cache_clear()
+        try:
+            r = history.day_ranking("a", date(2026, 1, 1))
+            check("その日の地点から外れる", [s["name"] for s in r["by_value"]] == ["熊谷", "東京"])
+            t = history.month_table("a", 1)
+            check("月の表の数からも外れる", t["grid"][0][t["years"].index(2026)] == 2)
+            check("月平均のランキングには残る", any(s["name"] == "稚内" for s in
+                  history.month_ranking(True, 2024, 3)["tables"][0]["rows"]))
+        finally:
+            history.DAY_EXCLUDE = saved
+            history._load_year.cache_clear()
+
+    print("6. 季節のページの府県のまとまり")
     import generate
     def rec(pref, prec, amedas, temp=True):
         return {"pref": pref, "name": amedas, "amedas": amedas, "row": 0,

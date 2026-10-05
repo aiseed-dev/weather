@@ -31,6 +31,10 @@ KINDS = {
 }
 FIRST_YEAR = 2010            # 旧サイトの集計が始まる年（月の表の列）
 MAX_RUN = 200                # 連続日数を数える上限（遡る日数）
+# 日ごとのページ（その日の地点・月の日ごとの地点数）に入れない地点: 南鳥島（47991）と
+# 富士山（47639）。離島と山頂は平地の暑さ・寒さの比較に入れない（旧サイトも南鳥島は無い）。
+# 月平均のランキングと夏・冬のページには入れる
+DAY_EXCLUDE = frozenset({47991, 47639})
 
 
 class YearData:
@@ -71,6 +75,17 @@ class YearData:
         if not 0 <= j < self.n_days:
             return None
         return self.vals[var][:, j]
+
+    def day_col(self, var: str, d: date) -> np.ndarray | None:
+        """日ごとのページ用の 1 日分。DAY_EXCLUDE の地点は NaN にする。"""
+        c = self.col(var, d)
+        if c is None:
+            return None
+        if not hasattr(self, "_day_mask"):
+            self._day_mask = np.array([code in DAY_EXCLUDE for code in self.codes])
+        c = c.copy()
+        c[self._day_mask] = np.nan
+        return c
 
     def col_short(self, var: str, d: date) -> np.ndarray:
         return self.short[var][:, (d - self.first).days]
@@ -143,7 +158,7 @@ def day_ranking(kind: str, d: date) -> dict | None:
     yd = year_data(d.year)
     if yd is None:
         return None
-    col = yd.col(var, d)
+    col = yd.day_col(var, d)
     if col is None or np.isnan(col).all():
         return None
     info, slugs = meta()
@@ -163,7 +178,7 @@ def day_ranking(kind: str, d: date) -> dict | None:
         runs += alive
         day -= timedelta(days=1)
         prev = year_data(day.year)
-        c = prev.col(var, day) if prev else None
+        c = prev.day_col(var, day) if prev else None
         if c is None:
             break
         alive = alive & (c >= thr)
@@ -188,7 +203,7 @@ def month_table(kind: str, month: int) -> dict:
                 row.append(None)
                 continue
             yd = year_data(y)
-            c = yd.col(var, d) if yd else None
+            c = yd.day_col(var, d) if yd else None
             row.append(None if c is None or np.isnan(c).all() else int((c >= thr).sum()))
         grid.append(row)
     return {"kind": kind, "title": title, "month": month, "years": years, "grid": grid}
