@@ -258,6 +258,12 @@ R2 未有効で止まった）。
 しない）。Worker が別の Worker を呼ぶ構成はこの道具ではデプロイできない。
 `wrangler.toml` から拾う既定にも `[[services]]` は含まれない。
 
+**Worker を呼ぶときは User-Agent を付ける。** Python の既定（`Python-urllib`）の
+まま送ると、Worker に届く前に Cloudflare が 403（エラーコード 1010、本文
+`error code: 1010`）で弾く。Worker 自身が断ったときの本文は `forbidden`。
+`fetch_points.py` は独自の User-Agent を付けている（2026-10-05 のデプロイ
+直後の確認で踏んだ）。
+
 **R2 に独自ドメインは要らない**（収集には）。Worker → R2 はバインディング、
 deb2 → Worker は `*.workers.dev` で足りる。ドメインが要るのは、ブラウザや
 Flet が HTTP で読みに行くときだけ。
