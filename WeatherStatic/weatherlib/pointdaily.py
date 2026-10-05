@@ -73,7 +73,9 @@ def daily_path(d: date) -> Path:
 
 
 def _jst(t) -> str | None:
-    if isinstance(t, dict) and "hour" in t and "minute" in t:
+    """起時 {"hour", "minute"}（UTC）→ 日本時間 "HH:MM"。記録が無い地点では
+    {"hour": null, "minute": null} で来る（2026-10-05 実データ）ので None を返す。"""
+    if isinstance(t, dict) and t.get("hour") is not None and t.get("minute") is not None:
         return f"{(int(t['hour']) + 9) % 24:02d}:{int(t['minute']):02d}"
     return None
 
@@ -256,8 +258,11 @@ def catch_up(now: datetime) -> int:
         overdue = now >= datetime.combine(d + timedelta(days=1), datetime.min.time()) + timedelta(hours=1)
         if not (final_ready or overdue):
             continue
-        # map に無い要素: 地点別のある 1 スロットの鍵から map の要素を引く
-        rec = build_day(d, _extra_keys(d, extra_known))
+        try:
+            rec = build_day(d, _extra_keys(d, extra_known))
+        except Exception as e:            # 1 日の失敗で他の日を止めない
+            log(f"{d}: 作れませんでした（{type(e).__name__}: {e}）")
+            continue
         if rec is None:
             continue
         p = daily_path(d)

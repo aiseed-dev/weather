@@ -58,7 +58,11 @@ def main() -> int:
         put("20261004", "00", {   # 44141 は 2:50 で途切れた（日最大とは言えない）
             "44141": {"20261004025000": e(9.9, 7, (17, 30), 15.0, (17, 0))},
         })
+        # 44146 は起時が null（実データにある形）。値は残し、起時だけ入れない
+        nul = e(1.0, 0, (0, 0), 19.0, (0, 0))
+        nul["gustTime"] = {"hour": None, "minute": None}
         put("20261005", "00", {
+            "44146": {"20261005000000": nul},
             "44132": {"20261005000000": e(7.7, 3, (14, 55), 22.8, (1, 22)),   # 23:55 に更新された
                       "20261005001000": e(3.9, 15, (15, 5), 18.8, (15, 7))},  # 新しい日
             "44136": {"20261005001000": e(2.0, 1, (15, 3), 18.0, (15, 5))},
@@ -80,17 +84,20 @@ def main() -> int:
         check("0:00 が欠けた地点は最後のスロット 23:40 で代える",
               s["gust"] == [6.0, 0] and s["as_of"] == "23:40")
         check("23 時より前で途切れた地点（2:50 まで）は入れない", "44141" not in rec["stations"])
+        n46 = rec["stations"].get("44146", {})
+        check("起時が null の地点も落ちずに値を残し、起時は入れない",
+              n46.get("gust") == [1.0, 0] and "gustTime" not in n46)
         check("map にある要素（temp・wind）は入れない", "temp" not in t and "wind" not in t)
         check("観測要素でない prefNumber は入れない", "prefNumber" not in t)
         check("要素の一覧", rec["elements"] == ["gust", "gustDirection", "maxTemp"])
-        check("確定値の地点数", rec["complete"] == 1)
+        check("確定値の地点数", rec["complete"] == 2)
 
         print("5. 月ごとの NetCDF")
         import netCDF4
         with netCDF4.Dataset(pointdaily.DAILY / "2026" / "10.nc") as ds:
             ids = list(ds["station_id"][:])
             i, j = ids.index("44132"), ids.index("44136")
-            check("地点 × 日（31 日）", ds["gust"].shape == (2, 31))
+            check("地点 × 日（31 日）", ds["gust"].shape == (3, 31))
             check("倍率を戻すと 7.7 m/s", abs(float(ds["gust"][i, 3]) - 7.7) < 1e-6)
             check("風向は 16 方位の整数", int(ds["gustDirection"][i, 3]) == 3)
             check("起時は 0 時からの分（23:55 → 1435）", int(ds["gustTime"][i, 3]) == 1435)

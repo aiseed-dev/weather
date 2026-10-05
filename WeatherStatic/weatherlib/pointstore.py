@@ -186,7 +186,8 @@ def hourly_view(ts: datetime) -> dict[str, dict]:
 def _jst_hhmm(t) -> str:
     """地点別 JSON の起時 {"hour": 3, "minute": 21} は UTC。日本時間の "12:21" にする。
     日最高・最低の起時はその日の中にあるので、時を 9 進めて 24 で割れば足りる。"""
-    if not isinstance(t, dict) or "hour" not in t or "minute" not in t:
+    # 記録が無い地点では {"hour": null, "minute": null} で来る（2026-10-05 実データ）
+    if not isinstance(t, dict) or t.get("hour") is None or t.get("minute") is None:
         return ""
     return f"{(int(t['hour']) + 9) % 24:02d}:{int(t['minute']):02d}"
 

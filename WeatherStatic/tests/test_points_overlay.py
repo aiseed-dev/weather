@@ -80,6 +80,8 @@ def main() -> int:
         check("猛暑日を数え直す（1 地点）", m["counts"]["moushobi"] == 1)
         check("重ねた地点数を記録する", m["points"]["stations"] == 2)
         check("元の表は書き換えない", rows[0]["tmax"] == "196")
+        check("起時が null でも落ちない（空欄にする）",
+              pointstore._jst_hhmm({"hour": None, "minute": None}) == "")
 
         print("5. 重ねない場合")
         out, m2 = fetch_data.overlay_points(rows, {"source_time": "2026-10-06T00:00", "counts": {}})
