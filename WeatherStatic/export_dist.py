@@ -1,35 +1,43 @@
 #!/usr/bin/env python3
-"""観測データの配布用エクスポート（Cloudflare R2 等の静的配信向け）。
+"""観測ストアの日別値を、静的配信用の NetCDF に切り出す（/Data/Daily/ で配る）。
 
-「過去の気象データ・ダウンロード」型の動的切り出しシステムの代替モデル:
-アクセスパターン別に**あらかじめ分割した NetCDF** を静的配信すれば、
-サーバー側の切り出し処理（＝運営費の主因）が不要になる。
+日別の最高・最低・平均気温、降水量、日照は、このサイトのデータで一番よく
+使われる。気象庁の「過去の気象データ・ダウンロード」型の動的な切り出しの代わりに、
+使われ方ごとにあらかじめ分けた NetCDF を静的に置けば、サーバー側の処理が要らない。
 
-  dist/
-    full/observations.nc      … 全部入りスナップショット（一括利用者向け）
-    stations/{code}.nc        … 1 地点×全期間（「地点を選んで期間指定」の代替。各数百 KB）
-    years/{yyyy}.nc           … 全地点×1 年（年断面の分析向け）
-    stations.json             … 地点メタデータ（コード・名前・緯度経度）
-    manifest.json             … ファイル一覧（サイズ・sha256・更新時刻・被覆期間）
+  dist/daily/
+    years/{yyyy}.nc       全地点 × 1 年（年ごとの分析向け）
+    stations/{code}.nc    1 地点 × 全期間（「地点を選んで期間指定」の代わり）
+    stations.json         地点の一覧（コード・名前・緯度経度・データのある期間）
+    manifest.json         ファイルの一覧（大きさ・sha256・期間）
 
-すべての NetCDF に出典（気象庁）と加工者の表示をグローバル属性で埋め込む
-（政府標準利用規約 2.0 / CC-BY 4.0 互換の要件）。
+全期間・全地点を 1 本にしたもの（以前の full/observations.nc）は作らない。
+Pages の 1 ファイル上限（25 MiB）を超えるため。必要なら年ごとをつなげばよい。
+
+対象は観測ストアの全行のうち値のある地点すべて。現行の地点表（master/stations.json）
+には無い廃止地点（旧 WeatherCore のダンプにある阿蘇山・伊吹山など）も含める。
+名前・緯度経度は master/stations.json → master/station_codes.json → SQLite の順に引く。
+
+同じ内容なら同じバイト列になるよう、ファイルに生成時刻を入れない。書いたものが
+既存と同じなら置き換えない（Pages へのアップロードが変わった年・地点だけで済む）。
+
+読み出しは行単位（libnetcdf の実寸越え読みの不具合を踏まない読み方。
+ncstore.normalize_extents 参照）。チャンクのキャッシュを大きく取り、同じチャンクを
+何度も展開しないようにする。
 
 使い方:
-    python export_dist.py [--out dist]
-更新は差分で速い: 全期間で不変の年ファイル・地点ファイルは内容ハッシュが
-変わらない限り書き直さない。
+    python export_dist.py [--out dist/daily]
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
-import shutil
+import sqlite3
 import sys
 import time
 import warnings
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from pathlib import Path
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -37,156 +45,226 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 import netCDF4 as nc
 import numpy as np
 
-from weatherlib.ncstore import DAILY_EPOCH, FILL, FILL_B, date_index
+from weatherlib.ncstore import DAILY_EPOCH, FILL, FILL_B
 
 BASE = Path(__file__).resolve().parent
 NC = BASE / "store" / "observations.nc"
-STATIONS = BASE / "master" / "stations.json"
+SQLITE = BASE / "store" / "weather.sqlite"
+MASTER = BASE / "master"
 
-ATTRIBUTION = ("出典: 気象庁ホームページ (https://www.jma.go.jp/) の公開データを"
-               "編集・加工したもの。編集責任は配布者にあります。")
-LICENSE = "政府標準利用規約2.0（CC-BY 4.0 互換）に基づく再配布。利用時は出典を明記してください。"
+ATTRIBUTION = ("出典: 気象庁ホームページ (https://www.jma.go.jp/) / 気象庁のデータを"
+               "編集・加工したものです。編集・加工の責任は AIseed にあります。")
+LICENSE = ("公共データ利用規約（第1.0版）に準拠（気象庁ホームページのコンテンツ）。"
+           "利用・再配布の際は出典と、編集・加工したデータであることを記載すること")
 
-DAILY_VARS = [
-    ("tmax", "i2", "daily maximum temperature (x10 degC)"),
-    ("tmax_minutes", "i2", "time of daily max (minutes from midnight)"),
-    ("tmax_q", "i1", "JMA quality code for tmax (8=final)"),
-    ("tmin", "i2", "daily minimum temperature (x10 degC)"),
-    ("tmin_minutes", "i2", "time of daily min (minutes from midnight)"),
-    ("tmin_q", "i1", "JMA quality code for tmin"),
-    ("tavg", "i2", "daily mean temperature (x10 degC)"),
-    ("tavg_q", "i1", "JMA quality code for tavg"),
-    ("precip", "i2", "daily precipitation (x10 mm)"),
-    ("precip_q", "i1", "JMA quality code for precip"),
-    ("precip_none", "i1", "no-precipitation flag"),
-    ("sun", "i2", "daily sunshine duration (x10 h)"),
+# (ストアの変数名, 配布での名前, 型, 倍率, 単位, 説明)
+VARS = [
+    ("tmax", "tmax", "i2", 0.1, "degC", "daily maximum temperature"),
+    ("tmax_minutes", "tmax_time", "i2", None, "minutes", "time of daily maximum (minutes from 00:00 JST)"),
+    ("tmax_q", "tmax_q", "i1", None, "", "JMA quality information for tmax (8 = normal)"),
+    ("tmin", "tmin", "i2", 0.1, "degC", "daily minimum temperature"),
+    ("tmin_minutes", "tmin_time", "i2", None, "minutes", "time of daily minimum (minutes from 00:00 JST)"),
+    ("tmin_q", "tmin_q", "i1", None, "", "JMA quality information for tmin (8 = normal)"),
+    ("tavg", "tavg", "i2", 0.1, "degC", "daily mean temperature"),
+    ("tavg_q", "tavg_q", "i1", None, "",
+     "JMA quality information for tavg (8 = normal; missing = computed here from hourly values)"),
+    ("tavg_count", "tavg_count", "i1", None, "",
+     "number of hourly values used when tavg was computed here from hourly values"),
+    ("precip", "precip", "i2", 0.1, "mm", "daily precipitation"),
+    ("precip_q", "precip_q", "i1", None, "", "JMA quality information for precip (8 = normal)"),
+    ("precip_none", "precip_none", "i1", None, "", "1 = no precipitation observed (JMA flag)"),
+    ("sun", "sun", "i2", 0.1, "h", "daily sunshine duration"),
 ]
+MAIN = ("tmax", "tmin", "tavg", "precip")        # 「値のある地点・期間」を決める変数
 
 
 def log(msg: str) -> None:
     print(f"[dist] {msg}", flush=True)
 
 
-def common_attrs(ds_out, coverage: str):
-    ds_out.title = "Daily surface observations in Japan (derived from JMA public data)"
-    ds_out.source = ATTRIBUTION
-    ds_out.license = LICENSE
-    ds_out.coverage = coverage
-    ds_out.Conventions = "CF-1.10"
+def station_meta(conn) -> dict[int, dict]:
+    """code → 地点の情報。現行 → 廃止を含む一覧 → SQLite の順に埋める。"""
+    meta: dict[int, dict] = {}
+    for r in conn.execute("SELECT code, amedas, name FROM stations WHERE code IS NOT NULL"):
+        meta[int(r[0])] = {"code": int(r[0]), "amedas": r[1], "name": r[2]}
+    scp = MASTER / "station_codes.json"
+    if scp.is_file():
+        for e in json.loads(scp.read_text(encoding="utf-8"))["entries"]:
+            try:
+                code = int(e["block_no"])
+            except (KeyError, ValueError):
+                continue
+            if code in meta:
+                m = meta[code]
+                for k in ("name", "kana", "lat", "lon", "alt"):
+                    if m.get(k) is None and e.get(k) is not None:
+                        m[k] = e[k]
+                m.setdefault("active", e.get("active"))
+                m.setdefault("end", e.get("end"))
+    sp = MASTER / "stations.json"
+    if sp.is_file():
+        for code, r in json.loads(sp.read_text(encoding="utf-8"))["stations"].items():
+            code = int(code)
+            if code in meta:
+                for k in ("name", "kana", "pref", "lat", "lon", "alt", "amedas"):
+                    if r.get(k) is not None:
+                        meta[code][k] = r[k]
+                meta[code]["active"] = True
+    return meta
 
 
-def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+def write_if_changed(tmp: Path, path: Path) -> bool:
+    """tmp が既存と同じなら捨てる。違えば置き換える。置き換えたら True。"""
+    if path.is_file() and path.stat().st_size == tmp.stat().st_size:
+        if hashlib.sha256(path.read_bytes()).digest() == hashlib.sha256(tmp.read_bytes()).digest():
+            tmp.unlink()
+            return False
+    tmp.replace(path)
+    return True
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="dist")
+    ap = argparse.ArgumentParser(description="観測ストアの日別値を配布用 NetCDF に切り出す")
+    ap.add_argument("--out", default="dist/daily")
     args = ap.parse_args()
     out = BASE / args.out
     started = time.monotonic()
 
-    st_meta = json.loads(STATIONS.read_text(encoding="utf-8"))
+    conn = sqlite3.connect(f"file:{SQLITE}?mode=ro", uri=True)
+    rows_code = conn.execute(
+        "SELECT row, code FROM stations WHERE code IS NOT NULL ORDER BY code").fetchall()
+    meta = station_meta(conn)
+    conn.close()
+
     src = nc.Dataset(NC)
     src.set_auto_mask(False)
-
-    # データのある日付範囲を特定
-    dates = src["date"][:]
-    valid = np.where(dates != -1)[0]
-    if len(valid) == 0:
+    dates = np.asarray(src["date"][:])                   # 1 次元の読みは正しい
+    have = np.nonzero(dates != -1)[0]
+    if not len(have):
         log("データがありません")
         return 1
-    j0, j1 = int(valid.min()), int(valid.max())
-    d0 = DAILY_EPOCH + timedelta(days=j0)
-    d1 = DAILY_EPOCH + timedelta(days=j1)
-    coverage = f"{d0.isoformat()}..{d1.isoformat()}"
-    log(f"被覆期間: {coverage}")
+    j0, j1 = int(have.min()), int(have.max())
+    n_days = j1 - j0 + 1
+    rows = [r for r, _ in rows_code]
 
-    # 対象地点（code が付与済みのもの）
-    stations = [(int(c), r) for c, r in st_meta["stations"].items()]
-    stations.sort()
-    rows = np.array([r["row"] for _, r in stations])
-    codes = np.array([c for c, _ in stations], dtype=np.int32)
-
-    # 日別変数を一括読み（現期間ならメモリに収まる。将来は年単位に分割読みへ）
-    data = {}
-    for name, typ, _ in DAILY_VARS:
-        data[name] = src[name][:, j0:j1 + 1][rows]
+    data: dict[str, np.ndarray] = {}
+    for name, _, typ, *_ in VARS:
+        v = src[name]
+        v.set_var_chunk_cache(size=512 * 1024 * 1024, nelems=8009, preemption=0.75)
+        arr = np.empty((len(rows), n_days), dtype=np.int16 if typ == "i2" else np.int8)
+        for k, r in enumerate(rows):
+            arr[k] = v[r, j0:j1 + 1]                     # 1 行の読みは常に正しい
+        data[name] = arr
     src.close()
+    log(f"読み込み: {len(rows)} 行 × {n_days:,} 日（{time.monotonic() - started:.0f} 秒）")
 
-    (out / "full").mkdir(parents=True, exist_ok=True)
-    (out / "stations").mkdir(parents=True, exist_ok=True)
-    (out / "years").mkdir(parents=True, exist_ok=True)
+    # 値のある地点と、その期間
+    has = np.zeros((len(rows), n_days), dtype=bool)
+    for name in MAIN:
+        has |= data[name] != (FILL if data[name].dtype == np.int16 else FILL_B)
+    keep = [k for k in range(len(rows)) if has[k].any()]
+    codes = [int(rows_code[k][1]) for k in keep]
+    span = {}
+    for k, code in zip(keep, codes):
+        idx = np.nonzero(has[k])[0]
+        span[code] = (DAILY_EPOCH + timedelta(days=j0 + int(idx[0])),
+                      DAILY_EPOCH + timedelta(days=j0 + int(idx[-1])))
 
-    def write_nc(path: Path, sel_rows, sel_days, day_offset: int):
-        """sel_rows(地点index配列)×sel_days(日数)の切り出しを書く。"""
-        ds = nc.Dataset(path, "w", format="NETCDF4")
-        common_attrs(ds, coverage)
-        ds.createDimension("station", len(sel_rows))
-        ds.createDimension("time", sel_days)
-        v = ds.createVariable("station_code", "i4", ("station",))
-        v.long_name = "JMA station code (kansho: intl 5-digit / amedas: etrn 4-digit)"
-        v[:] = codes[sel_rows]
-        v = ds.createVariable("time", "i4", ("time",))
-        v.units = f"days since {DAILY_EPOCH.isoformat()}"
-        v[:] = np.arange(j0 + day_offset, j0 + day_offset + sel_days, dtype=np.int32)
-        for name, typ, desc in DAILY_VARS:
-            fill = FILL if typ == "i2" else FILL_B
-            var = ds.createVariable(name, typ, ("station", "time"), fill_value=fill,
-                                    zlib=True, complevel=5, shuffle=True,
-                                    chunksizes=(min(256, len(sel_rows)), min(366, sel_days)))
-            var.long_name = desc
-            var[:, :] = data[name][sel_rows, day_offset:day_offset + sel_days]
-        ds.close()
+    def write_nc(path: Path, sel: list[int], d0: int, d1: int, title: str) -> bool:
+        """sel（data の行）× [d0, d1)（data の列）を書く。中身が同じなら置き換えない。"""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".nc.tmp")
+        with nc.Dataset(tmp, "w", format="NETCDF4") as ds:
+            ds.title = title
+            ds.source = "気象庁ホームページ (https://www.jma.go.jp/)"
+            ds.attribution = ATTRIBUTION
+            ds.license = LICENSE
+            ds.Conventions = "CF-1.10"
+            ds.timezone = "Asia/Tokyo (JST, UTC+09:00)"
+            first = DAILY_EPOCH + timedelta(days=j0 + d0)
+            last = DAILY_EPOCH + timedelta(days=j0 + d1 - 1)
+            ds.time_coverage = f"{first.isoformat()}..{last.isoformat()}"
+            ds.note = ("値は気象庁の日別値（etrn の確定値・最新の気象データ CSV）。tavg_q が欠測の日の"
+                       "tavg は当サイトが毎正時の気温から計算した値（tavg_count が使った時刻の数）")
+            ds.createDimension("station", len(sel))
+            ds.createDimension("time", d1 - d0)
+            v = ds.createVariable("station_code", "i4", ("station",))
+            v.long_name = "JMA station code (kansho: WMO-style 5 digits / AMeDAS: etrn 4 digits)"
+            v[:] = np.array([int(rows_code[k][1]) for k in sel], dtype=np.int32)
+            names = [meta.get(int(rows_code[k][1]), {}).get("name") or "" for k in sel]
+            ds.createVariable("station_name", str, ("station",))[:] = np.array(names, dtype=object)
+            for key, unit in (("lat", "degrees_north"), ("lon", "degrees_east"), ("alt", "m")):
+                vals = [meta.get(int(rows_code[k][1]), {}).get(key) for k in sel]
+                v = ds.createVariable(key, "f4", ("station",), fill_value=np.float32(np.nan))
+                v.units = unit
+                v[:] = np.array([np.nan if x is None else float(x) for x in vals], dtype=np.float32)
+            v = ds.createVariable("time", "i4", ("time",))
+            v.units = f"days since {DAILY_EPOCH.isoformat()}"
+            v[:] = np.arange(j0 + d0, j0 + d1, dtype=np.int32)
+            chunk = (min(256, len(sel)), min(366, d1 - d0))
+            for name, out_name, typ, scale, unit, desc in VARS:
+                fill = FILL if typ == "i2" else FILL_B
+                var = ds.createVariable(out_name, typ, ("station", "time"), fill_value=fill,
+                                        zlib=True, complevel=5, shuffle=True, chunksizes=chunk)
+                var.set_auto_maskandscale(False)        # 整数のまま素通しで置く
+                var.long_name = desc
+                if unit:
+                    var.units = unit
+                if scale is not None:
+                    var.scale_factor = scale
+                var[:, :] = data[name][sel, d0:d1]
+        return write_if_changed(tmp, path)
 
-    manifest = {"generated": datetime.now().isoformat(timespec="seconds"),
-                "coverage": coverage, "attribution": ATTRIBUTION,
-                "license": LICENSE, "files": {}}
+    manifest = {"coverage": f"{DAILY_EPOCH + timedelta(days=j0)}..{DAILY_EPOCH + timedelta(days=j1)}",
+                "attribution": ATTRIBUTION, "license": LICENSE, "years": [], "stations": []}
 
-    def record(path: Path):
-        rel = str(path.relative_to(out))
-        manifest["files"][rel] = {"bytes": path.stat().st_size, "sha256": sha256(path)}
-
-    # 1. 全部入り
-    p = out / "full" / "observations.nc"
-    write_nc(p, np.arange(len(stations)), j1 - j0 + 1, 0)
-    record(p)
-    log(f"full/observations.nc: {p.stat().st_size / 1e6:.2f} MB")
-
-    # 2. 年別（全地点×1年）
-    for year in range(d0.year, d1.year + 1):
-        y0 = max(date_index(date(year, 1, 1)), j0) - j0
-        y1 = min(date_index(date(year, 12, 31)), j1) - j0
+    # 1. 年ごと（全地点 × 1 年。地点の並びは全年で同じ）
+    y_first = (DAILY_EPOCH + timedelta(days=j0)).year
+    y_last = (DAILY_EPOCH + timedelta(days=j1)).year
+    n_new = 0
+    for year in range(y_first, y_last + 1):
+        d0 = max((date(year, 1, 1) - DAILY_EPOCH).days, j0) - j0
+        d1 = min((date(year, 12, 31) - DAILY_EPOCH).days, j1) - j0 + 1
         p = out / "years" / f"{year}.nc"
-        write_nc(p, np.arange(len(stations)), y1 - y0 + 1, y0)
-        record(p)
-    log(f"years/: {d0.year}〜{d1.year}")
+        n_new += write_nc(p, keep, d0, d1, f"Daily surface observations in Japan {year}")
+        n_st = int(has[keep, d0:d1].any(axis=1).sum())
+        manifest["years"].append({"path": f"years/{year}.nc", "year": year, "stations": n_st,
+                                  "bytes": p.stat().st_size,
+                                  "sha256": hashlib.sha256(p.read_bytes()).hexdigest()})
+    log(f"years/: {y_first}〜{y_last}（置き換え {n_new}）")
 
-    # 3. 地点別（1地点×全期間）— データのある地点のみ
-    n_st = 0
-    for i, (code, rec) in enumerate(stations):
-        if not (data["tmax"][i] != FILL).any() and not (data["precip"][i] != FILL).any():
-            continue
+    # 2. 地点ごと（1 地点 × その地点のデータのある期間）
+    n_new = 0
+    for k, code in zip(keep, codes):
+        a, b = span[code]
+        d0, d1 = (a - DAILY_EPOCH).days - j0, (b - DAILY_EPOCH).days - j0 + 1
         p = out / "stations" / f"{code}.nc"
-        write_nc(p, np.array([i]), j1 - j0 + 1, 0)
-        record(p)
-        n_st += 1
-    log(f"stations/: {n_st} 地点")
+        name = meta.get(code, {}).get("name") or str(code)
+        n_new += write_nc(p, [k], d0, d1, f"Daily surface observations at {name} ({code})")
+        manifest["stations"].append({"path": f"stations/{code}.nc", "code": code,
+                                     "bytes": p.stat().st_size})
+    log(f"stations/: {len(keep)} 地点（置き換え {n_new}）")
 
-    # 4. メタデータとマニフェスト
-    shutil.copy2(STATIONS, out / "stations.json")
-    record(out / "stations.json")
-    (out / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+    # 3. 地点の一覧とファイルの一覧（中身が同じなら置き換えない）
+    st_list = []
+    for code in codes:
+        m = meta.get(code, {})
+        a, b = span[code]
+        st_list.append({"code": code, "name": m.get("name"), "kana": m.get("kana"),
+                        "amedas": m.get("amedas"), "pref": m.get("pref"),
+                        "lat": m.get("lat"), "lon": m.get("lon"), "alt": m.get("alt"),
+                        "active": bool(m.get("active")), "first": a.isoformat(),
+                        "last": b.isoformat(), "path": f"stations/{code}.nc"})
+    for fname, obj in (("stations.json", {"attribution": ATTRIBUTION, "stations": st_list}),
+                       ("manifest.json", manifest)):
+        tmp = out / f".{fname}.tmp"
+        out.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=1), encoding="utf-8")
+        write_if_changed(tmp, out / fname)
 
-    total = sum(f["bytes"] for f in manifest["files"].values())
-    log(f"完了: {len(manifest['files'])} ファイル / 合計 {total / 1e6:.1f} MB "
-        f"({time.monotonic() - started:.1f} 秒)")
-    log(f"R2 へは: wrangler r2 object put などで {out}/ を同期（配信転送料は無料）")
+    total = sum(y["bytes"] for y in manifest["years"]) + sum(s["bytes"] for s in manifest["stations"])
+    log(f"完了: 年 {len(manifest['years'])} 本・地点 {len(keep)} 本 / 合計 {total / 1e6:.1f} MB "
+        f"（{time.monotonic() - started:.0f} 秒）")
     return 0
 
 
