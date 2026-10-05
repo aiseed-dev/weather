@@ -1,6 +1,6 @@
 ---
 name: data-flow
-description: How GPV data, GRIB files, layers, and renders connect. Read whenever you touch ForecastRequest, ForecastService, render_pool, or any code that decides what to download or which file to open. The current code does NOT match this design yet — see the migration table at the bottom.
+description: How GPV data, GRIB files, layers, and renders connect. Read whenever you touch ForecastRequest, ForecastService, render_pool, or any code that decides what to download or which file to open.
 ---
 
 ## Core idea
@@ -25,19 +25,25 @@ User flow consequences:
 ### GPV data layer (services/forecast_service)
 
 * **Unit of work** = `ForecastRequest(run_time, step_hours, kind)`.
-* `kind ∈ {"sfc", "pl"}`. ECMWF Open Data forbids mixing surface and
-  pressure-level fields in one request, so we always issue at most one
-  request per kind per step.
-* Each request returns **one multi-band GRIB**:
-  * `sfc` GRIB contains all implemented surface params at this step
-    (msl, 2t, 2d, skt, sd, tcc, 10u, 10v, tp, ...).
-  * `pl` GRIB contains all implemented pressure-level params crossed
-    with all levels we care about (gh / t / u / v / w / r × 200 / 250
-    / 300 / 500 / 700 / 850 / 925 hPa).
-* Cache file naming: `<step>h-sfc.grib2` and `<step>h-pl.grib2` under
-  `<cycle-dir>`. **No param in the filename.** Layer churn never
-  invalidates a cache entry.
-* `is_grib_cached(cycle, step, kind)` answers the cache question.
+* `kind ∈ {"sfc", "pl", "sol"}` (surface, pressure level, soil layer).
+  `DataField.kind` in the catalog decides which one a layer belongs to.
+* What one request downloads depends on the source:
+  * **ECMWF bulk sources** (`ecmwf_gcp` / `ecmwf_aws` / `ecmwf_azure` /
+    `ecmwf_direct`): one HTTPS GET of the whole
+    `{date}{time}-{step}h-oper-fc.grib2`, which already holds every param
+    at every level. The cache file is kind-agnostic:
+    `<data_dir>/ecmwf/{YYYYMMDD}/{HH}z/{step}h.grib2`. Concurrent requests
+    for different kinds at the same step share one GET through a per-path
+    lock. `kind` only steers the decode (`decode_kind`).
+  * **Mirror** (`forecast_source = "mirror"`): one NetCDF pack per kind,
+    `<data_dir>/mirror/{YYYYMMDD}/{HH}z/{step:03d}h-{kind}-core.nc`, plus
+    optional `-ext*.nc` siblings when the user ticks "ext" in the fetch
+    dialog.
+* The module docstring of `forecast_service.py` records why bulk GET
+  replaced per-param Range requests (measured RTT from Japan).
+* `grib_cache_path(settings, run_time, step, kind)` and
+  `is_grib_cached(...)` answer the cache question. UI code uses these
+  free functions; the service's `_cache_path` delegates to the same one.
 * `latest_run`, `probe_cycle_complete`, etc. stay where they are.
 
 The forecast service knows **nothing** about LUTs, palettes, projections,
@@ -47,8 +53,9 @@ or which variable a particular layer wants. It only manages GRIBs.
 
 `DataField` answers two questions about a layer:
 
-1. **Which GRIB does this layer come from?** — a `kind` property
-   derived from `level`: `"pl"` if `level is not None`, else `"sfc"`.
+1. **Which GRIB does this layer come from?** — a `kind` property:
+   `"sol"` for soil params (`sot`, `vsw`), `"pl"` if `level is not None`,
+   else `"sfc"`.
 2. **How do I pull this layer's array out of that GRIB?** — encoded
    in the matching `ScalarLayerConfig` (or hand-written renderer) via
    variable name + level filter.
@@ -63,13 +70,13 @@ the kind.
 Per layer, a renderer takes a single GRIB file path and a region:
 
 ```
-render_layer(grib_path, region, run_id, layer_key) -> bytes
+render_layer(grib_path, region, run_id, layer_key="msl", *, msl_overlay_path=None) -> bytes
 ```
 
-It opens the multi-band GRIB, picks its variable by short name
-(`ds["msl"]`, `ds["t2m"]`, `ds["gh"].sel(isobaricInhPa=500)`, ...),
-applies the LUT, draws coastlines from the precomputed mask, encodes
-PNG. Same fast pipeline as today.
+It opens the cached file through `decode_kind`, picks its variable by
+short name (`ds["msl"]`, `ds["t2m"]`, `ds["gh"].sel(isobaricInhPa=500)`,
+...), applies the LUT, draws coastlines from the precomputed mask, and
+encodes PNG.
 
 Renderers are pure: same (grib, region, layer) → same bytes. The
 caller decides which file to open (sfc vs pl) and whether the result
@@ -95,9 +102,9 @@ Region and layer entries coexist so toggling between recently-viewed
 combos is instant.
 
 The download loop and the background precompute are the **only**
-producers of on-disk GRIB cache entries. Both honour the `kind`
-split: per step, the loop fetches whichever of {sfc, pl} are needed
-and aren't already cached.
+producers of on-disk GRIB cache entries. Per step, the loop requests
+each kind in `_ACTIVE_KINDS` (`sfc`, `pl`, `sol`) that isn't already
+cached.
 
 ## Fetch button semantics
 
@@ -105,78 +112,31 @@ The Fetch button is the only path that talks to the network for
 layer data. Its job per cycle:
 
 ```
-plan = step_options for current cycle
-need_sfc_steps = [s for s in plan if not is_grib_cached(cycle, s, "sfc")]
-need_pl_steps  = [s for s in plan if not is_grib_cached(cycle, s, "pl")]
-
-download(sfc) for each step in need_sfc_steps
-download(pl)  for each step in need_pl_steps
+plan = stitch plan for the current cycle   # (display_step, src_cycle, src_step)
+for each step in plan, for each kind in _ACTIVE_KINDS:
+    if not is_grib_cached(settings, src_cycle, src_step, kind):
+        download(ForecastRequest(src_cycle, src_step, kind))
 ```
 
-Whether to download `pl` at all is a session-level toggle (default
-yes, can be turned off in the fetch confirm dialog if the user only
-cares about surface fields and wants the cycle to fetch in half the
-time). `sfc` is always on because all currently-implemented surface
-layers fit in one round-trip per step.
+Every kind is fetched; there is no per-kind toggle. With the mirror
+source, the confirm dialog offers one checkbox for the ext tier.
 
 `更新 / Update` button is the same flow against a newer cycle.
 
-## What changes vs. the current code
-
-| File | Today | Target |
-|---|---|---|
-| `services/forecast_service.py::ForecastRequest` | `(run_time, step_hours, param, level)` | `(run_time, step_hours, kind)` |
-| `services/forecast_service.py::ForecastService._download` | one param + optional level per call | full param-list (and levelist for pl) per kind |
-| `services/forecast_service.py::grib_cache_path` | filename includes `<param>@<level>` | filename is `<step>h-<kind>.grib2` |
-| `services/forecast_service.py::is_grib_cached` | takes `param, level` | takes `kind` |
-| `products/catalog.py::DataField` | has `level` and `ecmwf_param` | unchanged values; adds a `kind` property derived from `level` |
-| `figures/_scalar_chart.py` extractors | assume single-level / single-param GRIB | filter by level with `.sel(isobaricInhPa=L)` so they work on the multi-band GRIB |
-| `figures/msl_chart.py` / `t2m_chart.py` / `tp_chart.py` / `wind_chart.py` | read by variable name; works as-is on multi-band sfc GRIBs | unchanged once the service writes multi-band sfc GRIBs |
-| `figures/render_pool.py::render_layer` | dispatches on `layer_key` | unchanged; only the *caller's* choice of `grib_path` changes |
-| `components/map_view.py` ForecastRequest call sites | pass `param=selected_field.ecmwf_param, level=selected_field.level` | pass `kind=selected_field.kind` |
-| `components/map_view.py::_download_loop` | iterates one param per step | iterates kinds per step; for each, calls download once |
-| `components/map_view.py::_ensure_rendered` | builds path with `param=field.ecmwf_param, level=field.level` | builds path with `kind=field.kind` |
-| `components/map_view.py` Fetch button + confirm dialog | tally per-layer cache | tally per-kind cache; show "X surface frames + Y pressure-level frames to download" |
-
 ## Open questions to confirm with the user
 
-1. **Pressure-level fetch by default?** The pl GRIB is much bigger than
-   sfc (≈ 5 params × 7 levels = 35 fields per step vs ~9 for sfc). If
-   the user mostly looks at surface charts, pre-fetching pl every
-   cycle wastes bandwidth. Default ON or OFF? Suggested: ON by
-   default, with a checkbox in the fetch confirm dialog to skip pl.
-
-2. **Wind direction arrows.** The user agreed wind at pressure levels
+1. **Wind direction arrows.** The user agreed wind at pressure levels
    ships as speed-only. Surface wind10m still draws arrows. Should the
    matrix UI render a separate "風向" row alongside the "風速" wind
    chips, or stay speed-only everywhere? Suggested: keep speed-only
    for v1; revisit when we have a vector renderer that scales.
 
-3. **MSL overlay across kinds.** The current MSL contour overlay uses
-   the sfc msl GRIB. Pressure-level layers asking for it now read from
-   the same sfc file; no separate fetch path needed. Confirm the
-   overlay stays at MSL (not, say, gh@500 over t@850).
+2. **MSL overlay across kinds.** The MSL contour overlay reads the sfc
+   msl field. Pressure-level layers asking for it read from the same
+   cached file; no separate fetch path needed. Confirm the overlay
+   stays at MSL (not, say, gh@500 over t@850).
 
-4. **Frame memory budget.** With 8 surface layers + 19 pressure-level
-   layers = 27 layers × 9 regions × 65 steps = 15 795 potential PNGs
-   in `frames`. At ~50 KB/PNG that's ~750 MB. `FRAMES_CACHE_LIMIT`
-   is currently 500. Probably want a per-cycle bound and to evict
-   the previous cycle wholesale rather than FIFO across cycles.
-
-## Migration order (when ready to implement)
-
-1. **catalog**: add `DataField.kind` property; no other change.
-2. **forecast_service**: change `ForecastRequest`, `_download`,
-   cache path, `is_grib_cached`, `grib_cache_path` to use `kind`.
-3. **extractors** in `_scalar_chart.py`: add `.sel(isobaricInhPa=L)`
-   when the config has a level.
-4. **map_view**: change every `ForecastRequest(...)` /
-   `grib_cache_path(...)` / `is_grib_cached(...)` call site to pass
-   `kind=` instead of `param=`/`level=`.
-5. **map_view._download_loop**: iterate `kinds` per step instead of
-   one param per step.
-6. **fetch_confirm dialog**: tally per kind, optional pl-skip
-   checkbox.
-7. Delete dead per-param caches under the user's data dir on first
-   run with the new layout (or just leave them — they're inert and
-   the new cache lives in a different filename pattern).
+3. **Frame memory budget.** The memory cache `frames` is capped by
+   `FRAMES_CACHE_LIMIT = 500` with FIFO eviction across cycles. With
+   many layers × regions × steps this fills quickly. Probably want a
+   per-cycle bound and to evict the previous cycle wholesale.

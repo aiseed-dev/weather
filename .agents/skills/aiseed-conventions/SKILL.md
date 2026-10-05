@@ -64,9 +64,14 @@ Implications for all code and UI:
   **No Flet imports allowed in services.**
 - `components/` contains Flet components only. They call services through
   async methods.
-- `models/` contains plain dataclasses or `@ft.observable` models. No I/O.
-- `figures/` (when added) contains pure matplotlib figure builders. They take
-  data, return a `Figure`, and know nothing about Flet.
+- `models/` contains plain dataclasses or `@ft.observable` models. The only
+  disk I/O here is the user's own small files: `config.toml` and
+  `window.json` (`user_settings.py`) and `locations.json`
+  (`point_location.py`). No network I/O.
+- `figures/` contains renderers that take data and return an image and know
+  nothing about views. The map path is numpy + PIL and returns PNG bytes
+  (see `chart-base-design`); the point-forecast PNG uses matplotlib.
+  `canvas_timeseries.py` is the one module that draws with `flet.canvas`.
 
 ## Async
 

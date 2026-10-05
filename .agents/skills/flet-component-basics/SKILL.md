@@ -1,13 +1,13 @@
 ---
 name: flet-component-basics
-description: Build new Flet 0.85+ desktop applications from scratch using declarative @ft.component style with hooks (use_state). Covers entry point, component structure, local state, event handlers, auto-update behavior, and async patterns for CPU-bound or long-running tasks. Use when creating a new Flet app (not converting an existing imperative one). Triggers on mentions of "@ft.component", "ft.use_state", "page.render", "flet run", or starting a new Flet desktop project in Python. For converting an existing imperative Flet app to declarative style, use the imperative-to-declarative-flet skill instead.
+description: Build new Flet 0.85+ desktop applications from scratch using declarative @ft.component style with hooks (use_state). Covers entry point, component structure, local state, event handlers, auto-update behavior, and async patterns for CPU-bound or long-running tasks. Use when creating a new Flet app or a new component file. Triggers on mentions of "@ft.component", "ft.use_state", "page.render", "flet run", or starting a new Flet desktop project in Python. Project-specific rules (Router, use_dialog, observable, use_ref, forbidden patterns) are in the flet-declarative skill.
 ---
 
 # Flet Component Basics (Flet 0.85+)
 
 Build a new Flet desktop app from scratch using the declarative `@ft.component` style.
 
-This skill covers the **starting point** — entry, components, local state, events. For dialogs, routing, file picking, or audio, see the corresponding dedicated skills (loaded only when needed).
+This skill covers the **starting point** — entry, components, local state, events. Dialogs, routing, shared state, and refs are covered in `flet-declarative`.
 
 ## Entry point
 
@@ -129,9 +129,9 @@ Do not pass `page` through component arguments — use `ft.context.page` instead
 
 ## Async and CPU-bound work
 
-Flet 1.0 uses a single-threaded async UI model. Blocking calls freeze the UI.
+Flet runs the UI on a single-threaded asyncio event loop. Blocking calls freeze the UI.
 
-- **Never use `time.sleep()`** in event handlers. Use `await asyncio.sleep()`.
+- In event handlers, wait with `await asyncio.sleep()`. `time.sleep()` blocks the loop.
 - **For CPU-bound work** (heavy computation, image processing, solvers), offload to a thread:
 
 ```python
@@ -148,12 +148,9 @@ async def handle_solve():
 
 ## What this skill does not cover
 
-Load the corresponding skill when needed:
-
-- **Dialogs** (alert, confirm, modal): use `ft.use_dialog()`. Separate skill.
-- **Routing** (multi-page apps): use `ft.Router`. Separate skill.
-- **Services** (FilePicker, Audio, Clipboard): add to `page.services`. Separate skill.
-- **Converting an existing imperative app** to declarative: use the `imperative-to-declarative-flet` skill.
+- **Dialogs** (alert, confirm, modal): `ft.use_dialog()`. See `flet-declarative`.
+- **Routing** (multi-page apps): `ft.Router`. See `flet-declarative`.
+- **Services** (FilePicker, Audio, Clipboard): add to `page.services`. This repo has no skill for them, so check the API (e.g. flet MCP `get_api`) before use.
 
 ## Anti-patterns to avoid
 

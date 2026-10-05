@@ -19,9 +19,10 @@ afterthought.
 | **dynamical.org IFS ENS** | `s3://dynamical-ecmwf-ifs-ens` (us-west-2) | Ensemble work, fast point time-series |
 | ECMWF direct | `https://data.ecmwf.int/forecasts` | Fallback only (500 connection limit) |
 | Azure mirror | `https://ai4edataeuwest.blob.core.windows.net/ecmwf` | Alternate for users with Azure preference |
-| GCP mirror | `ecmwf-open-data` | Alternate, often best for Asia-Pacific |
+| GCP mirror | `https://storage.googleapis.com/ecmwf-open-data` | Edge-cached; fastest measured from Japan |
+| aiseed mirror | `mirror_url` in `config.toml` | Redistribution packs (NetCDF per kind), see `docs/forecast-distribution.md` |
 
-All buckets above are **anonymous (no AWS account needed)**.
+All sources above are **anonymous (no account needed)**.
 
 ## ECMWF Open Data (real-time forecasts)
 
@@ -34,24 +35,21 @@ All buckets above are **anonymous (no AWS account needed)**.
 - Runs: 00, 06, 12, 18 UTC. Published ~6 hours after run time.
 - Path: `s3://ecmwf-forecasts/YYYYMMDD/HHz/{resolution}/{stream}/<filename>.grib2`
 
-### Client usage
+### How the service downloads
 
-```python
-from ecmwf.opendata import Client
+`services/forecast_service.py` downloads the whole
+`{date}{time}-{step}h-oper-fc.grib2` for each (cycle, step) with one HTTPS
+GET from the base URL of the chosen source (`_BULK_BASE`). It does not use
+`Client.retrieve` with `.index` Range requests: from Japan each Range
+round-trip to Frankfurt cost ~250 ms, and one step took ~72 s versus
+~1.3 s for the bulk file from GCP (timings in
+`tests/test_download_bench.py`). The price is ~150 MB of disk per step.
 
-client = Client(source="aws")  # one line switches mirror
-client.retrieve(
-    type="fc",          # forecast
-    step=0,             # hours from run start
-    param="msl",        # short name; "2t", "10u", "10v", "tp", "gh"
-    levelist=500,       # for pressure-level fields like gh, t, u, v
-    target=str(local_path),
-)
-```
+`ecmwf-opendata`'s `Client` is still used to find the latest run
+(`Client.latest()`), because the publication delay varies. The `mirror`
+source reads `latest.json` from the mirror instead.
 
-The library handles indexing and partial-file reads. Do not use raw `boto3` or
-`s3fs` against `ecmwf-forecasts` unless the use case is outside what the
-client supports.
+See the `data-flow` skill for how requests, kinds, and cache files relate.
 
 ### Variables that matter for synoptic charts
 
@@ -178,17 +176,23 @@ for a single lat/lon — bandwidth is wasted.
 
 ## Timing rules
 
-- Open Data published **~6 hours after** each run time
-- Pick latest run satisfying `now_utc - run_time >= 6h`
+- Open Data is published a few hours after each run time, with a
+  variable delay. Resolve the latest run by probing the server
+  (`latest_run`, `probe_cycle_complete`), not by a fixed offset
 - AIFS often beats IFS for the same run — handle them as independent timelines
 - ERA5 lag: roughly 5 days behind real time for the public release;
   "ERA5T" preliminary data is sooner. Document which one the user sees.
 
 ## Caching
 
-- GRIB: `~/.cache/aiseed-weather/grib/`, key `{date}_{run}_{model}_{stream}_{step}_{param}.grib2`
-- ERA5 fetched fields: `~/.cache/aiseed-weather/era5/`
-- ERA5 climatology aggregations: `~/.cache/aiseed-weather/climatology/`,
+All caches live under `data_dir` (`resolved_data_dir(settings)`; default
+`user_cache_dir("aiseed-weather")`).
+
+- GRIB: `<data_dir>/ecmwf/{YYYYMMDD}/{HH}z/{step}h.grib2` (one bulk file
+  per step; built by `grib_cache_path`)
+- Mirror packs: `<data_dir>/mirror/{YYYYMMDD}/{HH}z/{step:03d}h-{kind}-core.nc`
+- ERA5 fetched fields: `<data_dir>/era5/`
+- ERA5 climatology aggregations: `<data_dir>/climatology/`,
   key `{var}_{ref_start}_{ref_end}.nc`
 - Zarr access is read-through; do not pre-cache, let the chunk store handle it
 - Never re-download non-empty files
@@ -196,10 +200,11 @@ for a single lat/lon — bandwidth is wasted.
 
 ## GRIB decoding
 
-```python
-import xarray as xr
-ds = xr.open_dataset(grib_path, engine="cfgrib")
-```
+The bulk file mixes several `typeOfLevel` hypercubes (msl at meanSea,
+2t at heightAboveGround, gh on isobaric levels, soil layers), so a plain
+`xr.open_dataset(path, engine="cfgrib")` raises `DatasetBuildError`. Open
+it through `forecast_service.decode_kind(path, kind)`, which uses
+`cfgrib.open_datasets` and returns the dataset for one kind.
 
 Wrap in `asyncio.to_thread`. Requires `eccodes` C library — install via
 conda-forge (see `environment.yml`).

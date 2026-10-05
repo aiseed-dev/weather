@@ -5,11 +5,11 @@ description: Structural design of synoptic chart layers — base map, data overl
 
 ## Status: starting point, expected to evolve
 
-This skill records the design principles derived from user feedback in
-the conversation on 2026-05-15. **The concrete values below — gray
-shades, alpha, isobar widths, palette ranges, pill sizing — are
-CALIBRATION POINTS, not specifications.** As we add variables and
-learn what reads well, expect to revisit them.
+This skill records the design principles from the user's review of
+the MSL chart. The concrete values below — gray shades, alpha, isobar
+widths, palette ranges, pill sizing — are **calibration points, not
+specifications**. As we add variables and learn what reads well,
+expect to revisit them.
 
 What should change much less often: the **structure** (layered
 approach, luminance hierarchy, continuous LUT, white-isobar
@@ -17,18 +17,18 @@ convention, pill labels on lines).
 
 ## What this skill is not
 
-A consumer weather app design guide. Avoid commercial-app conventions
-that previous iterations of this repo accidentally absorbed:
+A consumer weather app design guide. Avoid these commercial-app
+conventions:
 
-- No pastel-coloured isobars (yellow, pink, etc.) — they were the
-  "Windy-style" notion that was wrong; Windy's actual isobars are
-  white.
+- No pastel-coloured isobars (yellow, pink, etc.). Windy's isobars,
+  the reference below, are white.
 - No near-white coastlines that vanish on white-zero palettes.
 - No per-variable hand-tuned palette stops driven by "what looks good".
 - No fps-budget framing — the analyst opens a chart and studies it
   for minutes, not 16 ms per frame.
-- No matplotlib + cartopy at runtime — we use numpy + PIL + contourpy
-  exclusively. cartopy is precompute-only (coastline / land masks).
+- No matplotlib + cartopy on the map render path — it uses numpy +
+  PIL + contourpy only. cartopy is precompute-only (coastline / land
+  masks).
 
 The reference visual is Windy's MSL chart: flat gray base, transparent
 diverging data overlay, white isobars at the WMO synoptic interval,
@@ -215,10 +215,9 @@ contour interval after a synoptic-scale smoothing pass?* If yes,
 it's "colour + isolines". If the smoothing erases the synoptic
 pattern before it erases the noise, it's "colour-only".
 
-This is a **physics test**, not an aesthetic preference. The first
-draft of this skill called the split "what carries the value
-better" — but the deeper reason is whether the field itself is
-isoline-tractable at the rendered resolution.
+This is a **physics test**, not an aesthetic preference: the
+question is whether the field itself is isoline-tractable at the
+rendered resolution.
 
 ## Palette construction — continuous LUT, not binned
 
@@ -270,10 +269,10 @@ the analysis default.
 | 500 hPa geopot.   | 60 gpm        | 300 gpm    |
 | 850 hPa temp      | 3 °C          | 15 °C      |
 
-Earlier sessions widened MSL to 8 hPa to "let the chart breathe" —
-that was treating the symptom (pale-yellow lines blurring on an
-opaque posterised fill) instead of the cause. With white lines on a
-transparent overlay, 2 hPa reads cleanly even on a regional crop.
+Keep MSL at 2 hPa. A wider interval only helps when pale lines blur
+on an opaque posterised fill; that is a symptom of the wrong layering.
+With white lines on a transparent overlay, 2 hPa reads cleanly even on
+a regional crop.
 
 ## Pill labels
 
@@ -306,9 +305,13 @@ not let it leak back as the analysis path.
 | `figures/_coastlines.py`          | Coastline mask stamp (the dark line on top of data) |
 | `figures/_coastline_masks.npz`    | Precomputed land + coastline masks per region |
 | `figures/_precompute_coastlines.py` | One-time generator (run after region or NE update) |
-| `figures/msl_chart.py`            | Reference implementation of all four layers |
+| `figures/_chart_spec.py`          | `ChartSpec` / `IsolineSpec` — the per-variable spec type |
+| `figures/_chart_specs.py`         | One registered `ChartSpec` per variable (anchors, vmin/vmax, isolines) |
+| `figures/_layered_renderer.py`    | Shared renderer for all layers: base → data → isolines + pills → coastline |
+| `figures/_palette.py`             | `build_continuous_lut`, `palette_rgb_for` (pill colour) |
+| `figures/msl_chart.py`, `t2m_chart.py`, `tp_chart.py`, `tprate_chart.py` | Thin wrappers that call `render(SPEC, …)` |
 | `figures/_fast.py`                | Shared crop / polar reindex / palette helpers |
-| `figures/_scalar_chart.py`        | Generic palette-driven renderer (being migrated) |
+| `figures/_scalar_chart.py`        | Generic renderer for the remaining scalar layers (`ScalarLayerConfig`, `CONFIGS`) |
 
 ## When this skill changes
 

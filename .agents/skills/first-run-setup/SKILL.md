@@ -42,13 +42,14 @@ with the dataclass; do not introduce a second source of truth.
 
 | Key | Type | Default | Valid values |
 |-----|------|---------|--------------|
-| `forecast_source` | string | `"none"` | `none`, `ecmwf_aws`, `ecmwf_azure`, `ecmwf_gcp`, `ecmwf_direct` |
+| `forecast_source` | string | `"none"` | `none`, `ecmwf_aws`, `ecmwf_azure`, `ecmwf_gcp`, `ecmwf_direct`, `mirror` |
 | `historical_source` | string | `"none"` | `none`, `era5_aws`, `era5_cds` |
 | `point_source` | string | `"none"` | `none`, `open_meteo` |
 | `reference_period_start` | int | `1991` | year |
 | `reference_period_end` | int | `2020` | year |
 | `accept_attribution` | bool | `false` | `true` gates export features |
 | `data_dir` | string \| omitted | omitted → `user_cache_dir("aiseed-weather")` | absolute path (e.g. `/mnt/wxdata/aiseed`); tilde and `$HOME` are expanded |
+| `mirror_url` | string \| omitted | omitted | base URL of the aiseed redistribution packs; required when `forecast_source = "mirror"` (see `docs/forecast-distribution.md`) |
 
 ## Data directory layout
 
@@ -56,15 +57,19 @@ All cached downloads live under `data_dir` (or the default user cache):
 
 ```
 <data_dir>/
-  ecmwf/{YYYYMMDD}/{HH}z/{param}_{step}h.grib2   # ECMWF Open Data GRIB2
-  jma/radar/...                                  # JMA radar tiles + meta
-  jma/amedas/...                                 # AMeDAS snapshots + station table
-  openmeteo/...                                  # Open-Meteo JSON cache
+  ecmwf/{YYYYMMDD}/{HH}z/{step}h.grib2                 # ECMWF Open Data bulk GRIB2, all params per step
+  mirror/{YYYYMMDD}/{HH}z/{step:03d}h-{kind}-core.nc   # redistribution packs (+ -ext*.nc siblings)
+  jma/radar/...                                        # JMA radar tiles + meta
+  jma/amedas/...                                       # AMeDAS snapshots + station table
+  jma/forecast/...                                     # JMA forecast + area table
+  openmeteo/...                                        # Open-Meteo JSON cache
+  point_forecast/locations.json, archive/...           # saved locations + per-location Parquet archive
 ```
 
-The hierarchical ECMWF layout means a single run gathers all its fields
-under one directory, which scales much better than a flat `grib/` folder
-when many runs × many params × many steps are cached.
+The path logic lives in `services/forecast_service.grib_cache_path`.
+The hierarchical layout gathers a single run under one directory, which
+scales much better than a flat folder when many runs × many steps are
+cached.
 
 JMA radar and AMeDAS are intentionally not in the config — JMA endpoints
 need no credentials and using the feature is itself the act of choosing

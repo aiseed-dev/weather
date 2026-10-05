@@ -13,12 +13,14 @@ overlap the other data sources:
 | ECMWF Open Data | Forecast (now → +10 days) | Global grid |
 | ERA5 | Historical (1940 → ~5 days ago) | Global grid |
 | **JMA radar / AMeDAS** | **Nowcast (now, last ~6 h)** | **Japan only** |
+| JMA 府県天気予報 | Forecast (today → +7 days) | Forecast office area |
 | Open-Meteo | Forecast (point) | Single lat/lon |
 
-JMA is **not** used as a forecast source in this app. Predicted weather comes
-from ECMWF; current observed conditions come from JMA.
+Forecast maps and grids come from ECMWF. JMA supplies observed conditions
+(radar, AMeDAS) and the 府県天気予報 card on the point forecast view
+(`services/jma_forecast_service.py`, cached 1 hour, keyed by forecast office).
 
-## Important: JMA endpoints are not an official API
+## JMA endpoints are not an official API
 
 The JSON and image endpoints on `www.jma.go.jp` and `tile.jmaxml.jp` are not a
 documented public API. JMA uses them internally on their website and has
@@ -46,7 +48,9 @@ If the data has been processed or composited (e.g. radar overlaid on a map):
 > 編集・加工を行った旨と編集責任が利用者にあります
 
 This text appears in the figure footer and in embedded metadata.
-Implement in `figures/footer.py` with a JMA-specific branch.
+The strings are defined in `services/jma_endpoints.py` (`ATTRIBUTION`,
+`ATTRIBUTION_PROCESSED`). `figures/footer.py` has no JMA branch yet; add
+one there when a JMA figure is rendered through it.
 
 ## Etiquette
 
@@ -93,8 +97,8 @@ than hardcoding deeply nested paths.
 
 ### Tile fetching strategy
 - For one viewport, fetch only the tiles that intersect the visible extent
-- Cache tiles by (basetime, validtime, z, x, y) in
-  `~/.cache/aiseed-weather/jma/radar/`
+- Cache tiles by (basetime, validtime, z, x, y) under
+  `<data_dir>/jma/radar/` (see "Caching" below)
 - Tiles for old basetimes can be deleted aggressively (>2 hours old)
 
 ## AMeDAS (地上気象観測)
@@ -137,9 +141,15 @@ Always check for variable presence before reading; not all stations have all var
 
 ## Caching
 
-- Radar tiles: `~/.cache/aiseed-weather/jma/radar/<basetime>/<validtime>/<z>/<x>/<y>.png`
-- AMeDAS map JSON: `~/.cache/aiseed-weather/jma/amedas/map_<YYYYMMDDHHMMSS>.json`
-- AMeDAS station metadata: `~/.cache/aiseed-weather/jma/amedas/amedastable.json`
+`<data_dir>` is the `data_dir` setting in `config.toml`; when unset it is
+`~/.cache/aiseed-weather` (`resolved_data_dir()` in `models/user_settings.py`).
+
+- Radar: `<data_dir>/jma/radar/_latest_meta.json` for freshness; tiles are
+  planned at `<data_dir>/jma/radar/<basetime>/<validtime>/<z>/<x>/<y>.png`
+  (`jma_radar_service.py` is still a skeleton)
+- AMeDAS latest snapshot: `<data_dir>/jma/amedas/_latest_snapshot.json`
+  (10-minute window)
+- AMeDAS station metadata: `<data_dir>/jma/amedas/amedastable.json`
   (refresh weekly; station list is essentially stable)
 
 ## Forbidden
@@ -150,5 +160,5 @@ Always check for variable presence before reading; not all stations have all var
 - Reusing JMA data older than its update cadence and presenting it as "current"
 - Omitting the attribution
 - Treating JMA endpoints as a documented API contract — they are not
-- Including JMA in the first-run setup selection (it is a per-feature flow)
-- Importing `flet` in this directory
+- Adding a JMA key to `config.toml` (JMA use is per-feature)
+- Importing `flet` in `services/`

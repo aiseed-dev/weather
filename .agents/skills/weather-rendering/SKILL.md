@@ -1,6 +1,6 @@
 ---
 name: weather-rendering
-description: How to render synoptic-quality weather maps and embed them in Flet. Read when modifying components or modules that produce figures.
+description: Meteorological conventions for synoptic-quality weather maps and how rendered charts reach the Flet UI. Read when modifying components or modules that produce figures.
 ---
 
 ## Audience reminder
@@ -12,62 +12,54 @@ charts.
 
 ## Stack
 
-- `matplotlib` for figure creation
-- `cartopy` for map projections and coastlines
-- `flet.matplotlib_chart.MatplotlibChart` to embed figures in Flet
-- All figure-building code lives in `figures/` as pure functions: take
-  data, return a `matplotlib.figure.Figure`. No Flet imports there.
+- Map charts (ECMWF grids) are rendered with numpy + contourpy + PIL.
+  `figures/_layered_renderer.py` composites each variable from its
+  `ChartSpec` in `figures/_chart_specs.py`. The layer structure,
+  palettes, and isoline intervals are defined in the `chart-base-design`
+  skill.
+- cartopy runs only offline, to precompute coastline and land masks
+  (`figures/_precompute_coastlines.py` → `_coastline_masks.npz`). It is
+  not on the render path.
+- Map renderers return PNG bytes, and the view shows them with `ft.Image`.
+- The point forecast chart is drawn on `flet.canvas`
+  (`figures/canvas_timeseries.py`). matplotlib is used for its PNG
+  download (`figures/point_forecast_chart.py`).
+- Figure-building code lives in `figures/` as functions that take data
+  and return an image. Apart from `canvas_timeseries.py`, which builds
+  canvas shapes, modules in `figures/` do not import Flet.
 
 ## Projections
 
-| View | Projection | Notes |
-|------|-----------|-------|
-| Global synoptic | `Robinson` or `PlateCarree` | Robinson preferred for sharing; PlateCarree for analysis with lat/lon grid |
-| Northern Hemisphere | `NorthPolarStereo` | Standard for jet stream and polar vortex |
-| Mid-latitude band | `Mercator` | Familiar weather map look |
-| Japan / regional | `PlateCarree` with `set_extent` | Or `LambertConformal` for higher latitudes |
-| Tropical | `PlateCarree` | Standard for typhoon tracking |
+Regions and their projections are defined in `figures/regions.py`:
 
-Choose projection in the figure-building function based on the view request.
-Never hardcode projection in services.
+| Region | Projection |
+|--------|-----------|
+| Global and regional presets (Japan, East Asia, N. Pacific, …) | PlateCarree |
+| Arctic / Antarctic | Polar equidistant-azimuthal (precomputed reindex table) |
+| User-defined custom region | Mercator |
+
+The figure side chooses the projection from the region. Services do not
+hold projection settings.
 
 ## Standard layers (synoptic conventions)
 
-### Mean sea level pressure (`msl`)
-- Contour lines (isobars) at **4 hPa intervals**, labeled
-- Bold every 20 hPa
-- 1016 hPa line slightly emphasized (mean atmospheric pressure)
-- Convert Pa → hPa before plotting
-- Mark L (low) and H (high) centers — extrema within a regional window
+Palettes, isoline intervals, and which variables get isolines are
+defined once, in `chart-base-design` and `figures/_chart_specs.py`.
+This section lists the meteorological conventions that sit on top of
+them.
 
-### 2m temperature (`2t`)
-- Filled contours (`contourf`) with diverging colormap (`RdBu_r`)
-- 0°C line emphasized
-- Convert K → °C before plotting
-- Contour interval: 4°C in mid-latitudes, 2°C for regional
-
-### 10m wind (`10u`, `10v`)
-- Barbs (preferred for synoptic charts) — `ax.barbs(...)` — at thinned grid
-- Or streamplot for visual flow
-- Wind speed shading optional underneath
-- Barb interval: thin grid to ~50 barbs across the view
-
-### Geopotential at 500 hPa (`gh` at 500)
-- Contour lines at **60 gpm intervals** (5640, 5700, 5760, …) — the synoptic standard
-- Convert gpm to dam (decimeters) for labels: 564, 570, 576
-- Often paired with temperature or anomaly shading below
-
-### Precipitation (`tp`)
-- Filled contours, sequential colormap
-  - Light rain: `Blues` (0–10 mm)
-  - Heavy rain: extended palette to include purple/red for >50 mm
-- Use accumulation intervals (3h, 6h, 24h) — never show "instantaneous"
-- Convert m → mm
-
-### Jet stream (`u`, `v` at 250 hPa)
-- Wind speed shading, contour interval 10 m/s starting at 30 m/s
-- Use a perceptually uniform colormap (`magma_r` or `viridis`)
-- Optional streamlines overlay
+- **`msl`**: convert Pa → hPa. Isobars are the primary value carrier.
+  Mark L (low) and H (high) centers as extrema within a regional window.
+- **`2t`**: convert K → °C. Diverging palette anchored at 0 °C,
+  colour-only.
+- **`10u`, `10v`**: wind speed shading with thinned direction glyphs
+  (`figures/wind_chart.py`).
+- **`gh` at 500 hPa**: isohypses at 60 gpm (5640, 5700, 5760, …), the
+  synoptic standard.
+- **`tp`, `tprate`**: convert to mm (`tp`) or mm/h (`tprate`). State the
+  accumulation interval or rate in the label.
+- **Jet stream (`u`, `v` at 250 hPa)**: wind speed shading starting at
+  30 m/s, optional streamlines.
 
 ## Anomaly layers
 
@@ -78,53 +70,31 @@ See `climatology-analysis` skill. Key rendering rules:
 - Reference period in the title or footer
 - Lock the color range across timesteps in animations
 
-## Standard rendering pattern
+## Reference implementation
 
-```python
-# figures/msl_chart.py
-import matplotlib.pyplot as plt
-import cartopy.crs as ccrs
-from .footer import apply_footer  # see figure-export skill
-
-def render_msl(ds, *, projection="robinson", run_id: str) -> plt.Figure:
-    fig = plt.figure(figsize=(12, 7))
-    proj = _projection(projection)
-    ax = plt.axes(projection=proj)
-    ax.coastlines(linewidth=0.6)
-    ax.gridlines(draw_labels=False, linewidth=0.3, color="#888", alpha=0.5)
-
-    msl_hpa = ds["msl"] / 100.0  # Pa to hPa
-    cs = ax.contour(
-        ds.longitude, ds.latitude, msl_hpa,
-        levels=range(940, 1060, 4),
-        transform=ccrs.PlateCarree(),
-        colors="black", linewidths=0.7,
-    )
-    ax.clabel(cs, inline=True, fontsize=7, fmt="%d")
-
-    valid_time = ds["valid_time"].values
-    fig.suptitle(f"MSL [hPa] — valid {valid_time}", fontsize=13)
-    apply_footer(fig, data_source="ECMWF Open Data", run_id=run_id)
-    return fig
-```
+`figures/msl_chart.py` is a thin wrapper that calls
+`_layered_renderer.render(MSL, …)`. New map variables add a `ChartSpec`
+to `_chart_specs.py` the same way. The layered renderer writes source,
+license, run id, and layer into PNG text metadata (`_png_metadata`). It draws no
+visible footer yet; `figures/footer.py` (`apply_footer`) works on
+matplotlib figures only.
 
 ## Performance rules
 
-- Rendering happens in `asyncio.to_thread` (matplotlib is synchronous)
-- Show a `ft.ProgressRing` placeholder during render
-- Cache rendered PNGs keyed by `(run_time, layer, projection, anomaly_ref)`
-- For animation: pre-render all timesteps via `asyncio.gather` with a
-  thread pool semaphore (max 4 concurrent renders)
+- UI code renders through `render_layer_async` in
+  `figures/render_pool.py`, which runs the render in `asyncio.to_thread`.
+- Show a `ft.ProgressRing` placeholder during render.
+- `MapView` caches rendered PNG frames keyed by
+  `(cycle, region, layer, overlays, step)`.
+- Animation frames are pre-rendered by one background thread, one frame
+  at a time. Results reach component state through an `asyncio.Queue`
+  drained by a task started with `page.run_task`.
 
-## Figure cleanup
+## matplotlib figures
 
-Always close figures after use:
-
-```python
-plt.close(fig)
-```
-
-Animation sessions otherwise leak memory.
+Where matplotlib is used (the point forecast PNG), create a new
+`Figure` per render and close it with `plt.close(fig)` afterwards.
+Repeated renders otherwise leak memory.
 
 ## DPI separation
 
@@ -137,7 +107,7 @@ See `figure-export` skill for the export pipeline.
 
 - Calling `plt.show()` (blocks the event loop)
 - Using `pyplot.gcf()` / global state (always create new `Figure` objects)
-- Hardcoded color scales scattered in code — define in `figures/colormaps.py`
+- Hardcoded color scales scattered in code — define them as `ChartSpec` anchors in `figures/_chart_specs.py`
 - "Prettifying" charts away from synoptic conventions (rainbow MSL contours,
   emoji weather icons, etc.) — these are anti-features for this audience
 - Embedding interactive matplotlib widgets (use Flet controls instead)

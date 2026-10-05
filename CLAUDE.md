@@ -12,7 +12,12 @@ combined into a single workflow with annotation and export. JMA radar and
 AMeDAS provide the "Japan, right now" nowcast layer. This combination is
 what makes the project worth building.
 
-See **AGENTS.md** for skill locations and ordering rules.
+See **AGENTS.md** for skill locations and which skills to read per task.
+
+This file, AGENTS.md, and `.agents/skills/` cover the desktop app (`src/`).
+The same repository also holds the web product (`WeatherStatic/`) and the
+data infrastructure (deb2 + Cloudflare). Their docs are indexed in
+`docs/README.md`.
 
 ## Data layers (each has a distinct role)
 
@@ -36,14 +41,21 @@ See **AGENTS.md** for skill locations and ordering rules.
 ## Stack
 
 - UI: Flet (Python, declarative components mode)
-- **Primary data**: ECMWF Open Data via AWS S3 (`s3://ecmwf-forecasts`)
-- **Climatology core**: ERA5 via AWS (`s3://ecmwf-era5`)
+- **Primary data**: ECMWF Open Data. One bulk GRIB per (cycle, step) over
+  HTTPS from the mirror the user picks in `config.toml` (GCP / AWS / Azure /
+  ECMWF direct), or the aiseed redistribution packs
+  (`forecast_source = "mirror"`, see `docs/forecast-distribution.md`)
+- **Climatology core**: ERA5 via AWS (`s3://ecmwf-era5`). No ERA5 service
+  exists yet; the point-forecast climatology currently comes from the
+  Open-Meteo archive (`services/point_climatology.py`)
 - **Japan nowcast**: JMA (`www.jma.go.jp/bosai/...`) — public, no key
 - Ensemble / point extraction: dynamical.org Zarr (`s3://dynamical-ecmwf-ifs-ens`)
 - Supporting point forecasts: Open-Meteo
 - Processing: xarray + cfgrib (GRIB2), numpy
-- Rendering: matplotlib + cartopy, embedded in Flet via MatplotlibChart
-- Export: matplotlib `savefig` to PNG/PDF with embedded metadata
+- Map rendering: numpy + PIL + contourpy (`figures/_layered_renderer.py`).
+  cartopy is used only to precompute coastline masks
+- Point-forecast chart: `flet.canvas` on screen, matplotlib for the PNG download
+- Export: planned (see the `figure-export` skill)
 - Packaging: **Miniforge / conda-forge** (not uv) — required for cartopy + cfgrib
 
 ## Design philosophy
@@ -82,6 +94,6 @@ of truth for development.
 
 ## Before any task
 
-1. Read AGENTS.md
-2. Read the skills listed there in the order given
-3. Report which skills were read (one line per skill) before starting
+Read AGENTS.md. Its selection table says which skills apply to the task.
+Read those skills, and report which ones you read in one line before
+starting.

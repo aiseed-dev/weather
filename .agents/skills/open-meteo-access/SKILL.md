@@ -1,6 +1,6 @@
 ---
 name: open-meteo-access
-description: How to fetch point forecasts from Open-Meteo. This is a supporting feature, not the core. Enabled only if the user opted in at first run. Read when modifying the point forecast view or service.
+description: How to fetch point forecasts from Open-Meteo. This is a supporting feature, not the core. Enabled only when `point_source = "open_meteo"` is set in config.toml. Read when modifying the point forecast view or service.
 ---
 
 ## Position in this project
@@ -20,8 +20,9 @@ maps, animations, climatology overlays. Open-Meteo exists because:
 3. Open-Meteo provides marine, soil, and air quality variables that are not
    in standard ECMWF Open Data
 
-If the user did not opt into Open-Meteo at first run, the point forecast
-view is disabled.
+The user opts in by setting `point_source = "open_meteo"` in
+`~/.config/aiseed-weather/config.toml`. With `point_source = "none"` the
+point forecast view is disabled.
 
 ## Implementation: httpx, not the official client
 
@@ -142,7 +143,7 @@ def decode(data: dict, variables: tuple[str, ...]) -> PointForecast:
 ## Caching
 
 - Open-Meteo updates forecasts hourly upstream
-- This app caches responses for **1 hour** in `~/.cache/aiseed-weather/openmeteo/`
+- This app caches responses for **1 hour** in `<data_dir>/openmeteo/` (default `~/.cache/aiseed-weather`)
 - Cache filename encodes the request: `{lat}_{lon}_{model}_{days}d_{var_hash}.json`
 - Different requests (different lat/lon, different variables) never share cache entries
 - Cache is JSON for inspectability (the response is JSON anyway)
@@ -196,7 +197,7 @@ fit easily under the limit.
 - Using Open-Meteo for the main map view (use ECMWF Open Data)
 - Background polling (see `user-action-fetch` skill)
 - Caching beyond 1 hour (the data updates hourly)
-- Calling Open-Meteo if the user did not opt in at first run
+- Calling Open-Meteo while `point_source = "none"`
 - Hardcoding the variable list outside `services/point_forecast_service.py`
 - Forgetting attribution on exported figures
-- Importing `flet` in this directory
+- Importing `flet` in `services/`

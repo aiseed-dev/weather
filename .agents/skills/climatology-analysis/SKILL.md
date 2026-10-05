@@ -10,6 +10,15 @@ Many tools show today's weather. This project's distinguishing feature is
 goes through the patterns in this document so the math is consistent and
 the figure labels are honest.
 
+## Current implementation
+
+No ERA5 grid service exists yet; the computations below are the design
+for it. The point-forecast view already has a per-location climatology in
+`services/point_climatology.py`, built from the Open-Meteo archive
+(Parquet, Polars). It uses a 31-day centred window and deliberately
+leaves precipitation out of the mean/std band (the user's decision:
+single extreme events dominate the statistics).
+
 ## Definitions (use these terms exactly in code and UI)
 
 - **Climatology**: a long-term average for a given calendar position
@@ -120,7 +129,7 @@ Every anomaly figure must show:
 Climatologies are expensive to compute and immutable for a given
 (variable, reference period). Cache aggressively:
 
-- Path: `~/.cache/aiseed-weather/climatology/`
+- Path: `<data_dir>/climatology/` (`resolved_data_dir(settings)`)
 - Key: `{var}_{ref_start}_{ref_end}_{smoothing}.nc`
 - Computed once per machine; never recompute unless cache is missing or the
   user explicitly forces a rebuild
@@ -131,11 +140,10 @@ Compute lazily on first request, save with `xarray.Dataset.to_netcdf`.
 
 - Daily climatology over 30 years is ~11,000 timesteps. With xarray + Dask
   this is manageable but not instant.
-- Show a progress indicator the first time per (variable, period); subsequent
-  uses are cache hits.
-- Pre-compute the most common cases on first run (e.g. msl, 2t, gh500 against
-  1991-2020) and announce it: "Building climatology cache — about 2 minutes,
-  one time."
+- Build a climatology when the user first asks for it (see
+  `user-action-fetch`; nothing is precomputed at app start). Show a progress
+  message the first time per (variable, period), e.g. "Building
+  climatology cache — about 2 minutes, one time." Later uses are cache hits.
 
 ## Forbidden
 

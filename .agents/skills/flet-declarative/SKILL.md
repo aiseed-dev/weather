@@ -49,31 +49,36 @@ Flet re-renders observers automatically.
 
 ### Entry point
 
+`main.py` sets up the page once in `before_main` and mounts the root
+component with `page.render`:
+
 ```python
-def main(page: ft.Page):
+def _configure(page: ft.Page) -> None:
     page.title = "AIseed Weather"
     page.theme_mode = ft.ThemeMode.SYSTEM
-    page.render(App)
 
 if __name__ == "__main__":
-    ft.run(main)
+    ft.run(lambda page: page.render(App), before_main=_configure)
 ```
 
 ### Top-level wrapping
 
-The component returned at root must wrap content in `ft.SafeArea`:
+The outermost visible layout wraps its content in `ft.SafeArea`. In
+`components/app.py` that is the route shell (`AppShell`) and the
+full-screen config-error panel; `App` itself returns the `ft.Router`.
 
 ```python
 @ft.component
-def App():
-    return ft.SafeArea(content=MapView(...))
+def AppShell(settings, fetch):
+    outlet = ft.use_route_outlet()
+    return ft.SafeArea(expand=True, content=ft.Column([...outlet...]))
 ```
 
 ## Navigation: ft.Router (Flet 0.85+)
 
-Use `ft.Router` for multi-view apps. Do NOT roll your own
-`page.route`-listener / `page.views.append` logic — `Router` is the
-declarative replacement.
+Use `ft.Router` for multi-view apps. `Router` is the declarative
+replacement for a hand-written `page.route` listener and
+`page.views.append` logic.
 
 ```python
 @ft.component
@@ -104,8 +109,8 @@ def render_map():
 ft.Route(index=True, component=render_map)
 ```
 
-Navigation uses `page.navigate("/path")` from event handlers — never
-`page.go(...)` (older API) or mutating `page.route`. The current path is
+Navigation uses `page.navigate("/path")` from event handlers.
+`page.go(...)` and assigning `page.route` are the imperative API. The current path is
 read inside components via `ft.use_route_location()`, e.g. to highlight
 the active tab in a NavigationBar:
 
@@ -118,9 +123,9 @@ selected_idx = next(
 
 ## Dialogs: ft.use_dialog (Flet 0.85+)
 
-Dialogs are reactive state. Do NOT call `page.show_dialog(...)` or
-`page.close_dialog()` — those are the imperative API and don't fit
-`@ft.component`. Use the `ft.use_dialog` hook:
+Dialogs are reactive state. Show them with the `ft.use_dialog` hook.
+`page.show_dialog(...)` / `page.close_dialog()` are the imperative API
+and don't fit `@ft.component`.
 
 ```python
 @ft.component
@@ -165,11 +170,12 @@ async def handle_layer_change(e):
     forecast_state.current_data = data
 ```
 
-Never call `page.update()` from these handlers.
+Flet re-renders after the handler changes state, so these handlers
+don't call `page.update()`.
 
 Scheduling async work from sync handlers uses
 `ft.context.page.run_task(coro_fn, *args, **kwargs)` — there is no
-top-level `ft.run_task` and never was. `run_task` requires a coroutine
+top-level `ft.run_task`. `run_task` requires a coroutine
 *function*, not a lambda — pass `load` directly, not `lambda: load(...)`.
 
 ## Shared reactive state: @ft.observable
@@ -233,7 +239,7 @@ def stop():
 ref's identity is stable across renders, and writes never re-render the
 component.
 
-What MUST NOT go in a ref:
+What stays out of a ref:
 
 - `ft.Control` instances (controls are derived from state; storing them
   defeats reactivity and breaks the use_dialog frozen-diff machinery)
