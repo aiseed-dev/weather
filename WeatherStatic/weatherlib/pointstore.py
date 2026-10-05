@@ -12,7 +12,7 @@
     地点別 JSON    {時刻: {要素: [値, 品質]}}                  ← 1 地点 3 時間
     エリア束        {アメダス番号: {時刻: {要素: [値, 品質]}}}  ← Worker が作る
 
-置き場（tgsvr のローカル。R2 から取り寄せたもの）:
+置き場（deb2 のローカル。R2 から取り寄せたもの）:
     public_amedas/point/{YYYYMMDD}/{HH}/{area_code}.json
 
 地点別にして増えた要素: gust / gustDirection / gustTime / maxTemp / maxTempTime

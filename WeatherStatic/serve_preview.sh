@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 生成済みサイトを LAN に配信するレビュー用サーバー。
 #
-# 実データ（store/・master/・data/）は tgsvr にしか無いため、見た目の確認は
-# tgsvr 側で生成して、手元のブラウザから見に行く。
+# 実データ（store/・master/・data/）は deb2 にしか無いため、実データでの見た目の
+# 確認は deb2 側で生成して、手元のブラウザから見に行く（手元ではテストデータ）。
 #
 #   ./serve_preview.sh              … public/ をポート 8765 で配信
 #   ./serve_preview.sh --build      … fetch_data + generate してから配信
@@ -15,7 +15,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 PORT="${PORT:-8765}"
-PY=./.venv/bin/python
+PY=../.venv/bin/python     # venv はリポジトリ直下に 1 つ
 BUILD=0
 SERVE=1
 
