@@ -94,6 +94,34 @@
         {% endfor %}
     </table>
 
+    <h3>日別の値（地点別データにしか無い要素）</h3>
+    <p>
+        最大瞬間風速とその風向・起時、日最高・最低気温の起時は 10 分値の配信（上のファイル）に
+        含まれないため、日別の値として月ごとのファイルにまとめています。値は気象庁が
+        地点別に配信している「その日のここまでの値」の 24 時の値です（変数 <code>as_of</code> が
+        1440 のもの）。24 時の値が取れなかった地点は、その時刻までの値で代えています。
+        次元は <code>station</code> × <code>day</code>（その月の日）で、進行中の月は毎日更新されます。
+    </p>
+    {% if daily %}
+    <table>
+        <tr><th>月</th><th>ファイル</th><th>日数</th><th>大きさ</th></tr>
+        {% for d in daily %}
+        <tr><td>{{ d.month }}</td>
+            <td><a href="/Data/AMeDAS/{{ d.path }}">{{ d.path }}</a></td>
+            <td class="num">{{ d.days }}</td><td class="num">{{ d.size }}</td></tr>
+        {% endfor %}
+    </table>
+    <table style="margin-top:10px">
+        <tr><th>変数</th><th>内容</th><th>単位</th><th>倍率</th></tr>
+        {% for v in daily_vars %}
+        <tr><td><code>{{ v.name }}</code></td><td>{{ v.desc }}</td><td>{{ v.units }}</td>
+            <td class="num">{{ v.scale }}</td></tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>まだありません。1 日分がそろった翌日の 0 時台に作ります。</p>
+    {% endif %}
+
     <h3>読み方（Python）</h3>
 <pre>import netCDF4
 

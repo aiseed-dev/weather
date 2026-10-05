@@ -6,7 +6,9 @@
     2. エリアごとに Worker を呼ぶ。Worker が R2 へ 1 本置き、同じバイト列を
        応答で返すので、deb2 の手元（public_amedas/point/）にも書く
     3. 地点別に無い要素だけ map JSON から取る（1 リクエスト）
-    4. 手元の地点別・補完分は直近 KEEP_DAYS 日だけ残す（R2 には全部残る）
+    4. 地点別にしか無い要素（最大瞬間風速・日最高最低の起時など）の日別の記録を、
+       まだ無い日の分だけ作る（weatherlib/pointdaily.py。手元のデータを消す前に）
+    5. 手元の地点別・補完分は直近 KEEP_DAYS 日だけ残す（R2 は 30 日で自動削除）
 
 なぜ Worker に取らせるか
     1,286 地点を deb2 から 1 秒間隔で取ると 21 分かかる。Worker なら並列に
@@ -395,6 +397,12 @@ def main() -> int:
         if got == 0:
             log("1 エリアも取れませんでした。R2 と Worker の状態を確認してください")
             return 1
+    # 日別の記録は、材料（手元の地点別データ）を消す前に作る
+    from weatherlib import pointdaily
+    try:
+        pointdaily.catch_up(datetime.now())
+    except Exception as e:                  # 記録の失敗で収集を止めない
+        log(f"警告: 日別の記録を作れませんでした: {e}")
     if slot is not None:
         pruned = prune_local(slot, dry=False)
         if pruned:

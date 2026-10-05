@@ -1371,6 +1371,35 @@ def build_data_amedas(env: Environment) -> None:
         d.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(s, d)
         n_copied += 1
+    # 地点別にしか無い要素の日別（月ごとの NetCDF）。進行中の月は毎日作り直される
+    daily = []
+    for src in sorted((AMEDAS_SRC / "daily").glob("*/*.nc")):
+        rel = src.relative_to(AMEDAS_SRC).as_posix()
+        dst = out / rel
+        if not (dst.is_file() and dst.stat().st_size == src.stat().st_size
+                and int(dst.stat().st_mtime) == int(src.stat().st_mtime)):
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            n_copied += 1
+        days = sorted((AMEDAS_SRC / "daily" / src.parent.name).glob(
+            f"{src.parent.name}{src.stem}*.json"))
+        size = src.stat().st_size
+        daily.append({"path": rel, "month": f"{src.parent.name}-{src.stem}",
+                      "days": len(days), "first": days[0].stem if days else "",
+                      "last": days[-1].stem if days else "", "bytes": size,
+                      "size": f"{size / 1024 / 1024:.1f} MB" if size >= 1024 * 1024
+                              else f"{size / 1024:.0f} KB"})
+    daily_vars = []
+    if daily:
+        import netCDF4
+        with netCDF4.Dataset(AMEDAS_SRC / daily[-1]["path"]) as ds:
+            for name, v in ds.variables.items():
+                if name in ("station_id", "day") or name.endswith("_q"):
+                    continue
+                daily_vars.append({"name": name, "units": getattr(v, "units", ""),
+                                   "desc": getattr(v, "long_name", ""),
+                                   "scale": f"{float(getattr(v, 'scale_factor', 1.0)):g}"})
+
     st_src = AMEDAS_SRC / "station" / "index.json"
     n_stations = 0
     if st_src.is_file():
@@ -1428,6 +1457,8 @@ def build_data_amedas(env: Environment) -> None:
         "archive": [{**a, "url": f"/{AMEDAS_URL}/{a['path']}"} for a in archive],
         "missing_periods": [{"start": p["start"], "end": p["end"]}
                             for p in periods if not p["path"] and not p["pending"]],
+        "daily": [{"url": f"/{AMEDAS_URL}/{d['path']}", "month": d["month"], "days": d["days"],
+                   "bytes": d["bytes"]} for d in daily],
     }
     out.mkdir(parents=True, exist_ok=True)
     (out / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=1),
@@ -1435,8 +1466,9 @@ def build_data_amedas(env: Environment) -> None:
     write(f"{AMEDAS_URL}/index.html", env.get_template("data/amedas.html").render(
         page_title="アメダス 10 分値アーカイブ（NetCDF）", nav_active="about",
         build_year=datetime.now().year, periods=periods, variables=variables,
+        daily=daily, daily_vars=daily_vars,
         n_stations=f"{n_stations:,}" if n_stations else "1,290", example_file=example))
-    print(f"  [data] {AMEDAS_URL}/: 半月 {len(archive)} 本（今回写したもの {n_copied}）"
+    print(f"  [data] {AMEDAS_URL}/: 半月 {len(archive)} 本・日別 {len(daily)} か月（今回写したもの {n_copied}）"
           f" / 欠け {sum(1 for p in periods if not p['path'] and not p['pending'])} 期間"
           f" / まとめる前 {sum(1 for p in periods if p.get('pending'))} 期間")
 
