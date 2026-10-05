@@ -969,18 +969,33 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
 _CLIMATE_TARGETS: list | None = None
 
 
+def legacy_slugs() -> dict[str, str]:
+    """地点番号 → 旧サイト（weather.time-j.net の WeatherCore）の URL 名。
+
+    新しいサイトは同じドメインで旧サイトを置き換えるので、/Stations/JP/Abashiri・
+    /Climate/Chart/Abashiri のような旧 URL をそのまま使う（リンクや検索結果を
+    切らない）。対応は legacy_slugs.py が旧サイトから取ってリポジトリに残した。"""
+    p = BASE / "legacy" / "station_slugs.json"
+    if not p.is_file():
+        return {}
+    return json.loads(p.read_text(encoding="utf-8"))["slugs"]
+
+
 def climate_targets(stations: dict) -> list:
     """月別平年値（気温・降水量）が 12 か月そろっている地点と一意 slug。
 
     Climate（雨温図）と Stations/JP（観測所ページ）が同じ slug 空間を
-    共有するための単一の真実。slug の衝突解決は挿入順に依存するので、
-    候補集合と並び順をここで固定する。結果はプロセス内でキャッシュ。
+    共有するための単一の真実。slug は旧サイトの URL 名があればそれ、無ければ
+    英語名の小文字。slug の衝突解決は挿入順に依存するので、候補集合と並び順を
+    ここで固定する。旧 URL 名は必ずそのまま使えるよう、先に予約しておく。
+    結果はプロセス内でキャッシュ。
     """
     global _CLIMATE_TARGETS
     if _CLIMATE_TARGETS is not None:
         return _CLIMATE_TARGETS
     targets = []
-    slugs_seen: dict[str, int] = {}
+    legacy = legacy_slugs()
+    slugs_seen: dict[str, int] = {s: 1 for s in legacy.values()}
     st_items = [(int(c), r) for c, r in stations["stations"].items()]
     st_items.sort(key=lambda x: (x[1].get("etrn", {}).get("prec_no", 99),
                                  not x[1].get("intl"), x[1]["amedas"]))
@@ -992,10 +1007,13 @@ def climate_targets(stations: dict) -> list:
         if not mo.get("tavg") or any(v is None for v in mo["tavg"]) \
            or not mo.get("precip") or any(v is None for v in mo["precip"]):
             continue
-        base = (rec.get("place") or rec.get("en") or str(code)).lower().replace(" ", "-")
-        n = slugs_seen.get(base, 0)
-        slugs_seen[base] = n + 1
-        slug = base if n == 0 else f"{base}-{code}"   # 同名ローマ字の衝突は code で区別
+        if str(code) in legacy:
+            slug = legacy[str(code)]                       # 旧サイトと同じ URL
+        else:
+            base = (rec.get("place") or rec.get("en") or str(code)).lower().replace(" ", "-")
+            n = slugs_seen.get(base, 0)
+            slugs_seen[base] = n + 1
+            slug = base if n == 0 else f"{base}-{code}"   # 同名ローマ字の衝突は code で区別
         targets.append((code, rec, nml, slug))
         _SLUG_BY_AMEDAS[str(rec.get("amedas"))] = slug
     _CLIMATE_TARGETS = targets
@@ -1545,10 +1563,106 @@ def build_data_daily(env: Environment) -> None:
     print(f"  [data] {DAILY_URL}/: 年 {len(years)} 本・地点 {len(st)} 本（今回写したもの {n_copied}）")
 
 
+def prune_station_pages(targets: list) -> None:
+    """Stations/JP と Climate/Chart から、今の地点に当たらない古いページを片付ける。
+
+    生成は古いファイルを消さないので、slug が変わると古い URL のページが残り、
+    同じ中身が 2 つ公開され続ける（2026-10-05、小文字の slug から旧サイトの
+    URL 名に揃えたときに起きる）。この 2 つのディレクトリの、index.html だけを
+    持つ地点ディレクトリに限って消す。"""
+    keep_of = {"Stations/JP": {slug for _, r, _, slug in targets if r["elements"].get("temp")},
+               "Climate/Chart": {slug for _, _, _, slug in targets}}
+    n = 0
+    for sub, keep in keep_of.items():
+        root = PUBLIC / sub
+        if not root.is_dir():
+            continue
+        for d in root.iterdir():
+            if d.is_dir() and d.name not in keep and \
+                    {f.name for f in d.iterdir()} <= {"index.html"}:
+                shutil.rmtree(d)
+                n += 1
+    # 雨温図の比較用データ（/data/climate/{slug}.json）も同じ slug 空間
+    cdir = PUBLIC / "data" / "climate"
+    if cdir.is_dir():
+        for f in cdir.glob("*.json"):
+            if f.name != "index.json" and f.stem not in keep_of["Climate/Chart"]:   # index は選択用の索引
+                f.unlink()
+                n += 1
+    if n:
+        print(f"  [seo] 今の地点に当たらない古い地点ページ・データ {n} 件を片付けました")
+
+
+def legacy_redirects(targets: list) -> list[str]:
+    """旧サイト（weather.time-j.net の WeatherCore）の URL を、新しいサイトの行き先へ送る。
+
+    地点ページ・雨温図は旧 URL 名のまま作るので転送は要らない（climate_targets）。
+    ここで送るのは、新しいサイトに同じ URL のページが無いもの:
+      301 … 同じ中身のページが別の URL にある（入口・平年値の月・予報図・廃止地点）
+      302 … まだ作っていない過去の年・月・日のページ。後で同じ URL のページを
+            作ったとき、恒久の転送がブラウザや検索エンジンに残らないよう一時にする
+    パターンは「1 区切り分の値がある」形（:year など）にする。/Summer/Ranking/* だと
+    /Summer/Ranking/ 自身にも当たり、転送が回り続けうる。
+    Pages の上限は固定 2,000 件・パターン付き 100 件。"""
+    lines = [
+        # 入口（旧サイトには区画のトップがあった）
+        "/Summer /Summer/Ranking/ 301",
+        "/Summer/ /Summer/Ranking/ 301",
+        "/Winter /Winter/Ranking/ 301",
+        "/Winter/ /Winter/Ranking/ 301",
+        "/Temperature /Temperature/HighsMain/ 301",
+        "/Temperature/ /Temperature/HighsMain/ 301",
+        "/Summer/Nettaiya /Temperature/TodayLowsDec/ 301",
+        # 予報図は扱わない（気象業務法）。予報はデスクトップアプリで
+        "/Gfs /App/ 301",
+        "/Gfs/* /App/ 301",
+    ]
+    for m in range(1, 13):
+        lines.append(f"/Monthly/Heinenti/{m:02d} /Monthly/Heinenti{m:02d}/ 301")
+        lines.append(f"/Monthly/HeinentiL/{m:02d} /Monthly/Heinenti{m:02d}l/ 301")
+    # 旧サイトの地点のうち、新しいサイトに地点ページが無いもの（廃止・平年値なし）
+    legacy_path = BASE / "legacy" / "station_slugs.json"
+    if legacy_path.is_file():
+        leg = json.loads(legacy_path.read_text(encoding="utf-8"))
+        have_cl = {slug for _, _, _, slug in targets}                    # 雨温図のある地点
+        have_st = {slug for _, r, _, slug in targets if r["elements"].get("temp")}  # 地点ページ
+        olds = set(leg["slugs"].values()) | {u["slug"] for u in leg.get("unmatched", [])}
+        for slug in sorted(olds):
+            if slug not in have_st:
+                to = f"/Climate/Chart/{slug}/" if slug in have_cl else "/Stations/"
+                lines.append(f"/Stations/JP/{slug} {to} 301")
+            if slug not in have_cl:
+                lines.append(f"/Climate/Chart/{slug} /Climate/ 301")
+    # まだ作っていない過去のページ（一時）
+    for kind in ("Ranking", "SummerDayList", "Hottest", "HottestList"):
+        lines.append(f"/Summer/{kind}/:year /Summer/{kind}/ 302")
+    for kind in ("Ranking", "WinterDayList", "Coldest", "LowestList"):
+        lines.append(f"/Winter/{kind}/:year /Winter/{kind}/ 302")
+    lines += [
+        "/Monthly/Monthly/:ym /Monthly/Latest/ 302",
+        "/Monthly/MonthlyL/:ym /Monthly/Latest/ 302",
+        "/Temperature/SummerDay/:day /Temperature/HighsList/ 302",
+        "/Temperature/SummerMonth/:k/:m /Summer/Ranking/ 302",
+        "/Temperature/SummerMonth/:m /Summer/Ranking/ 302",
+        "/Temperature/SummerMonth /Summer/Ranking/ 302",
+        "/Temperature/SummerMonth/ /Summer/Ranking/ 302",
+        "/Temperature/WinterMonth/:k/:m /Winter/Ranking/ 302",
+        "/Temperature/WinterMonth/:m /Winter/Ranking/ 302",
+        "/Temperature/WinterMonth /Winter/Ranking/ 302",
+        "/Temperature/WinterMonth/ /Winter/Ranking/ 302",
+    ]
+    lines += [f"/Summer/SummerMonth{y} /Summer/Ranking/ 302" for y in range(2010, date.today().year + 1)]
+    n_dyn = sum(1 for l in lines if ":" in l.split()[0] or "*" in l.split()[0])
+    assert len(lines) - n_dyn <= 2000 and n_dyn <= 100, "Pages の _redirects の上限を超える"
+    print(f"  [seo] _redirects（旧サイトの URL: 固定 {len(lines) - n_dyn} 件・パターン {n_dyn} 件）")
+    return lines
+
+
 def build_seo(env: Environment, stations: dict) -> None:
     """sitemap.xml・_redirects（旧URL誘導）・404.html。Pages 移行のサイトインフラ。"""
     import os
-    origin = os.environ.get("WEATHER_SITE_ORIGIN", "https://creativeweb.jp")
+    # 公開先は weather.time-j.net（いま旧システムが動いている。置き換えたらここ）
+    origin = os.environ.get("WEATHER_SITE_ORIGIN", "https://weather.time-j.net")
 
     urls = ["/", "/Temperature/HighsMain/", "/Temperature/LowsMain/",
             "/Temperature/HighsList/", "/Temperature/LowsList/",
@@ -1568,17 +1682,8 @@ def build_seo(env: Environment, stations: dict) -> None:
     (PUBLIC / "sitemap.xml").write_text("\n".join(xml), encoding="utf-8")
     print(f"  [seo] sitemap.xml ({len(urls)} URL)")
 
-    # 旧URL → 新URL。大文字 place（旧 /Stations/JP/Tokyo）は静的に列挙
-    lines = ["/Gfs/* /Forecast/ 301",
-             "/Monthly/Heinenti/:m /Monthly/ 301",
-             "/Monthly/Monthly/* /Monthly/Latest/ 301"]
-    for _, rec, _, slug in targets:
-        old = rec.get("place") or rec.get("en") or ""
-        if old and old != slug:
-            lines.append(f"/Stations/JP/{old} /Stations/JP/{slug}/ 301")
-            lines.append(f"/Climate/Chart/{old} /Climate/Chart/{slug}/ 301")
-    (PUBLIC / "_redirects").write_text("\n".join(lines[:2000]), encoding="utf-8")
-    print(f"  [seo] _redirects ({min(len(lines), 2000)} 行)")
+    prune_station_pages(targets)
+    (PUBLIC / "_redirects").write_text("\n".join(legacy_redirects(targets)), encoding="utf-8")
 
     # 配布ファイルのヘッダ。NetCDF は形式を明示し、他所のページやツールからも
     # 読めるよう CORS を開ける。封入済みの半月分は変わらないので長めに持たせる
@@ -1632,6 +1737,10 @@ def main() -> None:
     fc = load_forecast()
     stations = load_stations()
     climate_targets(stations)   # slug 表を先に確定（station_slug が全ページで使う）
+    # テンプレートで固定の地点へリンクするとき用（国際地点番号 → 今の URL 名）。
+    # URL 名を直書きすると、slug の決め方を変えたときにリンクが切れる
+    by_intl = {r.get("intl"): r for r in stations["stations"].values() if r.get("intl")}
+    env.globals["slug_by_intl"] = lambda code: station_slug(by_intl.get(code, {}))
     hist = History()
     try:
         build_highsmain(env, today, meta, fc, stations, hist)
