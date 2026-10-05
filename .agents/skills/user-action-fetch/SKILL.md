@@ -84,6 +84,7 @@ the source's update cadence:
 | ERA5 fields | indefinite (immutable for past dates) |
 | ERA5 climatology aggregations | indefinite (immutable) |
 | Open-Meteo forecast | 1 hour |
+| JMA daily records (redistributed, `observation_archive`) | manifest 1 hour; a year file is reused while its sha256 matches the manifest (past years practically never re-download) |
 
 The view never inspects cache freshness — it just calls `fetch()`. The
 service decides based on the data source's update cadence.

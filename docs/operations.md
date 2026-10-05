@@ -165,6 +165,9 @@ URL との互換」）。deb2 は作って公開する側に専念し、deb2 が
    （Workers & Pages → weather → カスタムドメイン。DNS は Cloudflare が案内する）
 3. time-j.net のゾーンに「URL を小文字へ」の転送ルールを足す（`docs/web.md` に式がある）
 4. 切り替え後に、旧 URL をいくつか大文字のまま開いて、小文字の URL に 301 で着くことを確かめる
+5. デスクトップアプリの観測データの取り先（`src/aiseed_weather/services/observation_endpoints.py` の
+   `BASE`）を `https://weather.time-j.net` に変える。`weather-dj7.pages.dev` は切り替え後も
+   使えるので急がない
 
 ### deb2 の FastAPI（つなぎ。使わなくてもよい）
 

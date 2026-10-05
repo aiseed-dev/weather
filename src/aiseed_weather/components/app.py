@@ -6,8 +6,8 @@ from typing import Callable
 
 import flet as ft
 
-from aiseed_weather.components.amedas_view import AmedasView
 from aiseed_weather.components.map_view import MapView
+from aiseed_weather.components.observation_view import ObservationView
 from aiseed_weather.components.point_forecast_view import PointForecastView
 from aiseed_weather.components.radar_view import RadarView
 from aiseed_weather.models import user_settings
@@ -22,12 +22,11 @@ from aiseed_weather.models.user_settings import LoadResult
 # synoptic map. The map view moves to /map; the radar / nowcast tab
 # stays at /radar.
 #
-# The third entry used to be /amedas (JMA AMeDAS observations); the
-# user decided point forecasts are more useful for analyst-level
-# work and AMeDAS belongs alongside the radar nowcast. The
-# AmedasView component is still imported (will move to RadarView's
-# layout in a follow-up commit) so it stays available.
-_NAV_PATHS: tuple[str, ...] = ("/", "/map", "/radar")
+# /obs holds JMA observations: the latest AMeDAS snapshot and the daily
+# records since 1880 that the 個人開発気象統計 site redistributes. The
+# site keeps observations only; anything a user would explore freely
+# (any day, period, threshold) and turn into a figure lives here.
+_NAV_PATHS: tuple[str, ...] = ("/", "/map", "/radar", "/obs")
 
 
 @ft.observable
@@ -139,6 +138,9 @@ def App():
     def render_points():
         return PointForecastView(settings=settings)
 
+    def render_observations():
+        return ObservationView(settings=settings)
+
     return ft.Router(
         routes=[
             ft.Route(
@@ -151,6 +153,7 @@ def App():
                     ft.Route(index=True, component=render_points),
                     ft.Route(path="map", component=render_map),
                     ft.Route(path="radar", component=render_radar),
+                    ft.Route(path="obs", component=render_observations),
                 ],
             ),
         ],
@@ -547,7 +550,7 @@ def AppShell(settings, fetch: FetchController):
             _NAV_PATHS[e.control.selected_index],
         ),
         # Destination order matches _NAV_PATHS — 地点 first because it's
-        # the default landing page; モデル + ナウキャスト follow.
+        # the default landing page; モデル, ナウキャスト and 観測 follow.
         destinations=[
             ft.NavigationBarDestination(
                 icon=ft.Icons.LOCATION_ON, label="地点 / Points",
@@ -557,6 +560,9 @@ def AppShell(settings, fetch: FetchController):
             ),
             ft.NavigationBarDestination(
                 icon=ft.Icons.RADAR, label="ナウキャスト / Nowcast",
+            ),
+            ft.NavigationBarDestination(
+                icon=ft.Icons.THERMOSTAT, label="観測 / Observations",
             ),
         ],
     )

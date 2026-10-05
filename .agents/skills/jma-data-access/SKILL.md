@@ -13,6 +13,7 @@ overlap the other data sources:
 | ECMWF Open Data | Forecast (now → +10 days) | Global grid |
 | ERA5 | Historical (1940 → ~5 days ago) | Global grid |
 | **JMA radar / AMeDAS** | **Nowcast (now, last ~6 h)** | **Japan only** |
+| JMA daily records (redistributed) | 1880 → yesterday | Japan, 1,342 stations incl. closed |
 | JMA 府県天気予報 | Forecast (today → +7 days) | Forecast office area |
 | Open-Meteo | Forecast (point) | Single lat/lon |
 
@@ -138,6 +139,29 @@ Always check for variable presence before reading; not all stations have all var
 - For temperature: diverging colormap centered at a context-appropriate value
 - For precipitation: use the JMA precipitation color scale at hourly intervals
 - Always show the snapshot time prominently — AMeDAS is "as of HH:MM"
+
+Implemented as the 今 panel of the 観測 tab (`components/amedas_view.py`,
+figure `figures/amedas_map.py`). Temperature and wind reuse the model
+charts' anchors (`T2M`, `WIND10M`) so a colour means the same value across
+the app; precipitation uses JMA's bins. There is no coastline yet: the
+precomputed masks are 0.25° and too coarse for station spacing, and a finer
+one needs a one-off Natural Earth download (ask the user first).
+
+## Daily records since 1880 (redistributed)
+
+JMA publishes daily values one station-month at a time as HTML. The
+個人開発気象統計 site (`WeatherStatic/`) collects them and redistributes them
+as NetCDF under `/data/daily/` (one file per year with all stations, one per
+station with its whole record, and `manifest.json` with sha256 per year).
+`services/observation_archive.py` reads these; `observation_stats.py` holds
+the arithmetic; the 観測 tab's day / period / station panels use them. URLs
+live in `services/observation_endpoints.py`. Like JMA itself this is not a
+`config.toml` source.
+
+Statistics follow JMA practice and the site's rules: 資料不足 values
+(quality ≤ 4) are shown marked in a single day's list but never enter
+counts, extremes, means or totals; ties share a rank and are ordered north
+to south; the latest day is reported for a repeated extreme.
 
 ## Caching
 

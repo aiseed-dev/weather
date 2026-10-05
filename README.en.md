@@ -34,7 +34,10 @@ Working now:
   Isobar and wind overlays; regions including polar projections
 - **Forecast timeline playback** across forecast steps (⏮ ▶ ⏭ and a slider)
 - **Japan rainfall nowcast** from JMA radar tiles
-- **Japan ground observations** from JMA AMeDAS (~1,300 stations)
+- **Observations**: the latest JMA AMeDAS 10-minute values (map and table of
+  ~1,300 stations) and daily records since 1880 (any day's ranking, day
+  counts and extremes over any period, one station's series), saved as PNG
+  with attribution
 - **Point forecasts** from Open-Meteo (ensemble, climatology) and JMA
   forecasts; the chart can be downloaded as PNG
 
@@ -264,10 +267,11 @@ identifier, so figures shared from this tool carry their provenance.
 src/aiseed_weather/
 ├── main.py
 ├── components/                       # Flet components (UI only)
-│   ├── app.py                        # nav between map / radar / amedas / point forecast
+│   ├── app.py                        # nav: points / map / nowcast / observations
 │   ├── map_view.py                   # ECMWF synoptic charts and timeline playback
 │   ├── radar_view.py                 # JMA rainfall nowcast
-│   ├── amedas_view.py                # JMA ground observations
+│   ├── observation_view.py           # observations (day ranking, period, station)
+│   ├── amedas_view.py                # observations "now": JMA AMeDAS map and table
 │   └── point_forecast_view.py        # point forecasts (Open-Meteo, JMA)
 ├── figures/                          # rendering (layered renderer, coastlines, charts)
 ├── products/                         # catalog of products and mirrors
@@ -277,6 +281,8 @@ src/aiseed_weather/
 │   ├── point_climatology.py          # point-forecast climatology
 │   ├── jma_radar_service.py          # JMA radar tiles
 │   ├── jma_amedas_service.py         # JMA AMeDAS
+│   ├── observation_archive.py        # daily observation records (the files below)
+│   ├── observation_stats.py          # statistics over the daily records
 │   ├── jma_forecast_service.py       # JMA forecasts
 │   └── jma_endpoints.py              # URL registry
 └── models/                           # dataclasses, observable models
@@ -300,11 +306,12 @@ documented from [docs/README.md](docs/README.md).
 ## JMA observation data distribution
 
 The companion web site publishes JMA observations as NetCDF (source: Japan
-Meteorological Agency website; edited and processed from JMA data):
+Meteorological Agency website; edited and processed from JMA data). The app's
+Observations tab reads the daily records from here:
 
-- [Daily observations](https://weather-dj7.pages.dev/Data/Daily/) —
+- [Daily observations](https://weather-dj7.pages.dev/data/daily/) —
   temperature, precipitation, sunshine; 1880 onward; 1,342 stations
   including closed ones
-- [AMeDAS 10-minute archive](https://weather-dj7.pages.dev/Data/AMeDAS/) —
+- [AMeDAS 10-minute archive](https://weather-dj7.pages.dev/data/amedas/) —
   10-minute and hourly values that JMA keeps for only about 9 days, plus
   daily maximum gusts

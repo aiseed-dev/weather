@@ -62,6 +62,7 @@ All cached downloads live under `data_dir` (or the default user cache):
   jma/radar/...                                        # JMA radar tiles + meta
   jma/amedas/...                                       # AMeDAS snapshots + station table
   jma/forecast/...                                     # JMA forecast + area table
+  observations/daily/manifest.json, years/, stations/  # JMA daily records since 1880 (redistributed NetCDF)
   openmeteo/...                                        # Open-Meteo JSON cache
   point_forecast/locations.json, archive/...           # saved locations + per-location Parquet archive
 ```

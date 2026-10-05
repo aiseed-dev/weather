@@ -31,7 +31,9 @@ MSL、ジオポテンシャル高度、アノマリが何を意味するかご�
   降水量・降水強度・風。等圧線や風の重ね描き、極投影を含む領域の切り替え
 - **予報のタイムライン再生** ― 予報ステップの連続表示 (⏮ ▶ ⏭ とスライダー)
 - **日本の雨量ナウキャスト** ― 気象庁レーダータイル
-- **日本の地上観測** ― 気象庁 AMeDAS (約 1,300 地点)
+- **観測** ― 気象庁 AMeDAS の最新の 10 分値（約 1,300 地点の地図と表）と、1880 年からの
+  日別の記録（任意の日のランキング・任意の期間の日数や極値・地点の推移）。
+  図は出典つきの PNG で保存できる
 - **地点予報** ― Open-Meteo (アンサンブル・平年値) と気象庁の予報。
   グラフは PNG でダウンロードできる
 
@@ -264,10 +266,11 @@ WSL (Windows Subsystem for Linux) は本アプリには推奨しません。WSL 
 src/aiseed_weather/
 ├── main.py
 ├── components/                       # Flet コンポーネント (UI のみ)
-│   ├── app.py                        # 地図 / レーダー / AMeDAS / 地点予報のナビ
+│   ├── app.py                        # 地点予報 / 地図 / ナウキャスト / 観測のナビ
 │   ├── map_view.py                   # ECMWF 総観チャートとタイムライン再生
 │   ├── radar_view.py                 # 気象庁レーダー雨量ナウキャスト
-│   ├── amedas_view.py                # 気象庁 AMeDAS 地上観測
+│   ├── observation_view.py           # 観測（日のランキング・期間の集計・地点の推移）
+│   ├── amedas_view.py                # 観測の「今」: 気象庁 AMeDAS の地図と表
 │   └── point_forecast_view.py        # 地点予報 (Open-Meteo・気象庁)
 ├── figures/                          # 描画 (層構造のレンダラ、海岸線、各チャート)
 ├── products/                         # 扱うプロダクトとミラーの一覧
@@ -277,6 +280,8 @@ src/aiseed_weather/
 │   ├── point_climatology.py          # 地点予報の平年値
 │   ├── jma_radar_service.py          # 気象庁レーダータイル
 │   ├── jma_amedas_service.py         # 気象庁 AMeDAS
+│   ├── observation_archive.py        # 日別の観測記録（下の配布データを読む）
+│   ├── observation_stats.py          # 日別の記録の集計
 │   ├── jma_forecast_service.py       # 気象庁の予報
 │   └── jma_endpoints.py              # URL レジストリ
 └── models/                           # データクラス、リアクティブモデル
@@ -299,9 +304,10 @@ Web サイト (`WeatherStatic/`) とデータ基盤 (deb2 + Cloudflare) の文�
 ## 気象庁の観測データの配布
 
 Web サイト「個人開発気象統計」で、気象庁の観測を NetCDF にまとめて配っています
-(出典: 気象庁ホームページ。気象庁のデータを編集・加工したもの)。
+(出典: 気象庁ホームページ。気象庁のデータを編集・加工したもの)。アプリの「観測」タブは
+日別の観測データをここから読みます。
 
-- [日別の観測データ](https://weather-dj7.pages.dev/Data/Daily/) ― 気温・降水量・日照、
+- [日別の観測データ](https://weather-dj7.pages.dev/data/daily/) ― 気温・降水量・日照、
   1880 年〜、廃止された地点を含む 1,342 地点
-- [アメダス 10 分値アーカイブ](https://weather-dj7.pages.dev/Data/AMeDAS/) ― 気象庁では
+- [アメダス 10 分値アーカイブ](https://weather-dj7.pages.dev/data/amedas/) ― 気象庁では
   約 9 日で消える 10 分値・1 時間値、最大瞬間風速などの日別値
