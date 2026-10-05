@@ -1,0 +1,123 @@
+{#
+  日別の観測データ（観測ストアの日別値）の配布ページ。
+  ファイルの一覧は export_dist.py の manifest.json / stations.json から作る。
+#}
+{% extends "_layout.html" %}
+{% block head_extra %}
+<style>
+    .ab { margin: 0 10px 24px; max-width: 56em; }
+    .ab h2 { font-size: 22px; margin: 6px 0 14px; }
+    .ab h3 { font-size: 17px; border-left: 4px solid var(--accent);
+        padding-left: 9px; margin: 24px 0 10px; }
+    .ab h4 { font-size: 15px; margin: 16px 0 6px; }
+    .ab p, .ab li { font-size: 14px; line-height: 1.85; }
+    .ab table { width: 100%; border-collapse: collapse; background: var(--card);
+        border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .ab th, .ab td { border-bottom: 1px solid var(--border); padding: 6px 10px;
+        font-size: 13.5px; text-align: left; vertical-align: top; }
+    .ab th { background: var(--th-bg); color: var(--th-text); white-space: nowrap; }
+    .ab tr:last-child td { border-bottom: none; }
+    .ab td.num { text-align: right; white-space: nowrap; }
+    .ab pre { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+        padding: 12px 14px; font-size: 12.5px; overflow-x: auto; line-height: 1.6; }
+    .ab code { font-size: 12.5px; }
+    .ab-note { background: var(--panel); border: 1px solid var(--border);
+        border-left: 4px solid var(--accent); border-radius: 8px; padding: 12px 16px; }
+    .ab .years { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13.5px; }
+    .ab details { margin: 4px 0; }
+    .ab summary { cursor: pointer; font-size: 14.5px; padding: 4px 0; }
+    .ab .ended { color: var(--muted, #888); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="ab">
+    <h2>日別の観測データ</h2>
+
+    <p>
+        気象庁の観測所 {{ "{:,}".format(n_stations) }} 地点（うち廃止された地点 {{ n_abolished }}）の
+        日別の最高・最低・平均気温、降水量、日照時間です。期間は {{ coverage.replace("..", " 〜 ") }}
+        （地点によって異なります）。年ごと（全地点 × 1 年）と地点ごと（1 地点 × 全期間）の
+        NetCDF-4 ファイルで配っています。
+    </p>
+
+    <div class="ab-note">
+        <p style="margin:0">
+            出典: <a href="https://www.jma.go.jp/">気象庁ホームページ</a>（過去の気象データ・
+            最新の気象データ）。<br>
+            このファイルは気象庁のデータを<strong>編集・加工したもの</strong>です
+            （形式の変換と地点・年ごとの集約）。編集・加工の責任は当サイトにあり、
+            気象庁が作成したものではありません。
+        </p>
+    </div>
+
+    <h3>年ごと（全地点 × 1 年）</h3>
+    <p>地点の並びはすべての年で同じです（合計 {{ total }}）。</p>
+    <div class="years">
+        {% for y in years %}
+        <span><a href="/Data/Daily/{{ y.path }}">{{ y.year }}</a> <small>{{ y.size }}</small></span>
+        {% endfor %}
+    </div>
+
+    <h3>地点ごと（1 地点 × 全期間）</h3>
+    <p>府県ごとに並べています。灰色は廃止された地点です。一覧は
+        <a href="/Data/Daily/stations.json">stations.json</a>（コード・名前・緯度経度・期間）にもあります。</p>
+    {% for g in groups %}
+    <details>
+        <summary>{{ g.name }}（{{ g.stations|length }} 地点）</summary>
+        <table>
+            <tr><th>地点</th><th>コード</th><th>期間</th><th>ファイル</th></tr>
+            {% for s in g.stations %}
+            <tr{% if not s.active %} class="ended"{% endif %}>
+                <td>{{ s.name or s.code }}{% if not s.active %}（廃止）{% endif %}</td>
+                <td class="num">{{ s.code }}</td>
+                <td>{{ s.first }} 〜 {{ s.last }}</td>
+                <td><a href="/Data/Daily/{{ s.path }}">{{ s.code }}.nc</a> <small>{{ s.size }}</small></td>
+            </tr>
+            {% endfor %}
+        </table>
+    </details>
+    {% endfor %}
+
+    <h3>中身</h3>
+    <ul>
+        <li>次元は <code>station</code>（地点）× <code>time</code>（日）。<code>time</code> は 1870-01-01 からの日数です。</li>
+        <li>地点は <code>station_code</code>（官署は 5 桁、アメダスは 4 桁の気象庁の地点番号）、
+            <code>station_name</code>、<code>lat</code>・<code>lon</code>・<code>alt</code>。</li>
+        <li>値は整数で格納し、属性 <code>scale_factor</code> を掛けると物理量になります
+            （気温 ℃・降水量 mm・日照 時間はいずれも 0.1 倍）。欠測は <code>_FillValue</code>。</li>
+        <li><code>tmax_time</code>・<code>tmin_time</code> は起時（0 時からの分、日本時間）。</li>
+        <li><code>*_q</code> は気象庁の品質情報（8 が正常）。<code>precip_none</code> が 1 の日は降水なし。</li>
+        <li><code>tavg_q</code> が欠測の日の <code>tavg</code> は、当サイトが毎正時の気温から計算した値です
+            （<code>tavg_count</code> が使った時刻の数）。</li>
+    </ul>
+
+    <h3>読み方（Python）</h3>
+<pre>import netCDF4
+from datetime import date, timedelta
+
+ds = netCDF4.Dataset("47662.nc")                # 東京。scale_factor と _FillValue は自動で適用される
+days = [date(1870, 1, 1) + timedelta(days=int(t)) for t in ds["time"][:]]
+tmax = ds["tmax"][0, :]                          # ℃。欠測はマスクされる
+print(days[-1], tmax[-1], ds["precip"][0, -1])</pre>
+
+    <h3>注意</h3>
+    <ul>
+        <li>過去の分は気象庁の確定値（過去の気象データ）、直近の分は最新の気象データの値です。
+            直近の月は気象庁の確定処理により、翌月に確定値で置き換わります。</li>
+        <li>統計期間や観測の継続性（移転・観測方法の変更）は地点ごとに異なります。
+            気候の変化を論じる場合は、気象庁の資料で観測の履歴を確認してください。</li>
+        <li>10 分値・1 時間値と、最大瞬間風速の日別値は
+            <a href="/Data/AMeDAS/">アメダス 10 分値アーカイブ</a>にあります。</li>
+        <li>当サイトは個人が運用している非公式のサイトです。継続や完全性は保証できません。</li>
+    </ul>
+
+    <h3>利用条件</h3>
+    <p>
+        気象庁ホームページのコンテンツは
+        <a href="https://www.jma.go.jp/jma/kishou/info/coment.html">公共データ利用規約（第1.0版）</a>
+        に準拠した条件で利用できます。このファイルを利用・再配布する際も、同規約に従って
+        出典（気象庁ホームページ）を記載し、気象庁のデータを編集・加工したものであることを
+        示してください。国（気象庁）が作成したかのような形で公表・利用することはできません。
+    </p>
+</div>
+{% endblock %}

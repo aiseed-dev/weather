@@ -96,7 +96,7 @@ def station_meta(conn) -> dict[int, dict]:
                 continue
             if code in meta:
                 m = meta[code]
-                for k in ("name", "kana", "lat", "lon", "alt"):
+                for k in ("name", "kana", "lat", "lon", "alt", "prec_no"):
                     if m.get(k) is None and e.get(k) is not None:
                         m[k] = e[k]
                 m.setdefault("active", e.get("active"))
@@ -109,6 +109,8 @@ def station_meta(conn) -> dict[int, dict]:
                 for k in ("name", "kana", "pref", "lat", "lon", "alt", "amedas"):
                     if r.get(k) is not None:
                         meta[code][k] = r[k]
+                if (r.get("etrn") or {}).get("prec_no") is not None:
+                    meta[code]["prec_no"] = r["etrn"]["prec_no"]
                 meta[code]["active"] = True
     return meta
 
@@ -252,6 +254,7 @@ def main() -> int:
         a, b = span[code]
         st_list.append({"code": code, "name": m.get("name"), "kana": m.get("kana"),
                         "amedas": m.get("amedas"), "pref": m.get("pref"),
+                        "prec_no": int(m["prec_no"]) if m.get("prec_no") is not None else None,
                         "lat": m.get("lat"), "lon": m.get("lon"), "alt": m.get("alt"),
                         "active": bool(m.get("active")), "first": a.isoformat(),
                         "last": b.isoformat(), "path": f"stations/{code}.nc"})

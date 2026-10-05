@@ -1480,6 +1480,71 @@ def build_data_amedas(env: Environment) -> None:
           f" / まとめる前 {sum(1 for p in periods if p.get('pending'))} 期間")
 
 
+DAILY_DIST = BASE / "dist" / "daily"              # export_dist.py の出力
+DAILY_URL = "Data/Daily"
+
+
+def build_data_daily(env: Environment) -> None:
+    """観測ストアの日別値（気温・降水・日照。1880 年〜）を /Data/Daily/ で配る。
+
+    日別値は一番よく使われるデータ。export_dist.py が年ごと・地点ごとの NetCDF を
+    dist/daily/ に作る。ストアが書き換わったとき（毎日の蓄積・月次の確定値置換の後）
+    だけ書き出しを走らせ、10 分ごとの生成では写すだけにする。書き出しは中身が
+    変わったファイルしか置き換えないので、Pages へ上がるのも変わった年・地点だけ。
+    """
+    import subprocess
+    import sys
+    store = BASE / "store" / "observations.nc"
+    manifest = DAILY_DIST / "manifest.json"
+    if store.is_file() and (not manifest.is_file()
+                            or manifest.stat().st_mtime < store.stat().st_mtime):
+        r = subprocess.run([sys.executable, str(BASE / "export_dist.py")],
+                           capture_output=True, text=True, timeout=1800)
+        for line in (r.stdout + r.stderr).splitlines()[-4:]:
+            print(f"  {line}")
+        if r.returncode != 0:
+            print("  [data] 日別値の書き出しに失敗（前回の分で続ける）")
+        else:
+            manifest.touch()       # 中身が同じで置き換えなかった回も「ストアのこの版は済んだ」と記す
+    if not manifest.is_file():
+        return
+
+    out = PUBLIC / DAILY_URL
+    n_copied = 0
+    files = [p for p in DAILY_DIST.rglob("*") if p.is_file() and not p.name.startswith(".")]
+    for src in files:
+        dst = out / src.relative_to(DAILY_DIST)
+        if dst.is_file() and dst.stat().st_size == src.stat().st_size \
+                and int(dst.stat().st_mtime) >= int(src.stat().st_mtime):
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        n_copied += 1
+
+    man = json.loads(manifest.read_text(encoding="utf-8"))
+    st = json.loads((DAILY_DIST / "stations.json").read_text(encoding="utf-8"))["stations"]
+
+    def fmt(n: int) -> str:
+        return f"{n / 1024 / 1024:.1f} MB" if n >= 1024 * 1024 else f"{n / 1024:.0f} KB"
+
+    years = [{**y, "size": fmt(y["bytes"])} for y in reversed(man["years"])]
+    sizes = {s_["code"]: s_["bytes"] for s_ in man["stations"]}
+    pref_of = {s_["prec_no"]: s_["pref"] for s_ in st if s_.get("prec_no") and s_.get("pref")}
+    groups: dict[int, list] = {}
+    for s_ in sorted(st, key=lambda x: (x.get("kana") or x.get("name") or "")):
+        groups.setdefault(s_.get("prec_no") or 999, []).append(
+            {**s_, "size": fmt(sizes.get(s_["code"], 0))})
+    pref_groups_ = [{"name": pref_of.get(k, "府県の分からない地点"), "stations": v}
+                    for k, v in sorted(groups.items())]
+    write(f"{DAILY_URL}/index.html", env.get_template("data/daily.html").render(
+        page_title="日別の観測データ（NetCDF）", nav_active="about",
+        build_year=datetime.now().year, coverage=man["coverage"], years=years,
+        groups=pref_groups_, n_stations=len(st),
+        n_abolished=sum(1 for s_ in st if not s_.get("active")),
+        total=fmt(sum(y["bytes"] for y in man["years"]))))
+    print(f"  [data] {DAILY_URL}/: 年 {len(years)} 本・地点 {len(st)} 本（今回写したもの {n_copied}）")
+
+
 def build_seo(env: Environment, stations: dict) -> None:
     """sitemap.xml・_redirects（旧URL誘導）・404.html。Pages 移行のサイトインフラ。"""
     import os
@@ -1489,7 +1554,7 @@ def build_seo(env: Environment, stations: dict) -> None:
             "/Temperature/HighsList/", "/Temperature/LowsList/",
             "/Summer/Ranking/", "/Winter/LowestList/", "/Climate/",
             "/Stations/", "/Monthly/", "/Monthly/Latest/",
-            "/Precipitation/", "/App/", "/App/Develop/", "/About/", f"/{AMEDAS_URL}/"]
+            "/Precipitation/", "/App/", "/App/Develop/", "/About/", f"/{AMEDAS_URL}/", f"/{DAILY_URL}/"]
     urls += [f"/Monthly/Heinenti{m:02d}{l}/" for m in range(1, 13) for l in ("", "l")]
     targets = climate_targets(stations)
     urls += [f"/Climate/Chart/{s}/" for _, _, _, s in targets]
@@ -1525,6 +1590,8 @@ def build_seo(env: Environment, stations: dict) -> None:
         "  Cache-Control: public, max-age=86400",
         f"/{AMEDAS_URL}/index.json",
         "  Cache-Control: public, max-age=600",
+        f"/{DAILY_URL}/*",
+        "  Access-Control-Allow-Origin: *",
         "",
     ]), encoding="utf-8")
 
@@ -1579,6 +1646,7 @@ def main() -> None:
         build_app(env)
         build_about(env)
         build_data_amedas(env)
+        build_data_daily(env)
         build_seo(env, stations)
         build_home(env, today, meta, fc, stations, hist)
     finally:
