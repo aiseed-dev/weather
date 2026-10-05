@@ -107,6 +107,17 @@ cron が止まっているときや、dev2 を経由せず確かめたいとき�
 15 1 * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python aggregate_votes.py --kv
 ```
 
+**入れる順番。** 前提が揃っていない行を入れると、毎回失敗するだけで何も
+進まない（失敗は log に溜まるだけで気づきにくい）。
+
+| 段 | 前提 | 入れる行 |
+|---|---|---|
+| 1. 収集だけ | なし | `fetch_amedas_mirror.py`、`fetch_data.py --current-only`、`accumulate.py`、月次 `backfill_etrn.py`、毎時は公開なしの `fetch_data.py` 単独 |
+| 2. 公開 | `~/.config/cloudflare/pages.env`（Pages + R2） | 毎時の行を `fetch_data.py && build_site.py --publish` に差し替え、実況の行（`generate_status.py && build_site.py --skip-build --publish`）を足す |
+| 3. 速報 | Worker のデプロイと `WEATHER_WORKER_*` の 2 行 | `fetch_points.py` |
+
+投票集計は KV を用意してから。
+
 **ロックはスクリプト自身が取る。** `observations.nc` は「コピー → 更新 →
 rename」で置き換えるため、同時実行すると後勝ちで書込が失われる。以前は
 cron 側の `flock` に頼っていたが、手動実行の手順から簡単に抜け落ちる
