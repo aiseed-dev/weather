@@ -1658,6 +1658,9 @@ def legacy_redirects(targets: list) -> list[str]:
     # うるので、/Summer/Ranking/* だと一覧ページ自身に当たって回りかねない。
     # 年・年月は必ず 2 で始まることを使い、/Summer/Ranking/2* のように書く
     lines.append("/Gfs/* /App/ 301")
+    # 旧サイトでも 404 だった月別のリンク（旧サイト内の切れたリンク）。月別気温の一覧へ
+    for kind in ("MonthlyHigh", "MonthlyLow", "MonthlyMean"):
+        lines.append(f"/Monthly/{kind}/* /Monthly/ 301")
     for kind in ("Ranking", "SummerDayList", "Hottest", "HottestList"):
         lines.append(f"/Summer/{kind}/2* /Summer/{kind}/ 302")
     for kind in ("Ranking", "WinterDayList", "Coldest", "LowestList"):
