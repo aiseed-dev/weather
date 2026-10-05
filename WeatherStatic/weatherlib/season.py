@@ -7,6 +7,16 @@ from __future__ import annotations
 
 from datetime import datetime
 
+# 冬の「今季」の起点（月）。冬の季節現象は年をまたぐので 9 月 1 日から数える。
+# 気象庁の寒候年（8/1〜7/31）とは違うので、ページでは「寒候年」と呼ばない。
+WINTER_START_MONTH = 9
+
+
+def winter_start(dt: datetime) -> datetime:
+    """その日が属する冬の「今季」の起点。9〜12 月は今年、1〜8 月は前年の 9/1。"""
+    year = dt.year if dt.month >= WINTER_START_MONTH else dt.year - 1
+    return datetime(year, WINTER_START_MONTH, 1)
+
 
 def is_summer(dt: datetime) -> bool:
     """夏用の表示にするか（Jma.IsSummer 相当）。"""

@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from weatherlib.filters import FILTERS, bcolor
-from weatherlib.season import is_season, is_summer
+from weatherlib.season import is_season, is_summer, winter_start
 from weatherlib.stations import MAIN_STATIONS
 
 BASE = Path(__file__).resolve().parent
@@ -286,11 +286,8 @@ def write(path_rel: str, html: str) -> None:
 
 
 def season_period(now: datetime) -> tuple[datetime, datetime]:
-    """記録の集計期間（開始, 終了=昨日）。夏=1/1 から、冬=寒候年（前年 8/1）から。"""
-    if is_summer(now) or now.month >= 8:
-        start = datetime(now.year, 1, 1)
-    else:
-        start = datetime(now.year - 1, 8, 1)
+    """記録の集計期間（開始, 終了=昨日）。夏=1/1 から、冬=9/1 から（winter_start）。"""
+    start = datetime(now.year, 1, 1) if is_summer(now) else winter_start(now)
     end = datetime.combine(now.date() - timedelta(days=1), datetime.min.time())
     return start, end
 
@@ -883,8 +880,9 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
             pair_headers=["最高気温の最高", "平均気温の最高", "最低気温の最高"],
             groups=pref_groups(hot_pairs)))
 
-    # ---------------- 冬（寒候年: 8/1〜昨日） ----------------
-    wy_start = datetime(now.year - 1, 8, 1) if now.month < 8 else datetime(now.year, 8, 1)
+    # ---------------- 冬（9/1〜昨日） ----------------
+    wy_start = winter_start(now)
+    wy_from = f"{wy_start.year}年{wy_start.month}月{wy_start.day}日"
     w = season(wy_start)
     if w:
         wyear = wy_start.year + 1
@@ -898,7 +896,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
                "tavg0": w["counts"]("tavg", 0, ge=False),
                "mafuyubi": w["counts"]("tmax", 0, ge=False)}
         info_days = (f"気象庁の観測所のうち気温を測定している {w['n_stations']} カ所を対象に、"
-                     f"{wy_start.year}年8月1日からの観測記録を集計して、冬日（最低気温が0度未満）の日数、"
+                     f"{wy_from}からの観測記録を集計して、冬日（最低気温が0度未満）の日数、"
                      "平均気温が0度未満の日数、真冬日（最高気温が0度未満）の日数の上位50位までをリストにしました。")
         write("Winter/Ranking/index.html", env.get_template("season/ranking.html").render(
             **common, page_title=f"{wyear}年冬 冬日、真冬日等の日数のランキング",
@@ -929,7 +927,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
 
         exw = {v: w["extreme"](v, highest=False) for v in ("tmin", "tavg", "tmax")}
         info_temp = (f"気象庁の観測所のうち気温を測定している {w['n_stations']} カ所を対象に、"
-                     f"{wy_start.year}年8月1日からの観測記録を集計して、日最低気温、日平均気温、日最高気温の"
+                     f"{wy_from}からの観測記録を集計して、日最低気温、日平均気温、日最高気温の"
                      "低い順に上位50位までをリストにしました。")
         write("Winter/Coldest/index.html", env.get_template("season/ranking.html").render(
             **common, page_title=f"{wyear}年冬 最低気温、平均気温のランキング",
