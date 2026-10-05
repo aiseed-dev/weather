@@ -142,8 +142,9 @@ def slot_view(ts: str) -> dict[str, dict]:
                 out[amedas] = {k: v for k, v in entry.items() if k not in NOT_ELEMENTS}
 
     if not out:
-        # 退避路: 地点別がまだ無い期間は従来の map ミラーをそのまま使う
-        p = MAP / f"{key[:12]}.json"
+        # 退避路: 地点別がまだ無い期間は従来の map ミラーをそのまま使う。
+        # ミラーのファイル名は秒まで入った 14 桁（fetch_amedas_mirror.slot_name）
+        p = MAP / f"{key}.json"
         if p.is_file():
             try:
                 out = {a: {k: v for k, v in e.items() if k not in NOT_ELEMENTS}

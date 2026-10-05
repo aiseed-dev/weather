@@ -665,6 +665,16 @@ def main() -> int:
     env.filters.update(FILTERS)
     env.globals["css_version"] = "status"
 
+    # スロットはあるのに中身が 0 地点なら、読み込みの不具合か配信の欠け。
+    # 区画ごとの「スロットが無ければ飛ばす」では拾えず、0 地点の表がそのまま
+    # 作られて公開されてしまう（2026-10-05 に実際に起きた）。何も書かずに止める。
+    now = datetime.now(JST).replace(tzinfo=None)
+    slots = load_slots(now.date()) or load_slots(now.date() - timedelta(days=1))
+    if slots and not pointstore.slot_view(slots[-1]):
+        log(f"最新スロット {slots[-1]} の 10 分値が 0 地点です。生成しません"
+            "（前回の生成物が残っています。このまま公開すると古い実況が出ます）。")
+        return 1
+
     if only in (None, "temp"):
         build_temperature(env, stations)
     if only in (None, "wind"):

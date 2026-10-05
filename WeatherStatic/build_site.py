@@ -48,6 +48,10 @@ MAX_FILE_BYTES = 25 * 1024 * 1024
 
 # 生成が壊れていないことの目安。実データなら 3,000 ページ規模になる
 MIN_PAGES = 500
+# 地点別の実況ページ（Status/Station/{地点}/）。実データなら 1,287 枚。
+# 10 分値が 0 地点でも区画の枠は作られるので、総ページ数だけでは気づけない
+# （2026-10-05、読み込みの不具合で 0 枚のまま点検を通った）
+MIN_STATION_PAGES = 1000
 
 
 def find_cf_publish() -> str:
@@ -121,7 +125,12 @@ def inspect(public: Path = PUBLIC) -> dict:
     if over:
         problems.append(f"25 MiB を超えるファイルが {len(over)} 件"
                         f"（例 {over[0].relative_to(public)}）")
-    return {"pages": len(pages), "files": len(files), "problems": problems}
+    station_dir = public / "Status" / "Station"
+    station_pages = sum(1 for p in pages
+                        if station_dir in p.parents and p.parent != station_dir)
+    print(f"  地点別の実況  {station_pages:,} ページ")
+    return {"pages": len(pages), "files": len(files), "station_pages": station_pages,
+            "problems": problems}
 
 
 def publish(project: str, dry: bool) -> int:
@@ -165,6 +174,10 @@ def main() -> int:
     if source != "TESTDATA" and info["pages"] < MIN_PAGES:
         return fail("", f"ページ数が {info['pages']} 件しかありません（目安 {MIN_PAGES} 件以上）。",
                     "  生成が途中で失敗している可能性があります。")
+    if source != "TESTDATA" and info["station_pages"] < MIN_STATION_PAGES:
+        return fail("", f"地点別の実況ページが {info['station_pages']} 枚しかありません"
+                        f"（目安 {MIN_STATION_PAGES} 枚以上）。",
+                    "  10 分値を読めていない可能性があります。空の実況は公開しません。")
 
     if not (args.publish or args.dry_run):
         print("\n生成と点検が終わりました。公開はしていません。")
