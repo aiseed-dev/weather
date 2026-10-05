@@ -23,7 +23,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from weatherlib.filters import FILTERS, bcolor
+from weatherlib.filters import CLOTHES_BANDS, FILTERS, TEMP_ANCHORS, bcolor
 from weatherlib import siteurl
 from weatherlib.season import is_season, is_summer, winter_start
 from weatherlib.stations import MAIN_STATIONS
@@ -302,7 +302,7 @@ def main_city_order(stations: dict) -> list[tuple[int, dict]]:
     """主要都市を旧サイトの表示順（北→南）で返す。"""
     order = {s["code"]: i for i, s in enumerate(MAIN_STATIONS)}   # 国際地点番号順
     mains = [(int(code), rec) for code, rec in stations["stations"].items()
-             if rec.get("main")]
+             if rec.get("main") or rec.get("intl") in order]   # テストデータには main が無い
     mains.sort(key=lambda x: order.get(x[1]["intl"], 999))
     return mains
 
@@ -507,20 +507,23 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
                 graph[key].append(arr[d.day - 1] if d.day - 1 < len(arr) else None)
             d += timedelta(days=1)
 
-    # 昨日の服装投票の集計（aggregate_votes.py が蓄積した votes_raw から）
-    vote_summary = None
-    try:
-        import sqlite3
-        vconn = sqlite3.connect(BASE / "store" / "weather.sqlite")
-        y = (now.date() - timedelta(days=1)).isoformat()
-        row = vconn.execute("SELECT COALESCE(SUM(v),0), COUNT(*) FROM votes_raw "
-                            "WHERE date = ?", (y,)).fetchone()
-        vconn.close()
-        if row and row[1] > 0:
-            vote_summary = {"yes": int(row[0]), "total": int(row[1]),
-                            "pct": round(100 * row[0] / row[1])}
-    except Exception:
-        pass
+    # トップの「現在の天気と気温」に出せる都市（官署 57 地点、北から）。表示する都市は
+    # 閲覧者が選んでブラウザに保存する。初期値は HOME_CITIES
+    now_cities = []
+    for code, rec in main_city_order(stations):
+        t = today.get(code)
+        if t is None:
+            continue
+        cur = current["stations"].get(str(code), {})
+        now_cities.append({
+            "code": code, "name": rec["name"], "pref": rec["pref"],
+            "url": siteurl.url(f"/Stations/JP/{station_slug(rec)}/"),
+            "lat": rec["lat"], "lon": rec["lon"],
+            "temp": cur.get("temp"), "wthr": cur.get("wthr"),
+            "tmax": t.get("tmax"), "tmin": t.get("tmin"),
+            "ntmax": normal_daily(code, "tmax", now.date()),
+            "ntmin": normal_daily(code, "tmin", now.date()),
+        })
 
     from weatherlib.svgchart import timeseries_svg
     graph_svg = timeseries_svg(
@@ -536,10 +539,11 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         "counts": meta["counts"],
         "period_end": end, "days_diff": (now - end).days,
         "cities": cities,
-        "live_cities": [{"code": c["code"], "amedas": c["amedas"],
-                         "lat": c["lat"], "lon": c["lon"]} for c in cities],
         "graph": graph, "graph_svg": graph_svg,
-        "vote_summary": vote_summary,
+        "temp_anchors": TEMP_ANCHORS, "clothes_bands": CLOTHES_BANDS,
+        "now_cities": now_cities, "now_default": HOME_CITIES,
+        # 地図の輪郭（make_japan_outline.py が作る。Natural Earth 10m）
+        "japan_map": json.loads((BASE / "assets" / "japan_outline.json").read_text(encoding="utf-8")),
         "current_time": (datetime.fromisoformat(current["amedas_time"])
                          if current.get("amedas_time") else None),
         "wthr_time": (datetime.fromisoformat(current["wthr_time"])
@@ -549,10 +553,7 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         "page_header": "個人開発気象統計",
         "build_year": now.year,
     }
-    import os as _os
-    html = env.get_template("home.html").render(
-        vote_url=_os.environ.get("WEATHER_VOTE_URL", "/vote.gif"), **context)
-    write("index.html", html)
+    write("index.html", env.get_template("home.html").render(**context))
 
     # トップページが 10 分ごとに読む現在値。fetch_data.py --current-only も
     # ここへ直接置くので、サイト再生成を待たずに更新が届く。

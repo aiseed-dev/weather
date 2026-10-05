@@ -131,6 +131,32 @@ def jdate(s) -> str:
 
 
 # Jinja2 環境へまとめて登録するための辞書
+# 気温の色（値は ×10 の整数）。デスクトップアプリの気温の配色
+# （src/aiseed_weather/figures/_chart_specs.py の T2M）と同じにして、
+# サイトとアプリで同じ色が同じ気温を指すようにする。トップのスクリプトにも渡す
+TEMP_ANCHORS = [
+    (-200, (50, 30, 165)), (-100, (40, 115, 225)), (0, (230, 225, 215)),
+    (100, (190, 220, 100)), (200, (245, 200, 80)), (300, (220, 110, 60)),
+    (400, (135, 30, 30)),
+]
+
+
+def temp_color(t: int | None) -> str:
+    if t is None or t == -999:
+        return "transparent"
+    if t <= TEMP_ANCHORS[0][0]:
+        r, g, b = TEMP_ANCHORS[0][1]
+    elif t >= TEMP_ANCHORS[-1][0]:
+        r, g, b = TEMP_ANCHORS[-1][1]
+    else:
+        for (t0, c0), (t1, c1) in zip(TEMP_ANCHORS, TEMP_ANCHORS[1:]):
+            if t0 <= t <= t1:
+                f = (t - t0) / (t1 - t0)
+                r, g, b = (round(a + (z - a) * f) for a, z in zip(c0, c1))
+                break
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
 FILTERS = {
     "ondo": ondo,
     "heinen": heinen,
@@ -139,4 +165,5 @@ FILTERS = {
     "jdate": jdate,
     "weather_img": weather_img,
     "clothes": clothes,
+    "temp_color": temp_color,
 }
