@@ -286,7 +286,7 @@ def write(path_rel: str, html: str) -> None:
 
 
 def season_period(now: datetime) -> tuple[datetime, datetime]:
-    """記録の集計期間（開始, 終了=昨日）。夏=1/1 から、冬=9/1 から（winter_start）。"""
+    """記録の集計期間（開始, 終了=昨日）。夏=1/1 から、冬=寒候年の 8/1 から（winter_start）。"""
     start = datetime(now.year, 1, 1) if is_summer(now) else winter_start(now)
     end = datetime.combine(now.date() - timedelta(days=1), datetime.min.time())
     return start, end
@@ -880,7 +880,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
             pair_headers=["最高気温の最高", "平均気温の最高", "最低気温の最高"],
             groups=pref_groups(hot_pairs)))
 
-    # ---------------- 冬（9/1〜昨日） ----------------
+    # ---------------- 冬（寒候年: 8/1〜昨日） ----------------
     wy_start = winter_start(now)
     wy_from = f"{wy_start.year}年{wy_start.month}月{wy_start.day}日"
     w = season(wy_start)

@@ -7,13 +7,13 @@ from __future__ import annotations
 
 from datetime import datetime
 
-# 冬の「今季」の起点（月）。冬の季節現象は年をまたぐので 9 月 1 日から数える。
-# 気象庁の寒候年（8/1〜7/31）とは違うので、ページでは「寒候年」と呼ばない。
-WINTER_START_MONTH = 9
+# 冬の「今季」は気象庁の寒候年（8 月 1 日〜翌年 7 月 31 日）で数える。
+# 冬の季節現象は年をまたぐため。
+WINTER_START_MONTH = 8
 
 
 def winter_start(dt: datetime) -> datetime:
-    """その日が属する冬の「今季」の起点。9〜12 月は今年、1〜8 月は前年の 9/1。"""
+    """その日が属する寒候年の起点。8〜12 月は今年、1〜7 月は前年の 8/1。"""
     year = dt.year if dt.month >= WINTER_START_MONTH else dt.year - 1
     return datetime(year, WINTER_START_MONTH, 1)
 

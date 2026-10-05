@@ -78,7 +78,7 @@
 {% endfor %}
 
 {% if not summer %}
-<p>今季：冬期の季節現象は年をまたぐため、{{ period_start.year }}年{{ period_start.month }}月{{ period_start.day }}日からのデータを集計しています。<br />冬日：最低気温が0℃未満の日</p>
+<p>今季：冬期の季節現象は年をまたぐため、寒候年（{{ period_start.year }}年8月1日から{{ period_start.year + 1 }}年7月31日まで）で表し、{{ period_start.year }}年8月1日からのデータを集計しています。<br />冬日：最低気温が0℃未満の日</p>
 {% endif %}
 <p>本日の最低気温の詳細は、<a href="http://www.data.jma.go.jp/obd/stats/data/mdrr/tem_rct/index_mntem.html" target="_blank">気象庁のページ</a>で確認できます。</p>
 {% endblock %}

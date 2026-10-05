@@ -84,7 +84,7 @@
 <p>猛暑日：1日の最高気温が35℃以上の日<br />真夏日：1日の最高気温が30℃以上の日<br />夏日：1日の最高気温が25℃以上の日<br />
     本日の最高気温の詳細は、<a href="http://www.data.jma.go.jp/obd/stats/data/mdrr/tem_rct/index_mxtem.html" target="_blank">気象庁のページ</a>で確認できます。</p>
 {% else %}
-<p>今季：冬期の季節現象は年をまたぐため、{{ period_start.year }}年{{ period_start.month }}月{{ period_start.day }}日からのデータを集計しています。<br />真冬日：1日の最高気温が0℃未満の日<br />
+<p>今季：冬期の季節現象は年をまたぐため、寒候年（{{ period_start.year }}年8月1日から{{ period_start.year + 1 }}年7月31日まで）で表し、{{ period_start.year }}年8月1日からのデータを集計しています。<br />真冬日：1日の最高気温が0℃未満の日<br />
     本日の最高気温の詳細は、<a href="http://www.data.jma.go.jp/obd/stats/data/mdrr/tem_rct/index_mxtem.html" target="_blank">気象庁のページ</a>で確認できます。</p>
 {% endif %}
 {% endblock %}
