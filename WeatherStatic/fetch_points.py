@@ -3,8 +3,10 @@
 
 流れ
     1. 気象庁の latest_time.txt で最新スロットを知る（1 リクエスト）
-    2. エリアごとに Worker を呼ぶ。Worker が R2 へ 1 本置く
+    2. エリアごとに Worker を呼ぶ。Worker が R2 へ 1 本置き、同じバイト列を
+       応答で返すので、deb2 の手元（public_amedas/point/）にも書く
     3. 地点別に無い要素だけ map JSON から取る（1 リクエスト）
+    4. 手元の地点別・補完分は直近 KEEP_DAYS 日だけ残す（R2 には全部残る）
 
 なぜ Worker に取らせるか
     1,286 地点を deb2 から 1 秒間隔で取ると 21 分かかる。Worker なら並列に
@@ -45,8 +47,8 @@
 R2 に独自ドメインは要らない
     Worker → R2 はバインディングで書くので、ドメインが無くても収集は動く。
     ドメインが要るのは、ブラウザや Flet が HTTP で読みに行くときだけ。
-    deb2 が引き戻す必要も本来は無い（R2 から端末が直接読む）ので、
-    取り寄せは既定で行わない。
+    deb2 の手元へは Worker の応答から書く（"echo": true）ので、R2 からの
+    取り寄せ（--pull）は、応答を取りこぼした分を後から埋めるときだけ使う。
 
 使い方
     python fetch_points.py                 # 最新スロットを取りに行く
@@ -60,6 +62,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import urllib.error
 import urllib.request
@@ -83,6 +86,9 @@ UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)"
 # 1,286 地点）では 8 エリアだけが 2 回に分かれ、呼び出しは 64 → 72 回になる。
 CHUNK = 30
 PARALLEL = 6                 # 同時に呼ぶ数。deb2 側の礼儀として控えめに
+# 手元に残す日数。ページの生成は今日（0 時台は昨日）しか見ないが、障害の
+# 調べ物用に少し残す。1 日 約 110MB（72 ファイル × 8 ブロック）
+KEEP_DAYS = 3
 
 
 def log(msg: str) -> None:
@@ -136,20 +142,56 @@ def chunks_of(stations: list[str]) -> list[list[str]]:
     return [stations[i:i + size] for i in range(0, len(stations), size)]
 
 
+def job_names(stations: list[str], area: str) -> list[tuple[str, list[str]]]:
+    """1 エリアの (置き先の名前, 地点) の並び。分けたときは {area}-1, -2 …"""
+    cs = chunks_of(stations)
+    return [(area if len(cs) == 1 else f"{area}-{i}", part) for i, part in enumerate(cs, 1)]
+
+
+def write_local(day: str, hour: str, name: str, body: bytes) -> None:
+    """Worker が R2 に置いたのと同じバイト列を手元に書く。途中で読まれても
+    壊れた JSON を見せないよう、一時ファイルに書いてから置き換える。"""
+    out = POINT / day / hour
+    out.mkdir(parents=True, exist_ok=True)
+    tmp = out / f".{name}.json.tmp"
+    tmp.write_bytes(body)
+    tmp.replace(out / f"{name}.json")
+
+
 def call_part(base: str, token: str, name: str, stations: list[str],
               day: str, hour: str) -> dict:
-    """1 まとまりを Worker に取らせる。name がそのまま置き先のファイル名になる。"""
-    body = json.dumps({"day": day, "hour": hour,
-                       "name": name, "stations": stations}).encode()
+    """1 まとまりを Worker に取らせ、置いたものを手元にも書く。
+    name がそのまま置き先のファイル名になる。"""
+    body = json.dumps({"day": day, "hour": hour, "name": name,
+                       "stations": stations, "echo": True}).encode()
+    req = urllib.request.Request(f"{base}/fetch", data=body, method="POST")
+    req.add_header("User-Agent", UA)
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"Bearer {token}")
     try:
-        return json.loads(http(f"{base}/fetch", data=body, headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}"}))
+        with urllib.request.urlopen(req, timeout=120) as r:
+            payload = r.read()
+            h = r.headers
     except urllib.error.HTTPError as e:
         detail = e.read()[:120].decode(errors="replace")
         return {"name": name, "written": 0, "error": 1, "why": f"HTTP {e.code} {detail}"}
     except Exception as e:
         return {"name": name, "written": 0, "error": 1, "why": str(e)[:80]}
+
+    if h.get("X-Written") is None:
+        # echo を知らない古い Worker（本文は集計の JSON）。手元には書けない
+        res = json.loads(payload)
+        res["why"] = "Worker が古い（echo 未対応）。deploy_worker.py で入れ直す"
+        return {**res, "written": 0, "error": res.get("error", 0) or 1}
+    res = {"name": name, "stored": int(h["X-Stored"]), "missing": int(h["X-Missing"]),
+           "error": int(h["X-Error"]), "written": int(h["X-Written"])}
+    if res["written"]:
+        try:
+            json.loads(payload)            # 壊れたものを手元に置かない
+        except ValueError:
+            return {**res, "written": 0, "error": 1, "why": "応答の JSON が壊れている"}
+        write_local(day, hour, name, payload)
+    return res
 
 
 def invoke(groups: dict[str, list[str]], day: str, hour: str,
@@ -190,12 +232,8 @@ def invoke(groups: dict[str, list[str]], day: str, hour: str,
             log(f"置けなかった {len(pending)} エリアを呼び直す（{attempt}/{retries}）")
 
         # 分けたぶんは別ファイルになるので、同一エリアでも並行に呼べる
-        jobs: list[tuple[str, str, list[str]]] = []
-        for area, stations in pending.items():
-            cs = chunks_of(stations)
-            for i, part in enumerate(cs, 1):
-                name = area if len(cs) == 1 else f"{area}-{i}"
-                jobs.append((area, name, part))
+        jobs = [(area, name, part) for area, stations in pending.items()
+                for name, part in job_names(stations, area)]
 
         results: list[dict] = []
         with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
@@ -218,8 +256,11 @@ def invoke(groups: dict[str, list[str]], day: str, hour: str,
     return failed
 
 
-def pull(day: str, hour: str, areas: list[str], dry: bool) -> int:
-    """R2 から公開ツリーへ取り寄せる。R2 は読み取り（Class B）なので余裕がある。"""
+def pull(day: str, hour: str, names: list[str], dry: bool) -> int:
+    """R2 から公開ツリーへ取り寄せる。R2 は読み取り（Class B）なので余裕がある。
+
+    names は置き先のファイル名（分けたエリアは {area}-1, -2）。エリア名で
+    探すと、分けて置いた 8 エリアが丸ごと抜ける。"""
     base = os.environ.get("AMEDAS_R2_BASE", "").rstrip("/")
     if not dry and not base:
         sys.exit(f"AMEDAS_R2_BASE が要ります（環境変数か {ENV_FILE}）")
@@ -227,7 +268,7 @@ def pull(day: str, hour: str, areas: list[str], dry: bool) -> int:
     if not dry:
         out.mkdir(parents=True, exist_ok=True)
     n = 0
-    for a in areas:
+    for a in names:
         url = f"{base}/point/{day}/{hour}/{a}.json"
         if dry:
             continue
@@ -287,6 +328,24 @@ def fetch_extra(ts: datetime, dry: bool) -> int:
     return len(out)
 
 
+def prune_local(today: datetime, dry: bool) -> int:
+    """手元の point/ と extra/ から、KEEP_DAYS 日より古い日付ディレクトリを消す。
+    名前が YYYYMMDD のディレクトリだけを対象にする（R2 には全部残っている）。"""
+    cutoff = (today - timedelta(days=KEEP_DAYS - 1)).strftime("%Y%m%d")
+    n = 0
+    for root in (POINT, EXTRA):
+        if not root.is_dir():
+            continue
+        for d in sorted(root.iterdir()):
+            if d.is_dir() and len(d.name) == 8 and d.name.isdigit() and d.name < cutoff:
+                if dry:
+                    log(f"  [下見] 消す: {d}")
+                else:
+                    shutil.rmtree(d)
+                n += 1
+    return n
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="アメダス地点別 10 分値を集める")
     ap.add_argument("--day", metavar="YYYYMMDD", help="対象日（既定は最新スロットの日）")
@@ -322,17 +381,24 @@ def main() -> int:
     # 取り寄せは既定で行わない。R2 に置いた時点で端末（Flet・ブラウザ）は
     # そこから直接読める。同じデータを deb2 へ引き戻すのは二度手間で、
     # R2 の公開ドメインも要求してしまう。
-    got = pull(day, hour, list(groups), args.dry_run) if args.pull else 0
+    names = [n for area, st in groups.items() for n, _ in job_names(st, area)]
+    got = pull(day, hour, names, args.dry_run) if args.pull or args.pull_only else 0
     if args.dry_run:
         if args.pull or args.pull_only:
-            log(f"[下見] {len(groups)} エリアを {POINT / day / hour}/ へ取り寄せる")
+            log(f"[下見] {len(names)} ファイルを {POINT / day / hour}/ へ取り寄せる")
+        if slot is not None:
+            prune_local(slot, dry=True)
         return 0
 
     if args.pull or args.pull_only:
-        log(f"取り寄せ: {got} / {len(groups)} エリア → {POINT / day / hour}/")
+        log(f"取り寄せ: {got} / {len(names)} ファイル → {POINT / day / hour}/")
         if got == 0:
             log("1 エリアも取れませんでした。R2 と Worker の状態を確認してください")
             return 1
+    if slot is not None:
+        pruned = prune_local(slot, dry=False)
+        if pruned:
+            log(f"手元の古い日付 {pruned} 件を消しました（{KEEP_DAYS} 日分を残す）")
     return 1 if failed else 0
 
 

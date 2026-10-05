@@ -354,6 +354,10 @@ def write_data(master: dict, dates: list[date], rng: random.Random) -> None:
                         hi + 30, today.isoformat(), lo - 30, today.isoformat(),
                         hi + 90, "1994-08-07", hi + 60, "2018-08-22",
                         lo - 140, "1984-02-17", lo - 80, "1996-01-25"])
+    # 本番では毎時の fetch_data が CSV そのままを today_rct.* に置き、10 分ごとの
+    # fetch_data --points-only がそこへ地点別の最高・最低を重ねて today.* を作る
+    shutil.copyfile(DATA / "today.csv", DATA / "today_rct.csv")
+    shutil.copyfile(DATA / "today_meta.json", DATA / "today_rct_meta.json")
 
 
 def write_mirror(master: dict, rng: random.Random, slots: int = 8) -> None:
@@ -378,11 +382,23 @@ def write_mirror(master: dict, rng: random.Random, slots: int = 8) -> None:
 
     # {日付: {ブロック: {エリア: {番号: {時刻: 値}}}}}
     tree: dict[str, dict[str, dict[str, dict[str, dict]]]] = {}
+    # 今日のここまでの最高・最低（本番と同じく単調に動き、日が変わると戻る）。
+    # 起時は本番どおり UTC の {"hour", "minute"} で持つ
+    running: dict[str, tuple] = {}
     for k in range(slots):
         t = now - timedelta(minutes=10 * (slots - 1 - k))
         day, block, key = f"{t:%Y%m%d}", f"{t.hour // 3 * 3:02d}", f"{t:%Y%m%d%H%M}00"
+        utc = {"hour": (t.hour - 9) % 24, "minute": t.minute}
         for s in st.values():
             temp = seasonal(t.timetuple().tm_yday, s["lat"]) / 10 + rng.uniform(-2, 2)
+            # 最高は 10 分の間にも出るので、その時の気温より少し高いことがある
+            hi_now, lo_now = round(temp + rng.uniform(0, 0.4), 1), round(temp - rng.uniform(0, 0.4), 1)
+            prev = running.get(s["amedas"])
+            if prev is None or prev[0] != day:
+                prev = (day, hi_now, utc, lo_now, utc)
+            mx, mx_t = (hi_now, utc) if hi_now > prev[1] else (prev[1], prev[2])
+            mn, mn_t = (lo_now, utc) if lo_now < prev[3] else (prev[3], prev[4])
+            running[s["amedas"]] = (day, mx, mx_t, mn, mn_t)
             area = s["amedas"][:2]
             (tree.setdefault(day, {}).setdefault(block, {})
                  .setdefault(area, {}).setdefault(s["amedas"], {}))[key] = {
@@ -398,8 +414,8 @@ def write_mirror(master: dict, rng: random.Random, slots: int = 8) -> None:
                 "windDirection": [rng.randrange(0, 17), 0],
                 "gust": [round(rng.uniform(2, 25), 1), 0],
                 "sun10m": [rng.randrange(0, 11), 0],
-                "maxTemp": [round(temp + rng.uniform(0, 4), 1), 0],
-                "minTemp": [round(temp - rng.uniform(0, 4), 1), 0],
+                "maxTemp": [mx, 0], "maxTempTime": mx_t,
+                "minTemp": [mn, 0], "minTempTime": mn_t,
             }
 
     # map 由来の補完分。地点別に無い要素（積雪・天気）はこちらから来る。

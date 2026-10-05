@@ -183,6 +183,37 @@ def hourly_view(ts: datetime) -> dict[str, dict]:
     return out
 
 
+def _jst_hhmm(t) -> str:
+    """地点別 JSON の起時 {"hour": 3, "minute": 21} は UTC。日本時間の "12:21" にする。
+    日最高・最低の起時はその日の中にあるので、時を 9 進めて 24 で割れば足りる。"""
+    if not isinstance(t, dict) or "hour" not in t or "minute" not in t:
+        return ""
+    return f"{(int(t['hour']) + 9) % 24:02d}:{int(t['minute']):02d}"
+
+
+def extremes(ts: str) -> dict[str, dict]:
+    """その時刻までの今日の最高・最低気温（気象庁が地点別に出している値）。
+
+    戻り値: {アメダス番号: {"tmax": ×10, "tmax_at": "HH:MM", "tmin": …, "tmin_at": …}}
+    品質フラグ 0（正常）の要素だけを入れる。map JSON には無い要素なので、
+    地点別データが無い時刻は空になる（呼ぶ側は CSV の値のままにする）。
+
+    10 分ごとの気温の最大では代わりにならない。最高は 10 分の間にも出る
+    （2026-10-05 東京: 12:10 の気温 19.7 に対し、最高は 20.1 / 12:05）。
+    """
+    out: dict[str, dict] = {}
+    for amedas, entry in slot_view(ts).items():
+        rec = {}
+        for key, name in (("maxTemp", "tmax"), ("minTemp", "tmin")):
+            v = entry.get(key)
+            if isinstance(v, list) and len(v) >= 2 and v[1] == 0 and v[0] is not None:
+                rec[name] = int(round(float(v[0]) * 10))
+                rec[f"{name}_at"] = _jst_hhmm(entry.get(f"{key}Time"))
+        if rec:
+            out[amedas] = rec
+    return out
+
+
 def latest_slot(day: date) -> str | None:
     slots = available_slots(day)
     return slots[-1] if slots else None

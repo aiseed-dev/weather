@@ -4,7 +4,14 @@
 出力（毎回上書き。増えない）:
     data/today.csv        … 全地点の今日の最高・最低気温＋今年/史上/当月の記録（code キー）
     data/today_meta.json  … データ基準時刻・全国の地点数集計
+    data/today_rct.csv    … today.csv の元（CSV そのまま）。10 分ごとの重ね直しに使う
     data/forecast.json    … 主要都市の天気・気温予報（code キー）
+
+今日の最高・最低は 10 分ごとに新しくする
+    気象庁の最新値 CSV は 1 時間ごと（毎時 50 分頃に前の正時の分が出る）。
+    地点別 10 分値（public_amedas/point/）には、その時刻までの今日の最高・最低
+    とその起時が入っているので、CSV の表にそれを重ねる（overlay_points）。
+    10 分ごとの cron は --points-only で CSV を取らずに重ね直すだけを行う。
 
 ソース:
     mdrr 最新値 CSV（mxtemsadext00_rct / mntemsadext00_rct）
@@ -20,10 +27,10 @@ import io
 import json
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from weatherlib import jma
+from weatherlib import jma, pointstore
 
 BASE = Path(__file__).resolve().parent
 DATA = BASE / "data"
@@ -55,6 +62,92 @@ def write_atomic(path: Path, text: str) -> None:
 def v(x: int) -> str:
     """×10 整数 → CSV セル（欠測 -999 は空欄）。"""
     return "" if x == -999 else str(x)
+
+
+def write_today(path_csv: Path, path_meta: Path, rows: list[dict], meta: dict) -> None:
+    f = io.StringIO()
+    w = csv.DictWriter(f, fieldnames=TODAY_FIELDS, lineterminator="\n")
+    w.writeheader()
+    w.writerows(rows)
+    write_atomic(path_csv, f.getvalue())
+    write_atomic(path_meta, json.dumps(meta, ensure_ascii=False, indent=1))
+
+
+def read_today(path_csv: Path, path_meta: Path) -> tuple[list[dict], dict]:
+    with path_csv.open(encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    return rows, json.loads(path_meta.read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------- 10 分ごとの重ね
+
+def obs_day(t: datetime) -> date:
+    """その時刻の値が属する観測日。0:00 は前日の 24 時（気象庁の表記）。"""
+    return (t - timedelta(minutes=1)).date()
+
+
+def counts_of(rows: list[dict]) -> dict:
+    """猛暑日などの地点数。重ねたあとの表から数え直す（build_today と同じ閾値）。"""
+    def n(col, pred):
+        return sum(1 for r in rows if r[col] != "" and pred(int(r[col])))
+    return {
+        "moushobi": n("tmax", lambda t: t >= 350),
+        "manatsubi": n("tmax", lambda t: t >= 300),
+        "natsubi": n("tmax", lambda t: t >= 250),
+        "mafuyubi": n("tmax", lambda t: t < 0),
+        "fuyubi": n("tmin", lambda t: t < 0),
+        "nettaiya": n("tmin", lambda t: t >= 250),
+    }
+
+
+def overlay_points(rows: list[dict], meta: dict) -> tuple[list[dict], dict]:
+    """CSV の表に、地点別 10 分値の「今日のここまでの最高・最低」を重ねる。
+
+    重ねるのは CSV と同じ観測日で、CSV より新しいスロットだけ。0 時の CSV は
+    前日 24 時の確定値なので、日付が変わってから 1 時台の CSV が出るまでは
+    CSV のまま（ページは「昨日の値」を出す）。毎正時 0 分のスロットも同じ理由で
+    使わない。今日の値が今年・当月・観測史上の記録を超えたら、その欄も今日に
+    する（CSV も次の毎時でそうなる。表の中で今日 ＞ 今年の最高、を作らない）。
+    重ねるものが無ければ、渡された表と meta をそのまま返す。
+    """
+    csv_time = datetime.fromisoformat(meta["source_time"])
+    day = obs_day(csv_time)
+    key_csv = csv_time.strftime("%Y%m%d%H%M")
+    slots = [s for s in pointstore.available_slots(day)
+             if s > key_csv and s[8:12] != "0000" and s[:8] == f"{day:%Y%m%d}"]
+    if not slots:
+        return rows, meta
+    slot = slots[-1]
+    ext = pointstore.extremes(slot)
+    if not ext:
+        return rows, meta
+
+    today_iso = day.isoformat()
+    n = 0
+    out = []
+    for r in rows:
+        r = dict(r)
+        e = ext.get(r["amedas"])
+        if e:
+            for k, higher in (("tmax", True), ("tmin", False)):
+                if k not in e:
+                    continue
+                val = e[k]
+                r[k], r[f"{k}_at"] = str(val), e[f"{k}_at"]
+                r[f"{k}_q"] = r[f"{k}_q"] or "4"        # 日中の CSV と同じ「速報」
+                for rec in (f"year_{k}", f"month_{k}", f"record_{k}"):
+                    old = r[rec]
+                    if old == "" or (val > int(old) if higher else val < int(old)):
+                        r[rec], r[f"{rec}_date"] = str(val), today_iso
+            n += 1
+        out.append(r)
+
+    slot_time = datetime.strptime(slot, "%Y%m%d%H%M")
+    new_meta = dict(meta, source_time=slot_time.isoformat(timespec="minutes"),
+                    counts=counts_of(out),
+                    points={"slot": slot_time.isoformat(timespec="minutes"),
+                            "csv_time": meta["source_time"], "stations": n})
+    return out, new_meta
 
 
 def load_stations() -> dict:
@@ -234,9 +327,31 @@ def publish_current(cur: dict) -> None:
         write_atomic(PUBLIC / "data" / "current.json", body)
 
 
+def apply_points(rows: list[dict], meta: dict) -> None:
+    """重ねて today.csv / today_meta.json を書く（毎時も 10 分ごとも同じ道を通る）。"""
+    rows2, meta2 = overlay_points(rows, meta)
+    write_today(DATA / "today.csv", DATA / "today_meta.json", rows2, meta2)
+    p = meta2.get("points")
+    if p:
+        log(f"今日の最高・最低を地点別 10 分値で更新: {p['slot']} 現在 / {p['stations']} 地点"
+            f"（CSV は {p['csv_time']}）")
+    else:
+        log(f"地点別 10 分値に CSV（{meta['source_time']}）より新しい値なし。CSV のまま")
+
+
 def main() -> int:
     started = time.monotonic()
     stations = load_stations()
+
+    # 今日の最高・最低だけを地点別 10 分値で重ね直す（10 分ごとの cron 用）。
+    # 気象庁へは取りに行かない。元の CSV（today_rct.csv）は毎時の実行が作る。
+    if "--points-only" in sys.argv:
+        base_csv, base_meta = DATA / "today_rct.csv", DATA / "today_rct_meta.json"
+        if not (base_csv.is_file() and base_meta.is_file()):
+            log("data/today_rct.csv がありません。先に fetch_data.py（毎時）を流してください")
+            return 1
+        apply_points(*read_today(base_csv, base_meta))
+        return 0
 
     # 現在値だけを更新する軽量モード（10 分ごとの cron 用）。
     # 確定値 CSV と予報 JSON（55 office）は毎時で十分なので回さない。
@@ -254,15 +369,10 @@ def main() -> int:
     a2c = stations["index"]["amedas_to_code"]
 
     rows, meta = build_today(a2c)
-    f = io.StringIO()
-    w = csv.DictWriter(f, fieldnames=TODAY_FIELDS, lineterminator="\n")
-    w.writeheader()
-    w.writerows(rows)
-    write_atomic(DATA / "today.csv", f.getvalue())
-    write_atomic(DATA / "today_meta.json",
-                 json.dumps(meta, ensure_ascii=False, indent=1))
-    log(f"data/today.csv を出力（{len(rows)} 地点）/ today_meta.json "
-        f"(counts: {meta['counts']})")
+    write_today(DATA / "today_rct.csv", DATA / "today_rct_meta.json", rows, meta)
+    log(f"data/today_rct.csv を出力（{len(rows)} 地点, CSV {meta['source_time']} 現在）"
+        f" (counts: {meta['counts']})")
+    apply_points(rows, meta)
 
     if forecast_is_fresh(datetime.now()):
         log("forecast.json は最新の発表分のため再取得を省略")

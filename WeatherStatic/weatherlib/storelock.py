@@ -38,13 +38,14 @@ def lock_path() -> Path:
 
 
 @contextmanager
-def store_lock(timeout: float = DEFAULT_TIMEOUT, *, log=None):
+def store_lock(timeout: float = DEFAULT_TIMEOUT, *, log=None, path: Path | None = None):
     """observations.nc を書く区間を直列化する。
 
     log に呼び出し可能を渡すと、待たされたときだけ 1 行報告する
     （待ち時間が見えないと「固まった」と誤解されるため）。
+    path を渡すと別の区間のロックとして使える（build_site.py の生成と公開など）。
     """
-    path = lock_path()
+    path = path or lock_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o664)
     start = time.monotonic()
@@ -60,14 +61,14 @@ def store_lock(timeout: float = DEFAULT_TIMEOUT, *, log=None):
                 elapsed = time.monotonic() - start
                 if elapsed >= timeout:
                     raise TimeoutError(
-                        f"ストアロック {path} を {timeout:.0f} 秒待っても取得できなかった"
+                        f"ロック {path} を {timeout:.0f} 秒待っても取得できなかった"
                     ) from exc
                 if not waited and log:
-                    log(f"ストアロック待ち（他のジョブが書き込み中）: {path}")
+                    log(f"ロック待ち（他のジョブが実行中）: {path}")
                     waited = True
                 time.sleep(POLL_INTERVAL)
         if waited and log:
-            log(f"ストアロックを取得（{time.monotonic() - start:.0f} 秒待機）")
+            log(f"ロックを取得（{time.monotonic() - start:.0f} 秒待機）")
         os.ftruncate(fd, 0)
         os.write(fd, f"{os.getpid()}\n".encode())
         yield path

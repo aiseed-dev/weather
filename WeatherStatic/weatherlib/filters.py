@@ -53,10 +53,12 @@ def bcolor(d: int) -> str:
 
 # --- ViewUtility.時間表示 : "2024年7月5日14時" 形式。0時は前日24時扱い --------
 def jikan(dt: datetime) -> str:
-    if dt.hour == 0:
+    if dt.hour == 0 and dt.minute == 0:
         d1 = dt - timedelta(hours=1)
         return f"{d1.year}年{d1.month}月{d1.day}日24時"
-    return f"{dt.year}年{dt.month}月{dt.day}日{dt.hour}時"
+    # 今日の最高・最低は地点別 10 分値で 10 分ごとに更新されるので分まで出す
+    minute = f"{dt.minute}分" if dt.minute else ""
+    return f"{dt.year}年{dt.month}月{dt.day}日{dt.hour}時{minute}"
 
 
 # --- Jma.JmaWeatherCodeToImage : 天気コード → 予報画像番号 --------------------

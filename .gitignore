@@ -232,9 +232,10 @@ WeatherStatic/logs/
 WeatherStatic/dist/
 WeatherStatic/public_amedas/
 WeatherStatic/preview/
-# release.py が tgsvr から取り寄せる生成物（公開する実体）
+# release.py が deb2 から取り寄せる生成物（公開する実体）
 WeatherStatic/release/
 WeatherStatic/store.lock
+WeatherStatic/public.lock
 
 # 旧 WeatherCore の PostgreSQL ダンプ（157MB）。backfill_daily.py の入力で、
 # 一度取り込めば再取得の必要がない。git に入れる大きさではない

@@ -89,16 +89,14 @@ cron が止まっているときや、deb2 を経由せず確かめたいとき�
 `crontab -l` と見比べて、足りないものだけを足すこと。
 
 ```cron
-# 10分毎: 地点別 10 分値を集める（速報）
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_points.py >> $HOME/dev/weather/logs/points.log 2>&1
 # 10分毎: 10 分値を複製し半月 NetCDF へ封入
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_amedas_mirror.py >> $HOME/dev/weather/logs/amedas_mirror.log 2>&1
 # 10分毎: 現在値だけ更新（トップページが読む public/data/current.json）
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
-# 10分毎: 実況ページを作って公開。収集の後に回す
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && ../.venv/bin/python generate_status.py && ../.venv/bin/python build_site.py --skip-build --publish >> $HOME/dev/weather/logs/status.log 2>&1
-# 毎時50分: 最新CSV・予報・現在天気 → サイト再生成 → 公開
-52 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_data.py && ../.venv/bin/python build_site.py --publish >> $HOME/dev/weather/logs/publish.log 2>&1
+# 10分毎: 地点別 10 分値を集め、今日の最高・最低を重ね、サイトを作って公開
+*/10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && { ../.venv/bin/python fetch_points.py; ../.venv/bin/python fetch_data.py --points-only && ../.venv/bin/python build_site.py --publish; } >> $HOME/dev/weather/logs/status.log 2>&1
+# 毎時52分: 最新CSV・予報・現在天気 → サイト再生成 → 公開
+52 * * * * cd $HOME/dev/weather/WeatherStatic && { ../.venv/bin/python fetch_data.py && ../.venv/bin/python build_site.py --publish; } >> $HOME/dev/weather/logs/publish.log 2>&1
 # 日次 1:30: 統計の蓄積（気象庁の 1 時更新の後）
 30 1 * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python accumulate.py >> $HOME/dev/weather/logs/accumulate.log 2>&1
 # 毎月2日 03:30: 前月分を etrn 確定値で置換
@@ -113,8 +111,19 @@ cron が止まっているときや、deb2 を経由せず確かめたいとき�
 | 段 | 前提 | 入れる行 |
 |---|---|---|
 | 1. 収集だけ | なし | `fetch_amedas_mirror.py`、`fetch_data.py --current-only`、`accumulate.py`、月次 `backfill_etrn.py`、毎時は公開なしの `fetch_data.py` 単独 |
-| 2. 公開 | `~/.config/cloudflare/pages.env`（Pages + R2） | 毎時の行を `fetch_data.py && build_site.py --publish` に差し替え、実況の行（`generate_status.py && build_site.py --skip-build --publish`）を足す |
-| 3. 速報 | Worker のデプロイと `WEATHER_WORKER_*` の 2 行 | `fetch_points.py` |
+| 2. 公開 | `~/.config/cloudflare/pages.env`（Pages + R2） | 毎時の行を上の一覧のものにする。10 分ごとの行は `fetch_points.py;` を抜いた形（`{ fetch_data.py --points-only && build_site.py --publish; }`） |
+| 3. 速報 | Worker のデプロイと `WEATHER_WORKER_*` の 2 行 | 10 分ごとの行を上の一覧のもの（先頭に `fetch_points.py;`）にする |
+
+**コマンドは `{ …; }` でまとめてからログへ送る。** `a && b >> log` と書くと
+ログに入るのは `b` の出力だけで、`a` の出力やエラーは cron のメールに流れて
+見えなくなる（2026-10-05 まで一覧がこの形だった）。
+
+10 分ごとの行の `fetch_points.py` の後ろが `;` なのは、一部のエリアが取れずに
+終了コード 1 になっても、取れた分で生成と公開を続けるため。
+
+**生成と公開は `build_site.py` 自身が `public.lock` で直列にする。** 毎時 52 分の
+行と 10 分ごとの行（50 分 ＋ 90 秒待ち）はほぼ同時に走るが、片方は待たされる。
+15 分待って取れなければその回は見送る。
 
 投票集計は KV を用意してから。
 
@@ -164,8 +173,20 @@ etrn から後追いできるのは日別の気温と降水だけで、湿度・
 - 気象庁の `latest_time.txt` で最新スロットを知る（1 リクエスト）
 - エリアごとに Worker を呼ぶ。地点の多い県は 1 回 30 地点で切り、
   `{area}-1.json` / `-2.json` と**別ファイル**に置く
+- Worker は R2 に置いたのと同じバイト列を応答で返す（`"echo": true`）。
+  deb2 はそれを手元の `public_amedas/point/` に書く。R2 の公開設定も
+  取り寄せも要らない。手元は直近 3 日分だけ残す（1 日 約 110MB）
 - 失敗したエリアは呼び直す（結果がエリア単位で返る）
 - 地点別に無い要素（積雪・天気）は map を 1 本取って補う
+
+**今日の最高・最低は 10 分ごと。** 気象庁の最新値 CSV は 1 時間ごと（毎時
+50 分頃に前の正時の分）だが、地点別 10 分値には「その時刻までの今日の
+最高・最低」と起時（UTC）が入っている。`fetch_data.py` は CSV の表を
+`data/today_rct.csv` に元として残し、地点別の値を重ねたものを `today.csv`
+にする。10 分ごとの行は `--points-only` で、CSV を取らずに重ね直すだけを行う。
+重ねるのは CSV と同じ観測日で、CSV より新しいスロットだけ（0 時の CSV は
+前日 24 時の確定値なので、1 時台の CSV が出るまでは CSV のまま）。
+10 分ごとの気温の最大では代わりにならない（最高は 10 分の間にも出る）。
 
 `weather` は毎正時のスロットにしか入らない（実測: 正時 150 地点・非正時 0）。
 要素の一覧は持たず、来たものをそのまま重ねる。**欠測のとき要素はキーごと

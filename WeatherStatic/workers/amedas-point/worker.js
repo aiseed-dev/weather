@@ -47,6 +47,14 @@
  * 大きさ（実測 2026-08-29 / 東京 44132）: 1 スロット約 528 バイト × 18 スロット
  * ＝ 1 地点 1 ブロック約 9.5KB。エリア 1 本は平均 190KB・最大 450KB。
  *
+ * 置いたものを呼び手にも返す（"echo": true）
+ * ------------------------------------------
+ * deb2 は実況ページを作るために同じデータを手元に要る。R2 から取り寄せると
+ * バケットの公開設定と 2 度目の取得が要るので、置いたバイト列をそのまま
+ * 応答の本文で返す。集計は応答ヘッダ（X-Stored / X-Missing / X-Error /
+ * X-Written）で返し、本文は R2 に置いたものと 1 バイトも違わない。
+ * 1 地点も取れなかったとき（何も置かないとき）は本文を空にする。
+ *
  * デプロイ（ユーザー実行。合言葉は環境変数から読まれ、表示されない）:
  *   TOKEN=... cf-publish worker deploy . --secret TOKEN --workers-dev
  */
@@ -113,16 +121,17 @@ async function handle(env, name, stations, day, hour) {
 
   // 1 地点も取れなければ置かない。空の {} で上書きすると、直前まで取れていた
   // 内容を消してしまう（気象庁側の一時的な不調で全滅することがある）
-  if (tally.stored === 0) return { name, ...tally, written: 0 };
+  if (tally.stored === 0) return { result: { name, ...tally, written: 0 }, bytes: null };
 
-  await env.AMEDAS.put(`point/${day}/${hour}/${name}.json`, combine(parts), {
+  const bytes = combine(parts);
+  await env.AMEDAS.put(`point/${day}/${hour}/${name}.json`, bytes, {
     httpMetadata: {
       contentType: "application/json; charset=utf-8",
       // 進行中のブロックは上書きされ続けるので短命にする
       cacheControl: "public, max-age=600",
     },
   });
-  return { name, ...tally, written: 1 };
+  return { result: { name, ...tally, written: 1 }, bytes };
 }
 
 export default {
@@ -132,7 +141,11 @@ export default {
    * （Worker の再デプロイが要らない）。
    *
    *   POST /fetch
-   *   {"day":"20260829","hour":"15","name":"岩手-1","stations":["33006", …]}
+   *   {"day":"20260829","hour":"15","name":"岩手-1","stations":["33006", …],
+   *    "echo": true}
+   *
+   *   echo なし … 本文は集計の JSON
+   *   echo あり … 本文は R2 に置いたバイト列、集計は X-* ヘッダ
    */
   async fetch(request, env) {
     if (request.method !== "POST" || new URL(request.url).pathname !== "/fetch") {
@@ -148,7 +161,7 @@ export default {
       return new Response("bad request", { status: 400 });
     }
     // name は置き先のファイル名（"岩手" か "岩手-1"）。分割は呼ぶ側が決める。
-    const { name, stations, day, hour } = body || {};
+    const { name, stations, day, hour, echo } = body || {};
     if (!name || /[/\\]/.test(name) || !Array.isArray(stations) || !stations.length
         || !/^\d{8}$/.test(day || "") || !/^\d{2}$/.test(hour || "")) {
       return new Response("name と stations(配列) と day(YYYYMMDD) と hour(HH) が要る",
@@ -161,7 +174,17 @@ export default {
                           { status: 400 });
     }
     try {
-      return Response.json({ ok: 1, ...await handle(env, name, stations, day, hour) });
+      const { result, bytes } = await handle(env, name, stations, day, hour);
+      if (!echo) return Response.json({ ok: 1, ...result });
+      return new Response(bytes, {
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Stored": String(result.stored),
+          "X-Missing": String(result.missing),
+          "X-Error": String(result.error),
+          "X-Written": String(result.written),
+        },
+      });
     } catch (e) {
       return new Response(String(e), { status: 500 });
     }

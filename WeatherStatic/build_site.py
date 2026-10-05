@@ -146,7 +146,22 @@ def publish(project: str, dry: bool) -> int:
     return 0
 
 
+# 生成と公開を直列にするロック。毎時の行（52 分）と 10 分ごとの行が重なると、
+# 2 つの生成が同時に public/ を書き、半端な状態が公開されうる。
+PUBLIC_LOCK = BASE / "public.lock"
+LOCK_TIMEOUT = 900       # 15 分待っても取れなければ、その回は見送る（次の回が拾う）
+
+
 def main() -> int:
+    from weatherlib.storelock import store_lock
+    try:
+        with store_lock(LOCK_TIMEOUT, log=print, path=PUBLIC_LOCK):
+            return _main()
+    except TimeoutError as e:
+        return fail(f"{e}。この回は見送ります（次の回が生成・公開します）。")
+
+
+def _main() -> int:
     ap = argparse.ArgumentParser(description="site を生成して点検し、必要なら公開する")
     ap.add_argument("--skip-build", action="store_true", help="生成を飛ばして点検だけ")
     ap.add_argument("--publish", action="store_true",
