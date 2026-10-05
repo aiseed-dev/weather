@@ -24,6 +24,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from weatherlib.filters import FILTERS, bcolor
+from weatherlib import siteurl
 from weatherlib.season import is_season, is_summer, winter_start
 from weatherlib.stations import MAIN_STATIONS
 
@@ -270,20 +271,24 @@ def copy_assets() -> None:
         raise SystemExit(f"アセットが欠けています: {', '.join(missing)}（{WWWROOT} 配下）")
     for rel in ASSET_PATHS:
         src = WWWROOT / rel
-        dst = PUBLIC / rel
-        if src.is_dir():
-            shutil.copytree(src, dst, dirs_exist_ok=True)
-        elif src.is_file():
+        files = [f for f in src.rglob("*") if f.is_file()] if src.is_dir() else [src]
+        for f in files:
+            dst = PUBLIC / siteurl.path(f.relative_to(WWWROOT).as_posix())
+            if dst.is_file() and dst.stat().st_size == f.stat().st_size \
+                    and dst.stat().st_mtime >= f.stat().st_mtime:
+                continue
             dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dst)
+            shutil.copy2(f, dst)
     print("  [assets] Images / favicon.ico / robots.txt をコピーしました")
 
 
-def write(path_rel: str, html: str) -> None:
-    out = PUBLIC / path_rel
+def write(path_rel: str, html: str, quiet: bool = False) -> None:
+    """ページを書き出す。パスとページ内のサイト内リンクは小文字にする（weatherlib.siteurl）。"""
+    out = PUBLIC / siteurl.path(path_rel)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
-    print(f"  [html] {path_rel}  ({len(html):,} bytes)")
+    out.write_text(siteurl.links(html), encoding="utf-8")
+    if not quiet:
+        print(f"  [html] {siteurl.path(path_rel)}  ({len(html):,} bytes)")
 
 
 def season_period(now: datetime) -> tuple[datetime, datetime]:
@@ -716,6 +721,11 @@ def build_rankings(env: Environment, today: dict, meta: dict, stations: dict) ->
 
 # ---------------------------------------------------------------- ページ: 夏/冬ランキング
 
+# 夏・冬のページの種類（URL の綴り。旧サイトと同じ）
+SEASON_KINDS = {"summer": ("Ranking", "SummerDayList", "Hottest", "HottestList"),
+                "winter": ("Ranking", "WinterDayList", "Coldest", "LowestList")}
+
+
 def closed_stations(recs: dict) -> list[tuple[int, dict]]:
     """観測ストアにあって今の地点一覧（master/stations.json）に無い地点。
 
@@ -887,7 +897,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
     sy = year or now.year
     s = (season(datetime(sy, 1, 1), min(datetime(sy, 12, 31), yesterday))
          if part in (None, "summer") else None)
-    if s:
+    if s and (s["n_stations"] or not year):          # 過去の年は観測した地点が無ければ作らない
         subnav = [(f"/Summer/Ranking{sfx}", "猛暑日日数ランキング"),
                   (f"/Summer/SummerDayList{sfx}", "猛暑日の日数一覧"),
                   (f"/Summer/Hottest{sfx}", "最高気温ランキング"),
@@ -973,7 +983,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
     wy_from = f"{wy_start.year}年{wy_start.month}月{wy_start.day}日"
     w = (season(wy_start, min(datetime(wy_start.year + 1, 7, 31), yesterday))
          if part in (None, "winter") else None)
-    if w:
+    if w and (w["n_stations"] or not year):
         wyear = wy_start.year + 1
         subnav = [(f"/Winter/Ranking{sfx}", "冬日日数ランキング"),
                   (f"/Winter/WinterDayList{sfx}", "冬日の日数一覧"),
@@ -1053,6 +1063,88 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
             groups=pref_groups(cold_pairs)))
 
 
+def build_past_seasons(env: Environment, meta: dict, stations: dict, hist: History) -> None:
+    """過去の年の夏・冬のページ（/summer/ranking/2018/ など。旧サイトの年つき URL）。
+
+    今季のページと同じ build_season_pages に年を渡して作る。過去の年はほぼ変わらない
+    ので、年の日別データ（dist/daily/years/）か作り方（テンプレート・コード・CSS）が
+    変わった年だけ作り直す。夏はその年、冬（寒候年）は前年と その年のデータに依る。
+    今年の夏・今季の冬は年なしのページ（_redirects で送る）。"""
+    import hashlib
+    import inspect
+    state_p = BASE / "data" / "past_seasons.json"
+    years_dir = BASE / "dist" / "daily" / "years"
+    sig = {p.stem: [p.stat().st_size, p.stat().st_mtime_ns] for p in years_dir.glob("*.nc")}
+    if not sig:
+        return
+    h = hashlib.sha256(env.globals.get("css_version", "").encode())
+    for f in sorted((BASE / "templates" / "season").glob("*.html")) + [BASE / "templates" / "_layout.html"]:
+        h.update(f.read_bytes())
+    for fn in (build_season_pages, season_stations, closed_stations):
+        h.update(inspect.getsource(fn).encode())
+    key = h.hexdigest()
+    try:
+        old = json.loads(state_p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        old = {}
+    full = old.get("key") != key
+    changed = {int(y) for y in sig if full or old.get("years", {}).get(y) != sig[y]}
+    now = datetime.fromisoformat(meta["source_time"])
+    first = min(int(y) for y in sig)
+    summer = [y for y in range(first, now.year) if y in changed]
+    winter = [y for y in range(first + 1, winter_start(now).year + 1)
+              if y in changed or (y - 1) in changed]
+    n = 0
+
+    def emit_for(y):
+        def emit(path, html):
+            nonlocal n
+            write(path.replace("/index.html", f"/{y}/index.html"), html, quiet=True)
+            n += 1
+        return emit
+    for part, years in (("summer", summer), ("winter", winter)):
+        for y in years:
+            before = n
+            build_season_pages(env, meta, stations, hist, year=y, part=part, emit=emit_for(y))
+            if n == before:                        # 観測した地点が無い年。前に作ったページを消す
+                for kind in SEASON_KINDS[part]:
+                    shutil.rmtree(PUBLIC / part / kind.lower() / str(y), ignore_errors=True)
+    state_p.parent.mkdir(parents=True, exist_ok=True)
+    state_p.write_text(json.dumps({"key": key, "years": sig}), encoding="utf-8")
+    if n or full:
+        print(f"  [html] summer|winter/*/{{年}}/  夏 {len(summer)} 年・冬 {len(winter)} 年・{n} ページ"
+              f"（{'全部' if full else '変わった年'}）")
+
+
+def build_history(env: Environment, meta: dict, stations: dict, hist: History) -> None:
+    """過去の記録のページ（旧サイトの日ごと・月ごと・年ごとの URL）。
+
+    日ごと・月ごとのページは種類ごとの枠 1 枚と月ごとのデータ（weatherlib/history.py）。
+    旧 URL は _redirects の 200 で枠につなぐ（legacy_redirects）。年ごとの夏・冬の
+    ページは年ごとのファイル（build_past_seasons）。"""
+    import hashlib
+    from weatherlib import history as hx
+    js_version = hashlib.sha256((BASE / "assets" / "js" / "history.js").read_bytes()).hexdigest()[:10]
+    common = {"nav_active": "ranking", "build_year": datetime.now().year, "js_version": js_version}
+    src = "出典: 気象庁ホームページ（過去の気象データ・最新の気象データ）。気象庁のデータを編集・加工しています。"
+    for kind, title, info in (
+            ("day", "その日の猛暑日などの地点",
+             src + "直近の値は速報値で、後日確定値に置き換わることがあります。連続日数は 2 日以上の地点を"
+                   "載せています。「]」は資料不足値（観測が一部欠けた日の値）です。南鳥島と富士山は含めていません。"),
+            ("month", "月の日別の地点数",
+             src + "数字をクリックすると、その日に該当した地点の一覧を表示します。空欄はデータの無い日です。"
+                   "南鳥島と富士山は含めていません。"),
+            ("monthly", "月の気温のランキング",
+             src + "平均は日々の値の単純平均で、その期間の 8 割以上の日に値がある地点を対象にしています。"
+                   "資料不足値は平均に含めていません。")):
+        write(f"history/{kind}/index.html", env.get_template("history/shell.html").render(
+            **common, kind=kind, page_title=title, info_text=info))
+    targets = climate_targets(stations)
+    slugs = {str(c): s for c, r, _, s in targets if r["elements"].get("temp")}
+    hx.export(PUBLIC / "data" / "history", slugs, BASE / "data" / "history_state.json")
+    build_past_seasons(env, meta, stations, hist)
+
+
 # ---------------------------------------------------------------- ページ: 雨温図
 
 _CLIMATE_TARGETS: list | None = None
@@ -1067,7 +1159,8 @@ def legacy_slugs() -> dict[str, str]:
     p = BASE / "legacy" / "station_slugs.json"
     if not p.is_file():
         return {}
-    return json.loads(p.read_text(encoding="utf-8"))["slugs"]
+    # URL は小文字にそろえる（weatherlib.siteurl）。旧 URL の大文字は転送で小文字になる
+    return {c: s.lower() for c, s in json.loads(p.read_text(encoding="utf-8"))["slugs"].items()}
 
 
 def climate_targets(stations: dict) -> list:
@@ -1189,9 +1282,7 @@ def build_climate(env: Environment, stations: dict) -> None:
             nav_active="climate", build_year=datetime.now().year,
             st=st, st_svg=uonzu_svg(st["name"], st["monthly"]),
             kennai=kennai_map[st["prec_no"]], main_links=main_links)
-        out = PUBLIC / "Climate" / "Chart" / st["slug"] / "index.html"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(html, encoding="utf-8")
+        write(f"Climate/Chart/{st['slug']}/index.html", html, quiet=True)
         n += 1
     print(f"  [html] Climate/Chart/*  ({n} 地点)")
 
@@ -1282,9 +1373,7 @@ def build_stations(env: Environment, stations: dict, hist: History) -> None:
             st=st, st_svg=svg, has_obs=has_obs,
             period_label=f"{start.month}/{start.day}〜{end.month}/{end.day}",
             kennai=by_prec[rec.get("etrn", {}).get("prec_no", 99)])
-        out = PUBLIC / "Stations" / "JP" / slug / "index.html"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(html, encoding="utf-8")
+        write(f"Stations/JP/{slug}/index.html", html, quiet=True)
         n_pages += 1
     print(f"  [html] Stations/JP/*  ({n_pages} 地点)")
 
@@ -1439,7 +1528,7 @@ def build_about(env: Environment) -> None:
 
 
 AMEDAS_SRC = BASE / "public_amedas"          # fetch_amedas_mirror.py の出力
-AMEDAS_URL = "Data/AMeDAS"
+AMEDAS_URL = "data/amedas"
 
 
 def _half_month(d: date) -> tuple[date, date]:
@@ -1588,7 +1677,7 @@ def build_data_amedas(env: Environment) -> None:
 
 
 DAILY_DIST = BASE / "dist" / "daily"              # export_dist.py の出力
-DAILY_URL = "Data/Daily"
+DAILY_URL = "data/daily"
 
 
 def build_data_daily(env: Environment) -> None:
@@ -1659,10 +1748,10 @@ def prune_station_pages(targets: list, stations: dict) -> None:
     同じ中身が 2 つ公開され続ける（2026-10-05、小文字の slug から旧サイトの
     URL 名に揃えたときに起きる）。この 2 つのディレクトリの、index.html だけを
     持つ地点ディレクトリに限って消す。"""
-    keep_of = {"Stations/JP": {slug for _, r, _, slug in targets if r["elements"].get("temp")},
-               "Climate/Chart": {slug for _, _, _, slug in targets},
+    keep_of = {"stations/jp": {slug for _, r, _, slug in targets if r["elements"].get("temp")},
+               "climate/chart": {slug for _, _, _, slug in targets},
                # 実況の地点ページ（generate_status.py）は同じ slug、平年値の無い地点はアメダス番号
-               "Status/Station": {slug for _, _, _, slug in targets}
+               "status/station": {slug for _, _, _, slug in targets}
                                  | {str(r.get("amedas")) for r in stations["stations"].values()}}
     n = 0
     for sub, keep in keep_of.items():
@@ -1678,24 +1767,30 @@ def prune_station_pages(targets: list, stations: dict) -> None:
     cdir = PUBLIC / "data" / "climate"
     if cdir.is_dir():
         for f in cdir.glob("*.json"):
-            if f.name != "index.json" and f.stem not in keep_of["Climate/Chart"]:   # index は選択用の索引
+            if f.name != "index.json" and f.stem not in keep_of["climate/chart"]:   # index は選択用の索引
                 f.unlink()
                 n += 1
     if n:
         print(f"  [seo] 今の地点に当たらない古い地点ページ・データ {n} 件を片付けました")
 
 
-def legacy_redirects(targets: list) -> list[str]:
+def legacy_redirects(targets: list, now: datetime | None = None) -> list[str]:
     """旧サイト（weather.time-j.net の WeatherCore）の URL を、新しいサイトの行き先へ送る。
 
-    地点ページ・雨温図は旧 URL 名のまま作るので転送は要らない（climate_targets）。
-    ここで送るのは、新しいサイトに同じ URL のページが無いもの:
+    URL はすべて小文字（weatherlib.siteurl）。大文字を含む要求は、先に小文字へ送られて
+    から（Cloudflare の転送ルール、無い環境では 404.html のスクリプト）ここに来るので、
+    ここでは小文字の URL だけを考えればよい。下の表は読みやすさのため旧サイトの表記で
+    書き、最後に小文字にそろえる。
+
+    地点ページ・雨温図は旧 URL 名（の小文字）で作るので転送は要らない（climate_targets）。
+    過去の年の夏・冬のページは年ごとのファイルがある（build_past_seasons）。
       301 … 同じ中身のページが別の URL にある（入口・平年値の月・予報図・廃止地点）
-      302 … まだ作っていない過去の年・月・日のページ。後で同じ URL のページを
-            作ったとき、恒久の転送がブラウザや検索エンジンに残らないよう一時にする
-    パターンは「1 区切り分の値がある」形（:year など）にする。/Summer/Ranking/* だと
-    /Summer/Ranking/ 自身にも当たり、転送が回り続けうる。
-    Pages の上限は固定 2,000 件・パターン付き 100 件。"""
+      302 … 今年・今季の年のページ（年なしのページへ。年が替われば行き先が変わる）
+      200 … 日ごと・月ごとの過去のページ。URL はそのままで、その種類のページの枠
+            （/history/…/）を返し、枠のスクリプトが URL を読んで月ごとのデータから描く
+    Pages の _redirects は実ファイルより先に効くので、ファイルのある URL に当たる行を
+    置かないこと。Pages の上限は固定 2,000 件・パターン付き 100 件。"""
+    now = now or datetime.now()
     lines = [
         # 入口（旧サイトには区画のトップがあった）
         "/Summer /Summer/Ranking/ 301",
@@ -1717,7 +1812,8 @@ def legacy_redirects(targets: list) -> list[str]:
         leg = json.loads(legacy_path.read_text(encoding="utf-8"))
         have_cl = {slug for _, _, _, slug in targets}                    # 雨温図のある地点
         have_st = {slug for _, r, _, slug in targets if r["elements"].get("temp")}  # 地点ページ
-        olds = set(leg["slugs"].values()) | {u["slug"] for u in leg.get("unmatched", [])}
+        olds = {s.lower() for s in leg["slugs"].values()} \
+            | {u["slug"].lower() for u in leg.get("unmatched", [])}
         for slug in sorted(olds):
             if slug not in have_st:
                 to = f"/Climate/Chart/{slug}/" if slug in have_cl else "/Stations/"
@@ -1726,40 +1822,63 @@ def legacy_redirects(targets: list) -> list[str]:
                 lines.append(f"/Climate/Chart/{slug} /Climate/ 301")
         # 旧サイトが自分のリンクで使っていた別名（akita・Tokyoold など）
         for alias, slug in leg.get("aliases", {}).items():
+            slug = slug.lower() if slug else None
             st_to = (f"/Stations/JP/{slug}/" if slug in have_st else
                      f"/Climate/Chart/{slug}/" if slug in have_cl else "/Stations/")
             cl_to = f"/Climate/Chart/{slug}/" if slug in have_cl else "/Climate/"
             lines.append(f"/Stations/JP/{alias} {st_to} 301")
             lines.append(f"/Climate/Chart/{alias} {cl_to} 301")
-    # まだ作っていない過去のページ（一時）。固定のもの
+    # 月の表・日のページの入口（区画だけの URL）
     lines += [
         "/Temperature/SummerMonth /Summer/Ranking/ 302",
         "/Temperature/SummerMonth/ /Summer/Ranking/ 302",
+        "/Temperature/SummerDay /Summer/Ranking/ 302",
+        "/Temperature/SummerDay/ /Summer/Ranking/ 302",
         "/Temperature/WinterMonth /Winter/Ranking/ 302",
         "/Temperature/WinterMonth/ /Winter/Ranking/ 302",
+        "/Monthly/Monthly /Monthly/Latest/ 302",
+        "/Monthly/Monthly/ /Monthly/Latest/ 302",
+        "/Monthly/MonthlyL /Monthly/Latest/ 302",
+        "/Monthly/MonthlyL/ /Monthly/Latest/ 302",
     ]
-    lines += [f"/Summer/SummerMonth{y} /Summer/Ranking/ 302" for y in range(2010, date.today().year + 1)]
+    # 今年・今季の年のページは年なしのページ（毎回作り直している）へ
+    summer_year = now.year
+    winter_year = winter_start(now).year + 1
+    for kind in SEASON_KINDS["summer"]:
+        lines.append(f"/Summer/{kind}/{summer_year} /Summer/{kind}/ 302")
+    for kind in SEASON_KINDS["winter"]:
+        lines.append(f"/Winter/{kind}/{winter_year} /Winter/{kind}/ 302")
+    # 旧サイトの夏の月ごとの日数（/Summer/SummerMonth2018）。その年の夏のページへ
+    for y in range(2010, now.year + 1):
+        to = f"/Summer/Ranking/{y}/" if y < summer_year else "/Summer/Ranking/"
+        lines.append(f"/Summer/SummerMonth{y} {to} 302")
     # ここからパターン付き。Pages は固定のものを先に置く決まり。
     # 名前付きの置き場所（:year）は転送先で使わないと無効になり（2026-10-05、
     # 使っていなかった行がすべて効かなかった）、クエリには差し込まれない
-    # （?year=:year は「:year」のまま出る）。なので * を使う。* は空にも当たり
-    # うるので、/Summer/Ranking/* だと一覧ページ自身に当たって回りかねない。
-    # 年・年月は必ず 2 で始まることを使い、/Summer/Ranking/2* のように書く
+    # （?year=:year は「:year」のまま出る）。なので * を使う
     lines.append("/Gfs/* /App/ 301")
     # 旧サイトでも 404 だった月別のリンク（旧サイト内の切れたリンク）。月別気温の一覧へ
     for kind in ("MonthlyHigh", "MonthlyLow", "MonthlyMean"):
         lines.append(f"/Monthly/{kind}/* /Monthly/ 301")
-    for kind in ("Ranking", "SummerDayList", "Hottest", "HottestList"):
-        lines.append(f"/Summer/{kind}/2* /Summer/{kind}/ 302")
-    for kind in ("Ranking", "WinterDayList", "Coldest", "LowestList"):
-        lines.append(f"/Winter/{kind}/2* /Winter/{kind}/ 302")
     lines += [
-        "/Monthly/Monthly/2* /Monthly/Latest/ 302",
-        "/Monthly/MonthlyL/2* /Monthly/Latest/ 302",
-        "/Temperature/SummerDay/* /Temperature/HighsList/ 302",
-        "/Temperature/SummerMonth/* /Summer/Ranking/ 302",     # 空のときは上の固定の行が先に当たる
+        "/Temperature/SummerDay/* /history/day/ 200",
+        "/Temperature/SummerMonth/* /history/month/ 200",
+        "/Monthly/Monthly/* /history/monthly/ 200",
+        "/Monthly/MonthlyL/* /history/monthly/ 200",
         "/Temperature/WinterMonth/* /Winter/Ranking/ 302",
     ]
+
+    # 小文字にそろえ、行き先が自分自身になった行（旧サイトの別名 abashiri など）と
+    # 重複を除く。末尾のスラッシュだけ違う行も除く（Pages はスラッシュを補うので回る）
+    out, seen = [], set()
+    for l in lines:
+        src, dst, *rest = l.split()
+        src, dst = siteurl.url(src), siteurl.url(dst)
+        if src.rstrip("/") == dst.rstrip("/") or src in seen:
+            continue
+        seen.add(src)
+        out.append(" ".join([src, dst, *rest]))
+    lines = out
 
     def is_dyn(l: str) -> bool:
         return ":" in l.split()[0] or "*" in l.split()[0]
@@ -1768,6 +1887,7 @@ def legacy_redirects(targets: list) -> list[str]:
     for l in lines:
         src, dst = l.split()[:2]
         assert not re.search(r":[A-Za-z]", src), f"名前付きの置き場所は使わない: {l}"
+        assert src == src.lower() and dst == dst.lower(), f"URL は小文字: {l}"
         if "*" in src:   # 転送先が自分のパターンに当たると回り続ける（* は空にも当たるとみなす）
             assert not re.fullmatch(re.escape(src).replace(r"\*", ".*"), dst), f"転送先が自分に当たる: {l}"
     n_dyn = sum(1 for l in lines if is_dyn(l))
@@ -1795,7 +1915,7 @@ def build_seo(env: Environment, stations: dict) -> None:
     today = date.today().isoformat()
     xml = ['<?xml version="1.0" encoding="UTF-8"?>',
            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
-    xml += [f"<url><loc>{origin}{u}</loc><lastmod>{today}</lastmod></url>" for u in urls]
+    xml += [f"<url><loc>{origin}{siteurl.url(u)}</loc><lastmod>{today}</lastmod></url>" for u in urls]
     xml.append("</urlset>")
     (PUBLIC / "sitemap.xml").write_text("\n".join(xml), encoding="utf-8")
     print(f"  [seo] sitemap.xml ({len(urls)} URL)")
@@ -1824,11 +1944,37 @@ def build_seo(env: Environment, stations: dict) -> None:
         "",
     ]), encoding="utf-8")
 
+    # 大文字を含む URL は小文字へ（URL は小文字にそろえている。weatherlib.siteurl）。
+    # 本番は Cloudflare の転送ルールが先に 301 で送るので、ここに来るのはルールの無い
+    # 環境（pages.dev など）だけ
     write("404.html",
           '<!doctype html><meta charset="utf-8"><title>404</title>'
+          '<script>var p=location.pathname;if(p!==p.toLowerCase())'
+          'location.replace(p.toLowerCase()+location.search+location.hash)</script>'
           '<body style="font-family:sans-serif;text-align:center;padding:60px">'
           '<h1>ページが見つかりません</h1>'
           '<p><a href="/">個人開発気象統計 トップへ</a></p></body>')
+
+
+def sweep_uppercase() -> None:
+    """public/ から大文字を含むパスを消す。
+
+    URL は小文字にそろえたので、生成はもう大文字のパスに書かない。残っているのは
+    小文字にする前に書いたもの（/Summer/ など）で、置いておくと同じページが 2 つの
+    URL で公開される。小文字への移行の後始末と、以後の点検を兼ねる。"""
+    n = 0
+    for p in sorted(PUBLIC.rglob("*"), key=lambda x: len(x.parts), reverse=True):
+        rel = p.relative_to(PUBLIC).as_posix()
+        if rel == rel.lower():
+            continue
+        if p.is_dir() and not p.is_symlink():
+            if not any(p.iterdir()):
+                p.rmdir()
+        else:
+            p.unlink()
+            n += 1
+    if n:
+        print(f"  [seo] 大文字を含む古いパス {n} 件を片付けました（URL は小文字）")
 
 
 def main() -> None:
@@ -1881,9 +2027,11 @@ def main() -> None:
         build_data_amedas(env)
         build_data_daily(env)
         build_seo(env, stations)
+        build_history(env, meta, stations, hist)
         build_home(env, today, meta, fc, stations, hist)
     finally:
         hist.close()
+    sweep_uppercase()
     print("完了: public/ に出力しました")
 
 

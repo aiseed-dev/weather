@@ -150,38 +150,33 @@ backfill_etrn が自前で使う。**cron に flock を書く必要はない。*
 - accumulate は 40 分待って取れなければその回を見送る（7 日窓なので次回が拾う）
 - バックフィルは既定 1 時間待つ。その間 accumulate は見送られる
 
-## サーバー（deb2 の FastAPI）
+## 公開先（Cloudflare Pages）と切り替え
 
-**しばらくは deb2 でサイトを配る。** 旧サイト（weather.time-j.net の WeatherCore）には、
-日ごと・月ごとの集計ページの URL が 2,000 件以上あり、静的に作ると組み合わせの数だけ
-ページが要る。旧サイトのリンクは大文字小文字も揺れている。`server/app.py` がそれを
-受け持つ。生成（`build_site.py`）の流れはそのままで、サーバーは生成済みの `public/` を
-読むだけ。
+**サイトは静的ファイル（`public/`）だけでできていて、本番は Cloudflare Pages。**
+旧サイトの日ごと・月ごとの集計ページは、種類ごとの枠 ＋ 月ごとのデータで出し
+（`docs/web.md` の「過去の記録のページ」）、URL は小文字にそろえた（同「旧サイトの
+URL との互換」）。deb2 は作って公開する側に専念し、deb2 が止まっても最後に公開した
+内容が見え続ける。
 
-1 つの入口で、次の順に判定する。
+旧システムから `weather.time-j.net` を切り替える手順（運用者の作業）:
 
-1. 生成済みのファイル（`public/`）がその URL にあれば返す（ディレクトリはスラッシュ付きへ）
-2. 過去のページならその場で作る。いまあるのは次のとおり
-   - その日の猛暑日などの地点 `/Temperature/SummerDay/{a|b|c|d}{YYYYMMDD}` と、
-     月の日ごとの地点数 `/Temperature/SummerMonth/{a|b|c|d}/{月}`
-     （`server/history.py`。配布用の日別データ `dist/daily/years/` から）。
-     南鳥島と富士山は入れない（`DAY_EXCLUDE`。月平均のランキングと夏・冬のページには入れる）
-   - 月の平均気温のランキング `/Monthly/Monthly/{YYYYMM}`（高い順）・
-     `/Monthly/MonthlyL/{YYYYMM}`（低い順）（同上）
-   - 過去の年の夏・冬のページ `/Summer/{Ranking|SummerDayList|Hottest|HottestList}/{年}`・
-     `/Winter/{Ranking|WinterDayList|Coldest|LowestList}/{年}`（冬は寒候年。生成側の
-     `build_season_pages` に年を渡して作るので、今季のページと同じ計算。過去の年は
-     廃止された地点も載せる）
+1. 公開前の点検: deb2 で `python check_legacy_urls.py`（旧 URL 4,154 件がすべて着くこと）
+2. Pages のプロジェクト `weather` にカスタムドメイン `weather.time-j.net` を足す
+   （Workers & Pages → weather → カスタムドメイン。DNS は Cloudflare が案内する）
+3. time-j.net のゾーンに「URL を小文字へ」の転送ルールを足す（`docs/web.md` に式がある）
+4. 切り替え後に、旧 URL をいくつか大文字のまま開いて、小文字の URL に 301 で着くことを確かめる
 
-   資料不足値（気象庁の品質 4 以下）は気象庁と同じに扱う。その日の地点の一覧には
-   「]」を付けて載せ、月平均・期間の極値・日数には使わない。旧サイトとの突き合わせ
-   （2018 年の各ページ・2014 年冬の一覧）では、この扱いで値がほぼ一致する。残る差は
-   地点名の改称（加賀菅谷→加賀中津原など）、元データの違い（旧サイトのデータに無い日が
-   あり、連続日数が途切れるなど）、旧サイトの冬の一覧に夏の値が混じっていた地点
-   （木曽福島・栗栖川）
-3. 生成済みの `_redirects` に当たれば転送（Pages と同じ規則）
-4. 大文字小文字だけ違うファイルがあれば正しい URL へ 301
-5. どれにも当たらなければ 404
+### deb2 の FastAPI（つなぎ。使わなくてもよい）
+
+`server/app.py` は `public/` を Pages と同じ規則で返すだけのサーバー。ページを
+作ることはしない。Pages を使わずに deb2 から配るときや、手元で公開前の見た目を
+確かめるときに使う。判定の順は Pages と同じ。
+
+1. 大文字を含む URL は小文字へ 301（本番では Cloudflare の転送ルールの役目）
+2. 生成済みの `_redirects` に当たれば、その行のとおり。200 は URL を変えずに行き先を返す。
+   実ファイルより先に効く
+3. 生成済みのファイルがあれば返す（ディレクトリはスラッシュ付きへ 308）
+4. どれにも当たらなければ 404
 
 起動（試すとき）:
 
@@ -190,52 +185,21 @@ cd ~/dev/weather/WeatherStatic
 ../.venv/bin/uvicorn server.app:app --host 127.0.0.1 --port 8770
 ```
 
-常駐させるときは systemd のユーザー単位で（設定は運用者が行う）。
-`~/.config/systemd/user/weather-server.service` の例:
+deb2 から配る場合は、systemd のユーザー単位で常駐させ（`~/.config/systemd/user/
+weather-server.service`、`ExecStart=%h/dev/weather/.venv/bin/uvicorn server.app:app
+--host 127.0.0.1 --port 8770`、`sudo loginctl enable-linger dev`）、前段は deb2 で既に
+動いている Caddy の site ブロックで渡す（`reverse_proxy 127.0.0.1:8770`。Caddyfile は
+`02-web.sh` から作る決まり）。今のオリジン証明書は `*.aiseed.dev` と `aiseed.dev` だけが
+対象（2026-10-05 確認）。いずれも運用者の作業。
 
-```ini
-[Unit]
-Description=個人開発気象統計（FastAPI）
-After=network-online.target
+### 旧サイトとの突き合わせ（2026-10-05〜06）
 
-[Service]
-WorkingDirectory=%h/dev/weather/WeatherStatic
-ExecStart=%h/dev/weather/.venv/bin/uvicorn server.app:app --host 127.0.0.1 --port 8770 --workers 2
-Restart=always
-
-[Install]
-WantedBy=default.target
-```
-
-ログインしていなくても動かすには `sudo loginctl enable-linger dev` が要る。
-`systemctl --user daemon-reload && systemctl --user enable --now weather-server` で起動。
-コードを pull したあとは `systemctl --user restart weather-server`。
-
-**前段は deb2 で既に動いている Caddy。** 443 番で、Cloudflare の経由で来た接続を受ける
-（Cloudflare のオリジン証明書、接続元は `CF-Connecting-IP`）。`office.aiseed.dev` などと同じく、
-site ブロックを 1 つ足して FastAPI へ渡す。Caddyfile は `02-web.sh` から作る決まりなので、
-足すのはスクリプトの側（運用者の作業）。Tunnel は使わない。
-
-```caddy
-weather.time-j.net {
-	tls /etc/caddy/certs/time-j.net.pem /etc/caddy/certs/time-j.net.key
-	encode zstd gzip
-	header -Server
-	reverse_proxy 127.0.0.1:8770
-}
-```
-
-- 今のオリジン証明書（`origin.pem`）は `*.aiseed.dev` と `aiseed.dev` だけが対象
-  （2026-10-05 確認）。**試すだけなら aiseed.dev のサブドメイン**（例 `weather.aiseed.dev`、
-  `import cf` で足りる）で出せる
-- `weather.time-j.net` で出すときは、Cloudflare で time-j.net 用のオリジン証明書を発行して
-  置き、DNS を旧システムから deb2 へ切り替える（Cloudflare の経由＝プロキシを有効に）
-- サーバーの転送は相対 URL で返すので、前段の名前が変わっても直す所は無い
-- キャッシュは各応答の `Cache-Control` に従う（生成済みの HTML は 60 秒、確定した過去の
-  ページは 1 日）
-
-**可用性。** deb2 が止まるとサイトも止まる。Cloudflare Pages への公開は続けているので、
-そのあいだは `weather-dj7.pages.dev` で同じ内容（過去のページを除く）が見られる。
+過去の記録のページは、旧サイトの同じ URL と中身を突き合わせて確かめた（2018 年の
+日ごと 16 ページ・月ランキング・夏冬の各ページ、2014 年冬の一覧）。猛暑日・平均気温
+30 度以上の日ごとのページは地点・順位とも完全に一致。残る差は、地点名の改称
+（加賀菅谷→加賀中津原など）、元データの違い（旧サイトのデータに無い日があり、連続
+日数が途切れるなど）、旧サイトの冬の一覧に夏の値が混じっていた地点（木曽福島・栗栖川）、
+月ランキングで同じ順位の中の並びが入れ替わる所（数か所）。
 
 ## いつ何を取りに行くか
 

@@ -34,30 +34,59 @@
 
 ## ページの構成
 
+**URL はすべて小文字**（下の「旧サイトの URL との互換」）。
+
 | URL | 数 | 内容 | 作る人 | 更新 |
 |-----|----|------|--------|------|
 | `/` | 1 | 主要都市の現況・30 日推移・雨温図 | generate | 毎時 |
-| `/Temperature/…` | 4 | 今日の最高・最低（主要都市／各地） | generate | 毎時 |
-| `/Summer/…` `/Winter/…` | 8 | 暑さ・寒さのランキングと日数一覧 | generate | 毎時 |
-| `/Climate/Chart/{地点}` | 896 | 雨温図（平年値の気温と降水量） | generate | 毎時 |
-| `/Stations/JP/{地点}` | 896 | 地点別の気候値・30 日推移・平年値 | generate | 毎時 |
-| `/Monthly/…` | 26 | 月別気温（観測値・平年値） | generate | 毎時 |
-| `/Precipitation/` | 1 | 降水量ランキング | generate | 毎時 |
-| `/Status/Temperature/` `/Wind/` `/Precipitation/` `/Snow/` | 4 | 実況（10 分値） | generate_status | 10 分 |
-| `/Status/Station/{地点}` | 1,287 | 地点別の 10 分値 | generate_status | 10 分 |
-| `/Status/Records/` | 1 | 観測史上 1 位の更新状況 | generate_status | 10 分 |
-| `/Status/Lab/` | 1 | Python グラフ工房（ブラウザ内 Python） | generate_status | 10 分 |
-| `/About/` `/App/` | 2 | サイト説明・デスクトップ版の案内 | generate | 毎時 |
-| `/App/Develop/` | 1 | **アプリの開発マニュアル**（環境構築・構成・スキル・設計原則） | generate | 毎時 |
-| `/Data/Daily/` | 1 ＋ 配布ファイル | **日別の観測データ**（気温・降水・日照、1880 年〜、廃止地点を含む。年ごと・地点ごとの NetCDF） | generate（書き出しは export_dist） | ストアの更新時 |
-| `/Data/AMeDAS/` | 1 ＋ 配布ファイル | **アメダス 10 分値アーカイブ**（半月ごとの NetCDF・索引・地点一覧） | generate | 10 分 |
+| `/temperature/…` | 4 | 今日の最高・最低（主要都市／各地） | generate | 毎時 |
+| `/summer/…` `/winter/…` | 8 | 暑さ・寒さのランキングと日数一覧（今年・今季） | generate | 毎時 |
+| `/summer/…/{年}` `/winter/…/{年}` | 8 × 年 | 過去の年の同じページ（1881 年〜。冬は寒候年） | generate（`build_past_seasons`） | 年のデータが変わったとき |
+| `/temperature/summerday/{a〜d}{年月日}` | 枠 1 | その日の猛暑日などの地点（任意の日） | generate（枠）＋ ブラウザ | データは毎時 |
+| `/temperature/summermonth/{a〜d}/{月}` | 枠 1 | 月の日ごとの地点数（2010 年〜） | 同上 | 同上 |
+| `/monthly/monthly(l)/{年月}` | 枠 1 | 月の平均気温のランキング（任意の月） | 同上 | 同上 |
+| `/climate/chart/{地点}` | 896 | 雨温図（平年値の気温と降水量） | generate | 毎時 |
+| `/stations/jp/{地点}` | 896 | 地点別の気候値・30 日推移・平年値 | generate | 毎時 |
+| `/monthly/…` | 26 | 月別気温（観測値・平年値） | generate | 毎時 |
+| `/precipitation/` | 1 | 降水量ランキング | generate | 毎時 |
+| `/status/temperature/` `/wind/` `/precipitation/` `/snow/` | 4 | 実況（10 分値） | generate_status | 10 分 |
+| `/status/station/{地点}` | 1,287 | 地点別の 10 分値 | generate_status | 10 分 |
+| `/status/records/` | 1 | 観測史上 1 位の更新状況 | generate_status | 10 分 |
+| `/status/lab/` | 1 | Python グラフ工房（ブラウザ内 Python） | generate_status | 10 分 |
+| `/about/` `/app/` | 2 | サイト説明・デスクトップ版の案内 | generate | 毎時 |
+| `/app/develop/` | 1 | **アプリの開発マニュアル**（環境構築・構成・スキル・設計原則） | generate | 毎時 |
+| `/data/daily/` | 1 ＋ 配布ファイル | **日別の観測データ**（気温・降水・日照、1880 年〜、廃止地点を含む。年ごと・地点ごとの NetCDF） | generate（書き出しは export_dist） | ストアの更新時 |
+| `/data/amedas/` | 1 ＋ 配布ファイル | **アメダス 10 分値アーカイブ**（半月ごとの NetCDF・索引・地点一覧） | generate | 10 分 |
 
-**10 分ごとに作り直すのは Status 配下の 1,293 ページ**（43MB）。
+### 過去の記録のページ（枠 ＋ 月ごとのデータ）
+
+旧サイトの日ごと・月ごとのページは日付の数だけあり、1 枚ずつ作ると Pages の
+上限（2 万ファイル）を超える。そこで種類ごとに枠を 1 枚（`/history/day/`・
+`/history/month/`・`/history/monthly/`）作り、旧 URL は `_redirects` の **200**
+（URL はそのままで行き先の中身を返す）で枠につなぐ。枠のスクリプト
+（`assets/js/history.js`）が URL を読み、月ごとのデータを取ってきて表を描く。
+
+- データは `public/data/history/`（`weatherlib/history.py` の `export`）。集計はここで
+  済ませ、スクリプトは順位を付けて並べるだけ。形はモジュールの先頭に書いてある
+  - `{年}/{月}.json` その月の日ごと・種類ごとの地点（大きい月で約 660KB、圧縮して約 180KB）
+  - `{年}/monthly.json` 月の平均気温のランキング
+  - `table/{種類}{月}.json` 月の日ごとの地点数
+  - `stations.json` 地点番号 → 名前・府県・地点ページの URL 名
+- 変わった年（とその翌年。連続日数が年をまたぐ）と今年だけ書き直す。年のファイルの
+  大きさと更新時刻を `data/history_state.json` に控える。全部で 147 年・約 1,950 本・
+  58MB、全部書き直しても deb2 で十数秒
+- 過去の年の夏・冬のページは年ごとのファイル（`build_past_seasons`。今季と同じ
+  `build_season_pages`）。年のデータか作り方が変わった年だけ作り直す
+  （`data/past_seasons.json`）。観測した地点が無い年は作らない
+- 資料不足値（品質 4 以下）は気象庁と同じ扱い: その日の一覧には「]」を付けて載せ、
+  月平均・期間の極値・日数には使わない。日ごとのページに南鳥島と富士山は入れない
+
+**10 分ごとに作り直すのは status 配下の 1,293 ページ**（43MB）。
 残りは毎時。`generate.py` はサイト全体を、`generate_status.py` は Status
 だけを受け持つ。分けているのは、10 分ごとに 3,132 ページを作り直すのが
 無駄だから。
 
-## データの配布（/Data/AMeDAS/）
+## データの配布（/data/amedas/）
 
 気象庁のアメダス 10 分値は気象庁のサイトで約 9 日しか公開されない。
 `fetch_amedas_mirror.py` が半月ごとに封入した NetCDF-4（`public_amedas/archive/`）を、
@@ -78,7 +107,7 @@
   出典と、編集・加工したデータであることの記載を求める（NetCDF の属性にも入っている）
 - `_headers`（サイト直下）で NetCDF の Content-Type と CORS を設定する
 
-## 日別の観測データ（/Data/Daily/）
+## 日別の観測データ（/data/daily/）
 
 一番よく使われるデータ。`export_dist.py` が観測ストアの日別値（最高・最低・平均気温、
 降水量、日照と品質・起時）を `dist/daily/` に、年ごと（全地点 × 1 年）と地点ごと
@@ -96,20 +125,61 @@
 
 公開先は `weather.time-j.net`。**いまは旧システム（WeatherCore）が動いていて、
 新しいサイトはいずれ同じドメインでそれを置き換える。** 旧 URL で張られたリンクや
-検索結果を切らないよう、新しいサイトは旧サイトの URL に合わせる。
+検索結果を切らないよう、旧 URL はすべて新しいサイトのどこかに着くようにする。
+`check_legacy_urls.py` が、旧サイトをリンクでたどって集めた 4,154 件
+（`legacy/old_paths.json`）を生成済みの `public/` でたどって確かめる（2026-10-06、
+実データで 4,154 件すべて着く。Pages のプレビューでも同じ）。
 
-- **地点ページ・雨温図は旧サイトと同じ URL 名**（`/Stations/JP/Abashiri`）で作る。
+### URL は小文字（正規化）
+
+旧サイト（ASP.NET）は大文字小文字を区別しなかったので、リンクの表記が揺れている
+（`/Stations/JP/Tokyo`・`/stations/jp/tokyo`）。Pages は区別し、`_redirects` の一致も
+区別する。そこで **サイトの URL はすべて小文字にし、大文字を含む要求は小文字へ送る。**
+
+- 生成側は、書き出すパスとページ内のサイト内リンク（`href`・`src`・`action`）を
+  `weatherlib/siteurl.py` で小文字にする。テンプレートやコードには旧サイトと同じ表記
+  （`/Summer/Ranking`）が残っていてよい。データファイルの名前も小文字
+- 生成の最後に、`public/` から大文字を含むパスを消す（`sweep_uppercase`）。小文字に
+  する前のページを残すと、同じページが 2 つの URL で公開されるため
+- 大文字から小文字への転送は **Cloudflare の転送ルール**（time-j.net のゾーン。下）。
+  ルールの無い環境（`*.pages.dev` など）では `404.html` のスクリプトが小文字へ送る
+  （404 のあとの転送なので、検索エンジン向けには転送ルールが要る）
+
+転送ルール（Rules → Redirect Rules → Single Redirects。設定は運用者が行う。
+無料プランでは正規表現の `matches` が使えないので、大文字は `contains` を並べて見る）:
+
+```
+名前:   URL を小文字へ
+条件（式を編集）:
+  (http.host eq "weather.time-j.net" and (
+    http.request.uri.path contains "A" or http.request.uri.path contains "B" or
+    … 同じ形で "C" から "Y" まで …
+    http.request.uri.path contains "Z"))
+転送先: Dynamic   式: concat("https://weather.time-j.net", lower(http.request.uri.path))
+状態:   301    クエリ文字列を保持: オン
+```
+
+### 転送（_redirects）
+
+小文字にした後の URL について、同じページが無いものを `_redirects` で送る
+（`generate.py` の `legacy_redirects`）。表は旧サイトの表記で書き、最後に小文字に
+そろえる。行き先が自分自身になった行（旧サイトの別名 `abashiri` など）は除く。
+
+- **地点ページ・雨温図は旧サイトの URL 名の小文字**（`/stations/jp/abashiri`）で作る。
   対応は `legacy_slugs.py` が旧サイトの一覧（府県番号 ＋ 日本語名）から取り、
   `WeatherStatic/legacy/station_slugs.json` に残した（910 地点）。旧サイトが自分の
   リンクで使っていた別名（`/Climate/Chart/akita`、`Tokyoold` など 61 件）もそこにある。
-  **旧システムを止めたら取れないので、この JSON は消さない**
-- 同じ URL のページが無いものは `_redirects` で送る（`generate.py` の `legacy_redirects`）。
-  同じ中身が別の URL にあるものは 301、まだ作っていない過去の年・月・日のページは
-  今季・最新のページへ 302（後で同じ URL のページを作るとき、恒久の転送を残さない）
+  **旧システムを止めたら取れないので、この JSON と `old_paths.json` は消さない**
+- 301 … 同じ中身のページが別の URL にある（入口・平年値の月・予報図・廃止地点）
+- 302 … 今年・今季の年のページ（`/summer/ranking/2026` → `/summer/ranking/`）
+- 200 … 日ごと・月ごとの過去のページ（上の「過去の記録のページ」）
+- Pages の `_redirects` は**実ファイルより先に効く**。ファイルのある URL に当たる行を
+  置かないこと（過去の年の夏・冬のページなど）
 - Pages の `_redirects` の決まり: 固定の転送をパターン付きより前に置く。名前付きの
   置き場所（`:year`）は転送先で使わないと無効になり、クエリには差し込まれない。
-  なので `*` を使い、一覧ページ自身に当たらない形（`/Summer/Ranking/2*`）にする。
-  上限は固定 2,000 件・パターン付き 100 件。生成時に並び順・自己当たり・上限を確かめる
+  なので `*` を使う。200 の行き先は拡張子なし（`/history/day/`。`day.html` と書くと
+  Pages が拡張子を外す 308 を挟む）。上限は固定 2,000 件・パターン付き 100 件。
+  生成時に並び順・小文字・自己当たり・上限を確かめる
 - URL 名を変えたときに残る古いページは、生成のたびに片付ける（地点ページ・雨温図・
   実況の地点ページ・雨温図の比較用データ）
 - テンプレートで固定の地点へリンクするときは `slug_by_intl(国際地点番号)` を使う。
@@ -174,7 +244,7 @@ Bootstrap 3 と jQuery は使わない。2 枚だけ。
 | 雨温図の比較 | `assets/js/climate-compare.js` ＋ d3 |
 | Python グラフ工房 | Pyodide でブラウザ内 Python。`weatherlib/svgchart.py` をページに同梱 |
 
-`/Status/Lab/` は `/data/amedas-today-{要素}.json` を fetch する。
+`/status/lab/` は `/data/amedas-today-{要素（小文字）}.json` を fetch する。
 要素ごとにファイルを分けてあるのは、まとめると数 MB になり初回表示が
 重いから（1 ファイル gzip 後およそ 60KB）。
 

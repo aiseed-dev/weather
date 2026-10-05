@@ -1,18 +1,17 @@
-"""個人開発気象統計を deb2 から配る FastAPI アプリ。
+"""個人開発気象統計を deb2 から配る FastAPI アプリ（Cloudflare Pages へ移るまでのつなぎ）。
 
-なぜサーバーで配るか
-    旧サイト（WeatherCore）の URL には、日ごと・月ごとの集計ページが 2,000 件以上
-    あり、静的に作ると組み合わせの数だけページが要る。旧サイトは ASP.NET で
-    大文字小文字を区別しなかったので、リンクの表記も揺れている。サーバーなら、
-    集計はその場で作れ、大文字小文字も無視して引ける。しばらくは deb2 で運用する。
+サイトは静的ファイル（public/）だけでできていて、本番は Cloudflare Pages に置く。
+このサーバーは public/ を Pages と同じ規則で返すだけで、ページを作ることはしない。
+Pages を使わずに deb2 から配るときや、手元で公開前の見た目を確かめるときに使う。
 
-1 つの入口で受けて、次の順に判定する
-    1. 生成済みのファイル（public/）がその URL にあれば返す。ディレクトリなら
-       スラッシュ付きへ転送（Cloudflare Pages と同じ振る舞い）
-    2. 過去のページ（旧 /Temperature/SummerDay/… など）ならその場で作る（history.py）
-    3. 生成済みの _redirects に当たれば転送する（Pages と同じ規則で解釈する）
-    4. 大文字小文字だけ違うファイルがあれば、正しい URL へ 301
-    5. どれにも当たらなければ 404（public/404.html）
+Pages と同じ規則（順に判定する）
+    1. 大文字を含む URL は小文字へ 301（URL は小文字にそろえている。weatherlib/siteurl.py。
+       本番は Cloudflare の転送ルールが同じことをする）
+    2. 生成済みの _redirects に当たれば、その行のとおり。200 は URL を変えずに行き先の
+       ファイルを返す（過去の記録のページの枠。weatherlib/history.py）。
+       Pages と同じく、実ファイルより先に効く
+    3. 生成済みのファイルがあれば返す（ディレクトリはスラッシュ付きへ 308）
+    4. どれにも当たらなければ 404（public/404.html）
 
 起動（deb2）:
     cd ~/dev/weather/WeatherStatic
@@ -20,10 +19,6 @@
 """
 from __future__ import annotations
 
-import re
-import sys
-import time
-from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -31,69 +26,12 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 
 BASE = Path(__file__).resolve().parent.parent
 PUBLIC = (BASE / "public").resolve()
-sys.path.insert(0, str(BASE))
-
-from server import history  # noqa: E402
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 MEDIA = {".nc": "application/x-netcdf", ".json": "application/json",
          ".csv": "text/csv; charset=utf-8", ".txt": "text/plain; charset=utf-8"}
 
-
-# ---------------------------------------------------------------- テンプレート
-
-_env = None
-
-
-def env():
-    """生成側（generate.py）と同じ Jinja 環境。見た目をサイトと揃える。"""
-    global _env
-    if _env is None:
-        import generate
-        _env = generate.make_env()
-    return _env
-
-
-# ---------------------------------------------------------------- 生成済みファイルの索引
-
-class Index:
-    """小文字にした URL → 実際のパス。大文字小文字の揺れを吸収するため。
-
-    public/ は 10 分ごとに作り直されるが、ファイルの増減はまれなので、
-    引けなかったときだけ（前回から INTERVAL 秒以上たっていれば）作り直す。"""
-    INTERVAL = 60
-
-    def __init__(self):
-        self.map: dict[str, str] = {}
-        self.built = 0.0
-
-    def rebuild(self) -> None:
-        m = {}
-        for p in PUBLIC.rglob("*"):
-            rel = "/" + p.relative_to(PUBLIC).as_posix()
-            if p.is_dir():
-                if (p / "index.html").is_file():
-                    m[rel.lower() + "/"] = rel + "/"
-            else:
-                m[rel.lower()] = rel
-        self.map, self.built = m, time.monotonic()
-
-    def lookup(self, path: str) -> str | None:
-        key = path.lower()
-        if not key.endswith("/") and (key + "/") in self.map:
-            key += "/"
-        hit = self.map.get(key)
-        if hit is None and time.monotonic() - self.built > self.INTERVAL:
-            self.rebuild()
-            hit = self.map.get(key) or self.map.get(key + "/")
-        return hit
-
-
-INDEX = Index()
-
-
-# ---------------------------------------------------------------- _redirects
 
 class Redirects:
     """生成済みの public/_redirects を Pages と同じ規則で解釈する。
@@ -118,7 +56,7 @@ class Redirects:
                 if len(parts) < 2 or parts[0].startswith("#"):
                     continue
                 src, dst = parts[0], parts[1]
-                code = int(parts[2]) if len(parts) > 2 else 301
+                code = int(parts[2]) if len(parts) > 2 else 302
                 if "*" in src:
                     dynamic.append((src.split("*")[0], dst, code))
                 else:
@@ -138,18 +76,24 @@ class Redirects:
 REDIRECTS = Redirects()
 
 
-# ---------------------------------------------------------------- 応答
+def local(url: str) -> Path | None:
+    """URL に当たる public/ のファイル（ディレクトリは index.html）。public/ の外は None。"""
+    p = (PUBLIC / url.lstrip("/")).resolve()
+    if PUBLIC not in p.parents and p != PUBLIC:
+        return None
+    if p.is_dir():
+        p = p / "index.html"
+    return p if p.is_file() else None
 
-def file_response(rel: str) -> Response:
-    p = (PUBLIC / rel.lstrip("/")).resolve()
-    if PUBLIC not in p.parents and p != PUBLIC:      # public/ の外は返さない
-        return not_found()
+
+def file_response(p: Path) -> Response:
+    rel = p.relative_to(PUBLIC).as_posix()
     headers = {}
-    if rel.endswith(".html"):
+    if p.suffix == ".html":
         headers["Cache-Control"] = "public, max-age=60"
-    if rel.startswith("/Data/"):
+    if rel.startswith("data/"):
         headers["Access-Control-Allow-Origin"] = "*"
-        if rel.endswith(".nc"):
+        if p.suffix == ".nc":
             headers["Cache-Control"] = "public, max-age=86400"
     return FileResponse(p, media_type=MEDIA.get(p.suffix), headers=headers)
 
@@ -160,151 +104,31 @@ def not_found() -> Response:
     return HTMLResponse(body, status_code=404)
 
 
-def page(template: str, max_age: int, **ctx) -> Response:
-    html = env().get_template(template).render(build_year=datetime.now().year, **ctx)
-    return HTMLResponse(html, headers={"Cache-Control": f"public, max-age={max_age}"})
-
-
-def past_max_age(d: date) -> int:
-    """確定値に置き換わった過去の日は長く、直近は短くキャッシュさせる。"""
-    return 86400 if (date.today() - d).days > 40 else 600
-
-
-# ---------------------------------------------------------------- 過去のページ
-
-DAY = re.compile(r"^/temperature/summerday/([abcd])(\d{8})/?$", re.I)
-MONTH = re.compile(r"^/temperature/summermonth/([abcd])/(\d{1,2})/?$", re.I)
-MONTHLY = re.compile(r"^/monthly/(monthly|monthlyl)/(\d{4})(\d{2})/?$", re.I)
-SEASON = re.compile(r"^/(summer|winter)/([a-z]+)/(\d{4})/?$", re.I)
-# 季節のページの正しい綴り（旧 URL の大文字小文字を問わず受ける）
-SEASON_KINDS = {
-    "summer": {k.lower(): k for k in ("Ranking", "SummerDayList", "Hottest", "HottestList")},
-    "winter": {k.lower(): k for k in ("Ranking", "WinterDayList", "Coldest", "LowestList")},
-}
-
-
-def day_page(kind: str, ymd: str) -> Response:
-    try:
-        d = date(int(ymd[:4]), int(ymd[4:6]), int(ymd[6:8]))
-    except ValueError:
-        return not_found()
-    r = history.day_ranking(kind, d)
-    if r is None:
-        return not_found()
-    step = timedelta(days=1)
-    return page("history/day.html", past_max_age(d),
-                page_title=f"{d.year}年{d.month}月{d.day}日の{r['title']}の地点",
-                nav_active="ranking", r=r,
-                month_url=f"/Temperature/SummerMonth/{kind}/{d.month}",
-                prev_url=f"/Temperature/SummerDay/{kind}{d - step:%Y%m%d}",
-                next_url=f"/Temperature/SummerDay/{kind}{d + step:%Y%m%d}")
-
-
-def month_page(kind: str, month: str) -> Response:
-    m = int(month)
-    if not 1 <= m <= 12:
-        return not_found()
-    t = history.month_table(kind, m)
-    kinds = [(k, v[2].split("（")[0], f"/Temperature/SummerMonth/{k}/{m}")
-             for k, v in history.KINDS.items()]
-    months = [(mm, f"/Temperature/SummerMonth/{kind}/{mm}") for mm in range(5, 11)]
-    return page("history/month.html", 600,
-                page_title=f"{m}月の{t['title']}の日別の地点数", nav_active="ranking",
-                t=t, kinds=kinds, months=months)
-
-
-def monthly_page(which: str, y: str, m: str) -> Response:
-    year, month = int(y), int(m)
-    if not 1 <= month <= 12:
-        return not_found()
-    high = which.lower() == "monthly"
-    r = history.month_ranking(high, year, month)
-    if r is None:
-        return not_found()
-    prev_ = date(year, month, 1) - timedelta(days=1)
-    next_ = date(year + (month == 12), month % 12 + 1, 1)
-    base = "Monthly" if high else "MonthlyL"
-    return page("history/monthly.html", past_max_age(r["last"]),
-                page_title=f"{year}年{month}月の{'気温' if high else '低気温'}のランキング",
-                nav_active="monthly", r=r,
-                prev_url=f"/Monthly/{base}/{prev_:%Y%m}", next_url=f"/Monthly/{base}/{next_:%Y%m}",
-                other_url=f"/Monthly/{'MonthlyL' if high else 'Monthly'}/{year}{month:02d}")
-
-
-_SEASON_CACHE: dict = {}
-
-
-def season_pages(part: str, year: int) -> dict[str, str]:
-    """過去の年の夏・冬の 4 ページ（生成側の build_season_pages に年を渡して作る）。
-
-    今季のページと同じ計算・同じテンプレートなので、今季と過去で作り方がずれない。
-    観測ストアが書き換わるまで覚えておく（同じ年の 4 ページはまとめて計算される）。"""
-    import generate
-    store = BASE / "store" / "observations.nc"
-    key = (part, year, store.stat().st_mtime if store.is_file() else 0)
-    if key in _SEASON_CACHE:
-        return _SEASON_CACHE[key]
-    stations = generate.load_stations()
-    generate.climate_targets(stations)                 # 地点の URL 名を先に決める
-    _, meta = generate.load_today()
-    pages: dict[str, str] = {}
-    hist = generate.History()
-    try:
-        generate.build_season_pages(env(), meta, stations, hist, year=year, part=part,
-                                    emit=lambda path, html: pages.__setitem__(path, html))
-    finally:
-        hist.close()
-    if len(_SEASON_CACHE) > 32:
-        _SEASON_CACHE.clear()
-    _SEASON_CACHE[key] = pages
-    return pages
-
-
-def season_page(part: str, kind: str, y: str) -> Response:
-    part = part.lower()
-    canon = SEASON_KINDS[part].get(kind.lower())
-    year = int(y)
-    if canon is None or not 1880 <= year <= date.today().year + 1:
-        return not_found()
-    html = season_pages(part, year).get(f"{part.capitalize()}/{canon}/index.html")
-    if html is None:
-        return not_found()
-    end = date(year, 12, 31) if part == "summer" else date(year, 7, 31)
-    return HTMLResponse(html, headers={"Cache-Control": f"public, max-age={past_max_age(end)}"})
-
-
-# ---------------------------------------------------------------- 入口
-
 @app.api_route("/{path:path}", methods=["GET", "HEAD"])
 async def serve(path: str, request: Request) -> Response:
     url = "/" + path
+    query = ("?" + request.url.query) if request.url.query else ""
 
-    # 1. 生成済みのファイル（そのままの綴り）
+    # 1. 大文字は小文字へ
+    if url != url.lower():
+        return RedirectResponse(url.lower() + query, status_code=301)
+
+    # 2. _redirects（実ファイルより先）
+    if hit := REDIRECTS.match(url):
+        dst, code = hit
+        if code == 200:
+            p = local(dst)
+            return file_response(p) if p else not_found()
+        return RedirectResponse(dst + query, status_code=code)
+
+    # 3. 生成済みのファイル
     p = (PUBLIC / path).resolve() if path else PUBLIC
     if PUBLIC in p.parents or p == PUBLIC:
         if p.is_file():
-            return file_response(url)
+            return file_response(p)
         if p.is_dir() and (p / "index.html").is_file():
             if url.endswith("/"):
-                return file_response(url + "index.html")
-            return RedirectResponse(url + "/", status_code=308)
-
-    # 2. 過去のページ（その場で作る。大文字小文字は問わない）
-    if m := DAY.match(url):
-        return day_page(m.group(1).lower(), m.group(2))
-    if m := MONTH.match(url):
-        return month_page(m.group(1).lower(), m.group(2))
-    if m := MONTHLY.match(url):
-        return monthly_page(m.group(1), m.group(2), m.group(3))
-    if (m := SEASON.match(url)) and m.group(2).lower() in SEASON_KINDS[m.group(1).lower()]:
-        return season_page(m.group(1), m.group(2), m.group(3))
-
-    # 3. 旧サイトの URL の転送（生成済みの _redirects）
-    if hit := REDIRECTS.match(url):
-        return RedirectResponse(hit[0], status_code=hit[1])
-
-    # 4. 大文字小文字だけ違う
-    if (real := INDEX.lookup(url)) and real != url:
-        return RedirectResponse(real, status_code=301)
+                return file_response(p / "index.html")
+            return RedirectResponse(url + "/" + query, status_code=308)
 
     return not_found()

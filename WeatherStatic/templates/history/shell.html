@@ -1,0 +1,46 @@
+{#
+  過去の記録のページの枠（旧 /Temperature/SummerDay/{a|b|c|d}{YYYYMMDD}・
+  /Temperature/SummerMonth/{a|b|c|d}/{月}・/Monthly/Monthly(L)/{YYYYMM}）。
+  _redirects の 200 で旧 URL のまま返され、/js/history.js が URL を読んで
+  月ごとのデータ（/data/history/）から中身を描く。
+
+  コンテキスト: kind（day | month | monthly）, info_text, js_version
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .item h5 { margin: 0 0 8px; font-size: 15px; text-align: center; }
+    .wtable { border-collapse: collapse; empty-cells: show; width: 100%; }
+    .wtable th { padding: 4px; text-align: center; font-size: 90%; }
+    .wtable td { padding: 2px 6px; font-size: 90%; white-space: nowrap; }
+    .wright { text-align: right; }
+    .mtable { border-collapse: collapse; empty-cells: show; }
+    .mtable th, .mtable td { padding: 2px 7px; font-size: 90%; text-align: right; white-space: nowrap;
+        border-bottom: 1px solid var(--border); }
+    .mtable th { text-align: center; }
+    .mtable td.zero { color: var(--muted, #999); }
+    .mwrap { overflow-x: auto; }
+    .hist-nav a { margin-right: 14px; }
+    .hist-note { background: var(--panel); border: 1px solid var(--border);
+        border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; margin: 14px 0; }
+    .hist-note p { margin: 0; font-size: 13.5px; line-height: 1.75; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2 id="history-title">{{ page_title }}</h2>
+<div id="history">
+    <p>読み込み中…</p>
+    <noscript><p>このページは JavaScript で表を描きます。元のデータは
+        <a href="/Data/Daily/">日別の観測データ</a>にあります。</p></noscript>
+</div>
+<template id="history-note">{% include "history/_app_note.html" %}</template>
+
+<div id="info">
+    <h5>データについての説明</h5>
+    <p>{{ info_text }}</p>
+</div>
+<script src="/js/history.js?v={{ js_version }}"></script>
+<script>HISTORY.{{ kind }}();</script>
+{% endblock %}

@@ -4,7 +4,7 @@
 旧 WeatherCore（ASP.NET Core）を、Python の定期生成と Cloudflare Pages に移したもの。
 
 - サイト: https://weather-dj7.pages.dev/（約 3,100 ページ。実況と今日の最高・最低は 10 分ごと）
-- 観測データの配布: `/Data/Daily/`（日別、1880 年〜）・`/Data/AMeDAS/`（10 分値・1 時間値）
+- 観測データの配布: `/data/daily/`（日別、1880 年〜）・`/data/amedas/`（10 分値・1 時間値）
 - 予報は扱わない（予報業務には気象業務法の許可が要る）。防災情報も扱わない
 
 詳しい文書は [../docs/README.md](../docs/README.md) から辿れる。**動かすなら
@@ -38,7 +38,8 @@
 | `accumulate.py` | deb2・毎日 1:30 | 観測ストアへの蓄積（時別値・確定値 CSV・日集計。7 日分を毎日取り直す） |
 | `backfill_etrn.py` | deb2・毎月 2 日 | 前月分を etrn の確定値で置き換える |
 | `build_site.py` | deb2・10 分ごと／毎時 | 生成 → 点検 → 公開（`--publish` のときだけ） |
-| `export_dist.py` | deb2（生成から呼ばれる） | 観測ストアの日別値を年ごと・地点ごとの NetCDF に（`/Data/Daily/`） |
+| `export_dist.py` | deb2（生成から呼ばれる） | 観測ストアの日別値を年ごと・地点ごとの NetCDF に（`/data/daily/`） |
+| `check_legacy_urls.py` | dev／deb2 | 旧サイトの URL（4,154 件）が生成したサイトでどこに着くかを点検する（公開前） |
 | `make_testdata.py` | dev | 作り物のデータで手元を組み立てる（公開は拒まれる） |
 | `sync_to_server.py` | dev | 作業ツリーのソースを deb2 へ送る（コミット済みなら git push → pull） |
 | `deploy_worker.py` | dev | 収集 Worker のデプロイ |

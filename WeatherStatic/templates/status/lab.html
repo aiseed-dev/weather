@@ -143,7 +143,7 @@ def stations(raw):
     async function loadElement(key, keepStation) {
         say("観測データを取得しています…");
         if (!cache[key]) {
-            var res = await fetch("/data/amedas-today-" + key + ".json", { cache: "no-store" });
+            var res = await fetch("/data/amedas-today-" + key.toLowerCase() + ".json", { cache: "no-store" });
             if (!res.ok) throw new Error("観測データが取得できません (" + res.status + ")");
             cache[key] = await res.text();
         }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""サーバー側で作る過去のページの集計（server/history.py）。
+"""過去の記録のページの集計と書き出し（weatherlib/history.py）。
 
 確かめること
   1. その日に条件を満たした地点を、気温の高い順に並べる。同じ値は同じ順位で、
@@ -11,7 +11,8 @@
      資料不足値（品質 4 以下）は使わない。
      低い順のページは表を最低・平均・最高の順に並べる（旧サイトと同じ）
   5. 日ごとのページに入れない地点（DAY_EXCLUDE）は、その日の地点にも月の表の数にも入らない
-  6. 季節のページの府県のまとまりは府県名で決める（富士山は静岡県）
+  6. 月ごとのデータの書き出し: 並びと資料不足の印、変わった年（と翌年・今年）だけ書き直す
+  7. 季節のページの府県のまとまりは府県名で決める（富士山は静岡県）
 """
 import json
 import sys
@@ -24,7 +25,7 @@ import netCDF4
 
 WS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(WS))
-from server import history  # noqa: E402
+from weatherlib import history  # noqa: E402
 
 CODES = [47662, 47626, 47401]            # 東京・熊谷・稚内（府県番号 44, 43, 11）
 
@@ -94,7 +95,7 @@ def main() -> int:
               [x[1] for x in names] == ["稚内", "熊谷", "東京"])
         check("資料不足値もその日の一覧には載せ、印を付ける",
               [s["short"] for s in r["by_value"]] == [False, False, True])
-        check("地点ページのある地点だけリンク", r["by_value"][2]["url"] == "/Stations/JP/Tokyo/"
+        check("地点ページのある地点だけリンク", r["by_value"][2]["url"] == "/stations/jp/tokyo/"
               and r["by_value"][0]["url"] is None)
 
         print("2. 連続日数（年をまたぐ）")
@@ -139,7 +140,31 @@ def main() -> int:
             history.DAY_EXCLUDE = saved
             history._load_year.cache_clear()
 
-    print("6. 季節のページの府県のまとまり")
+        print("6. 月ごとのデータの書き出し")
+        m = history.export_month(2026, 1)
+        a = m["days"]["1"]["a"]
+        check("値の高い順・同じ値は府県番号順、資料不足に印",
+              a["v"] == [[47401, 360], [47626, 360], [47662, 360, 1]])
+        check("連続日数は 2 日以上を多い順", a["r"] == [[47662, 3], [47626, 2]])
+        check("データの無い日は入れない", "3" not in m["days"])
+        out, state = root / "out", root / "state.json"
+        r1 = history.export(out, {"47662": "Tokyo"}, state, log=lambda *_: None)
+        check("初回は全部の年", r1["years"] == [2024, 2025, 2026] and (out / "2025" / "12.json").is_file())
+        st = json.loads((out / "stations.json").read_text(encoding="utf-8"))["stations"]
+        check("地点の表は URL 名を小文字で", st["47662"] == ["東京", "東京都", "tokyo"] and st["47401"][2] is None)
+        r2 = history.export(out, {"47662": "Tokyo"}, state, log=lambda *_: None)
+        check("変わっていなければ今年だけ集計し、書き換えない",
+              r2["years"] == [date.today().year] if date.today().year in (2024, 2025, 2026) else r2["years"] == [])
+        check("書き換えたファイルは 0", r2["written"] == 0)
+        import os
+        p25 = root / "years" / "2025.nc"
+        os.utime(p25, ns=(p25.stat().st_atime_ns, p25.stat().st_mtime_ns + 10**9))
+        history._load_year.cache_clear()
+        r3 = history.export(out, {"47662": "Tokyo"}, state, log=lambda *_: None)
+        check("変わった年と翌年（連続日数が年をまたぐ）を集計し直す", {2025, 2026} <= set(r3["years"])
+              and 2024 not in r3["years"])
+
+    print("7. 季節のページの府県のまとまり")
     import generate
     def rec(pref, prec, amedas, temp=True):
         return {"pref": pref, "name": amedas, "amedas": amedas, "row": 0,

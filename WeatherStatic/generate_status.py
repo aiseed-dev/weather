@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from weatherlib.filters import FILTERS
-from weatherlib import pointstore
+from weatherlib import pointstore, siteurl
 from weatherlib.svgchart import intraday_svg, trend_svg
 # 平年値の読み方（daily は月キー・日は月内添字）は generate.py に正しい実装がある
 from generate import normal_daily, climate_targets, station_slug
@@ -111,13 +111,20 @@ def region_of(prec_no: int | None) -> str:
 _SLUG_CACHE: dict[str, str] = {}
 
 
+def put(out: Path, html: str) -> None:
+    """ページを書き出す。パスとページ内のサイト内リンクは小文字（weatherlib.siteurl）。"""
+    dst = PUBLIC / siteurl.path(out.relative_to(PUBLIC).as_posix())
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(siteurl.links(html), encoding="utf-8")
+
+
 def station_url(stations: dict, rec: dict, amedas: str) -> str:
     """地点ページの URL。既存 /Stations/JP と同じ slug を使い、
     平年値を持たない地点はアメダス番号にする（build_station_pages と同じ規則）。"""
     if not _SLUG_CACHE:
         for _c, r, _n, sl in climate_targets(stations):
             _SLUG_CACHE[str(r.get("amedas"))] = sl
-    return f"/Status/Station/{_SLUG_CACHE.get(amedas) or amedas}/"
+    return siteurl.url(f"/Status/Station/{_SLUG_CACHE.get(amedas) or amedas}/")
 
 
 def normal_tmax_tmin(code: int, d: date) -> tuple[int | None, int | None]:
@@ -184,8 +191,7 @@ def build_temperature(env: Environment, stations: dict) -> None:
         chart=chart, graph_cities=[c[0] for c in GRAPH_CITIES],
         graph_colors=GRAPH_COLORS, slot_count=len(slots))
     out = PUBLIC / "Status" / "Temperature" / "index.html"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
+    put(out, html)
     log(f"Status/Temperature/index.html ({len(html):,} bytes) "
         f"/ {len(rows)} 地点 / {obs_time:%H:%M} 現在 / グラフ {len(slots)} 点")
 
@@ -265,8 +271,7 @@ def build_wind(env: Environment, stations: dict) -> None:
         calm=dist[0], slot_count=len(slots),
         dist_max=max(dist[1:]) or 1)
     out = PUBLIC / "Status" / "Wind" / "index.html"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
+    put(out, html)
     log(f"Status/Wind/index.html ({len(html):,} bytes) / {len(rows)} 地点 / "
         f"{obs_time:%H:%M} 現在 / 最大 {by_peak[0]['peak']/10 if by_peak else 0} m/s")
 
@@ -346,8 +351,7 @@ def _rank_page(env, stations, kind: str) -> None:
         ranks=ranks, rows=rows, cols=cols, suspended=suspended,
         region_filters=[(k, n) for k, n, _, _ in REGIONS])
     out = PUBLIC / "Status" / out_name / "index.html"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
+    put(out, html)
     log(f"Status/{out_name}/index.html ({len(html):,} bytes) / {len(rows)} 地点 / "
         + " ".join(f"{r['label']}{r['n_active']}" for r in ranks))
 
@@ -432,8 +436,7 @@ def build_records(env: Environment, stations: dict) -> None:
         near=near[:RANK_N],
         n_hot_mon=len(hot_mon), n_cold_mon=len(cold_mon))
     out = PUBLIC / "Status" / "Records" / "index.html"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
+    put(out, html)
     log(f"Status/Records/index.html ({len(html):,} bytes) / {n_rows} 地点 / "
         f"史上1位 高 {len(hot_all)}・低 {len(cold_all)} / "
         f"月1位 高 {len(hot_mon)}・低 {len(cold_mon)}")
@@ -531,8 +534,7 @@ def build_station_pages(env: Environment, stations: dict) -> None:
             st=rec, amedas=amedas, charts=charts, slot_count=len(slots),
             climate_slug=station_slug(rec) if amedas in has_climate else None)
         out = out_dir / slug / "index.html"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(html, encoding="utf-8")
+        put(out, html)
         index.append({"slug": slug, "name": rec["name"], "pref": rec.get("pref") or "",
                       "region": region_of((rec.get("etrn") or {}).get("prec_no")),
                       "elements": len(charts)})
@@ -543,7 +545,7 @@ def build_station_pages(env: Environment, stations: dict) -> None:
         page_title="地点別の10分値観測（アメダス）", nav_active="station",
         build_year=now.year, day=day, rows=index,
         region_filters=[(k, nm) for k, nm, _, _ in REGIONS])
-    (out_dir / "index.html").write_text(write_html, encoding="utf-8")
+    put(out_dir / "index.html", write_html)
     log(f"Status/Station/: {n} 地点ページ + 一覧")
 
 
@@ -562,8 +564,7 @@ def build_lab(env: Environment) -> None:
         nav_active="status", build_year=datetime.now(JST).year,
         svgchart_src=src, pyodide_version="0.28.0")
     out = PUBLIC / "Status" / "Lab" / "index.html"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(html, encoding="utf-8")
+    put(out, html)
     log(f"Status/Lab/index.html ({len(html):,} bytes / svgchart.py {len(src):,} 文字を同梱)")
 
 
@@ -642,7 +643,7 @@ def build_today_json(stations: dict) -> None:
                 "scale": mul, "unit": unit, "kind": kind, "minutes": minutes,
                 "attribution": "出典: 気象庁ホームページ（編集・加工: AIseed）",
                 "stations": data}
-        p = out_dir / f"amedas-today-{key}.json"
+        p = out_dir / f"amedas-today-{key.lower()}.json"   # URL は小文字（siteurl）
         p.write_text(json.dumps(body, ensure_ascii=False, separators=(",", ":")),
                      encoding="utf-8")
         index.append({"element": key, "label": label, "unit": unit, "kind": kind,
