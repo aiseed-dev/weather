@@ -1651,31 +1651,34 @@ def legacy_redirects(targets: list) -> list[str]:
         "/Temperature/WinterMonth/ /Winter/Ranking/ 302",
     ]
     lines += [f"/Summer/SummerMonth{y} /Summer/Ranking/ 302" for y in range(2010, date.today().year + 1)]
-    # ここからパターン付き。Pages は固定のものを先に置く決まり。名前付きの置き場所
-    # （:year）は転送先でも使わないと無効になる（2026-10-05、使っていなかった行が
-    # すべて効かなかった）ので、元の値をクエリに付けて残す（ページ側は無視する）
+    # ここからパターン付き。Pages は固定のものを先に置く決まり。
+    # 名前付きの置き場所（:year）は転送先で使わないと無効になり（2026-10-05、
+    # 使っていなかった行がすべて効かなかった）、クエリには差し込まれない
+    # （?year=:year は「:year」のまま出る）。なので * を使う。* は空にも当たり
+    # うるので、/Summer/Ranking/* だと一覧ページ自身に当たって回りかねない。
+    # 年・年月は必ず 2 で始まることを使い、/Summer/Ranking/2* のように書く
     lines.append("/Gfs/* /App/ 301")
     for kind in ("Ranking", "SummerDayList", "Hottest", "HottestList"):
-        lines.append(f"/Summer/{kind}/:year /Summer/{kind}/?year=:year 302")
+        lines.append(f"/Summer/{kind}/2* /Summer/{kind}/ 302")
     for kind in ("Ranking", "WinterDayList", "Coldest", "LowestList"):
-        lines.append(f"/Winter/{kind}/:year /Winter/{kind}/?year=:year 302")
+        lines.append(f"/Winter/{kind}/2* /Winter/{kind}/ 302")
     lines += [
-        "/Monthly/Monthly/:ym /Monthly/Latest/?ym=:ym 302",
-        "/Monthly/MonthlyL/:ym /Monthly/Latest/?ym=:ym 302",
-        "/Temperature/SummerDay/:day /Temperature/HighsList/?day=:day 302",
-        "/Temperature/SummerMonth/:k/:m /Summer/Ranking/?k=:k&m=:m 302",
-        "/Temperature/SummerMonth/:m /Summer/Ranking/?m=:m 302",
-        "/Temperature/WinterMonth/:k/:m /Winter/Ranking/?k=:k&m=:m 302",
-        "/Temperature/WinterMonth/:m /Winter/Ranking/?m=:m 302",
+        "/Monthly/Monthly/2* /Monthly/Latest/ 302",
+        "/Monthly/MonthlyL/2* /Monthly/Latest/ 302",
+        "/Temperature/SummerDay/* /Temperature/HighsList/ 302",
+        "/Temperature/SummerMonth/* /Summer/Ranking/ 302",     # 空のときは上の固定の行が先に当たる
+        "/Temperature/WinterMonth/* /Winter/Ranking/ 302",
     ]
+
     def is_dyn(l: str) -> bool:
         return ":" in l.split()[0] or "*" in l.split()[0]
     first_dyn = next((i for i, l in enumerate(lines) if is_dyn(l)), len(lines))
     assert not any(not is_dyn(l) for l in lines[first_dyn:]), "固定の転送はパターン付きより前に置く"
     for l in lines:
         src, dst = l.split()[:2]
-        for ph in re.findall(r":[A-Za-z]\w*", src):
-            assert ph in dst, f"名前付きの置き場所 {ph} を転送先で使っていない: {l}"
+        assert not re.search(r":[A-Za-z]", src), f"名前付きの置き場所は使わない: {l}"
+        if "*" in src:   # 転送先が自分のパターンに当たると回り続ける（* は空にも当たるとみなす）
+            assert not re.fullmatch(re.escape(src).replace(r"\*", ".*"), dst), f"転送先が自分に当たる: {l}"
     n_dyn = sum(1 for l in lines if is_dyn(l))
     assert len(lines) - n_dyn <= 2000 and n_dyn <= 100, "Pages の _redirects の上限を超える"
     print(f"  [seo] _redirects（旧サイトの URL: 固定 {len(lines) - n_dyn} 件・パターン {n_dyn} 件）")
