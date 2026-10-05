@@ -49,13 +49,13 @@
     <h3>ファイル</h3>
     {% if periods %}
     <table>
-        <tr><th>期間</th><th>ファイル</th><th>スロット数</th><th>大きさ</th></tr>
+        <tr><th>期間</th><th>10 分値</th><th>1 時間値</th><th>スロット数</th></tr>
         {% for p in periods %}
         {% if p.path %}
         <tr><td>{{ p.start }} 〜 {{ p.end }}</td>
-            <td><a href="/Data/AMeDAS/{{ p.path }}">{{ p.path.split('/')[-1] }}</a></td>
-            <td class="num">{{ "{:,}".format(p.slots) }} / {{ "{:,}".format(p.expected) }}</td>
-            <td class="num">{{ p.size }}</td></tr>
+            <td><a href="/Data/AMeDAS/{{ p.path }}">{{ p.path }}</a>（{{ p.size }}）</td>
+            <td>{% if p.hourly %}<a href="/Data/AMeDAS/{{ p.hourly }}">{{ p.hourly }}</a>（{{ p.hourly_size }}）{% else %}-{% endif %}</td>
+            <td class="num">{{ "{:,}".format(p.slots) }} / {{ "{:,}".format(p.expected) }}</td></tr>
         {% elif p.pending %}
         <tr class="gap"><td>{{ p.start }} 〜 {{ p.end }}</td>
             <td colspan="3">まとめる前（{{ p.pending }}ごろ公開）</td></tr>
@@ -65,6 +65,12 @@
         {% endif %}
         {% endfor %}
     </table>
+    <p>
+        1 時間値は、10 分値のうち毎正時（分が 0）の時刻だけを抜いたものです。変数・単位・品質の
+        持ち方は 10 分値と同じで、値も同じもの（1 時間の平均ではなく正時の値。
+        <code>precipitation1h</code> や <code>sun1h</code> は正時までの 1 時間の量）です。
+        天気（<code>weather</code>）は毎正時にしか入らないので、1 時間値にすべて含まれます。
+    </p>
     <p>
         スロット数は「収めた 10 分値の時刻の数 / その期間の本来の数」です。収集を始めた期間や、
         収集が途中で止まった期間は本来の数に満ちません。進行中の半月分は、期間が終わってから

@@ -171,6 +171,11 @@ def period_path(p: tuple[int, int, int]) -> Path:
     return OUT / "archive" / f"{y}" / f"{m:02d}-{half}.nc"
 
 
+def hourly_path(src: Path) -> Path:
+    """10 分値の半月ファイルに対応する 1 時間値のファイル（archive/ → hourly/）。"""
+    return OUT / "hourly" / src.relative_to(OUT / "archive")
+
+
 def period_label(p: tuple[int, int, int]) -> str:
     return f"{p[0]}-{p[1]:02d} {'前半' if p[2] == 1 else '後半'}"
 
@@ -395,6 +400,65 @@ def write_period_netcdf(p: tuple[int, int, int], paths: list[Path], out: Path) -
     tmp.replace(out)
 
 
+def write_period_hourly(src: Path, out: Path) -> int:
+    """封入済みの 10 分値から、毎正時（分が 0）の時刻だけを抜いて 1 時間値にする。
+
+    10 分値の半月ファイルは約 15MB だが、使う人の多くは 1 時間値で足りる。
+    天気（weather）は毎正時にしか入らないので、1 時間値の方が自然な置き場所でもある。
+    変数・倍率・単位・品質フラグは 10 分値と同じ（値は素通しで写す）。
+    次元は固定長（unlimited だと libnetcdf の実寸越え読みの不具合を踏みうる）。
+    戻り値は時刻の数。"""
+    with nc.Dataset(src) as ds:
+        minutes = ds["time"][:]
+        idx = np.nonzero(np.asarray(minutes) % 60 == 0)[0]
+        n_s, n_t = ds.dimensions["station"].size, len(idx)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        tmp = out.with_suffix(".tmp")
+        with nc.Dataset(tmp, "w", format="NETCDF4") as dst:
+            dst.createDimension("station", n_s)
+            dst.createDimension("time", n_t)
+            for k in ds.ncattrs():
+                dst.setncattr(k, ds.getncattr(k))
+            dst.title = ds.title.replace("10-minute", "hourly (on the hour)")
+            dst.slot_minutes = 60
+            dst.derived_from = (f"{src.relative_to(OUT).as_posix()} の毎正時（分が 0）の時刻。"
+                                "値は 10 分値と同じもの（1 時間の平均や合計ではない）")
+            dst.generated_at = datetime.now(JST).isoformat(timespec="seconds")
+            dst.createVariable("station_id", str, ("station",))[:] = ds["station_id"][:]
+            tv = dst.createVariable("time", "i4", ("time",))
+            tv.units = ds["time"].units
+            tv[:] = np.asarray(minutes)[idx]
+            chunk = (n_s, max(1, min(24, n_t)))      # 1 日 1 チャンク
+            for name, v in ds.variables.items():
+                if name in ("station_id", "time"):
+                    continue
+                v.set_auto_maskandscale(False)
+                fill = v.getncattr("_FillValue") if "_FillValue" in v.ncattrs() else None
+                nv = dst.createVariable(name, v.dtype, v.dimensions, zlib=True, complevel=9,
+                                        shuffle=True, chunksizes=chunk, fill_value=fill)
+                nv.set_auto_maskandscale(False)
+                for k in v.ncattrs():
+                    if k != "_FillValue":
+                        nv.setncattr(k, v.getncattr(k))
+                if n_t:
+                    nv[:, :] = v[:, :][:, idx]
+        tmp.replace(out)
+    return n_t
+
+
+def ensure_hourly() -> int:
+    """1 時間値が無い（か 10 分値より古い）半月分を作る。すでに封入済みの期間にも効く。"""
+    made = 0
+    for src in sorted((OUT / "archive").glob("*/*.nc")):
+        dst = hourly_path(src)
+        if dst.is_file() and dst.stat().st_mtime >= src.stat().st_mtime:
+            continue
+        n = write_period_hourly(src, dst)
+        log(f"  1 時間値: {dst.relative_to(OUT)}（{n} 時刻 / {dst.stat().st_size / 1024 / 1024:.1f} MB）")
+        made += 1
+    return made
+
+
 def seal_periods(latest: datetime) -> int:
     """10 日窓から完全に外れた半月を封入し、その期間の生 JSON を公開ツリーから外す。"""
     horizon = (latest - timedelta(days=WINDOW_DAYS)).date()
@@ -478,6 +542,13 @@ def write_index(latest: datetime) -> None:
                          "slots": ds.dimensions["time"].size,
                          "bytes": p.stat().st_size})
         ds.close()
+    hourly = []
+    for p in sorted((OUT / "hourly").glob("*/*.nc")):
+        with nc.Dataset(p) as ds:
+            hourly.append({"path": str(p.relative_to(OUT)),
+                           "start": ds.date_start, "end": ds.date_end,
+                           "hours": ds.dimensions["time"].size,
+                           "bytes": p.stat().st_size})
     index = {
         "dataset": "JMA AMeDAS 10-minute observations (mirror + archive)",
         "attribution": NOTICE_RAW,
@@ -494,6 +565,7 @@ def write_index(latest: datetime) -> None:
         "map_newest": slots[-1] if slots else None,
         "archive_periods": len(archives),
         "archive": archives,
+        "hourly": hourly,
         "note": ("map/ は気象庁の生ペイロードをそのまま複製したもの。半月分を "
                  "archive/ へ封入した時点で消えるため、常に 10〜26 日分が載る"
                  f"（取得窓は直近 {WINDOW_DAYS} 日）。archive/ は半月分を NetCDF-4 へ"
@@ -553,6 +625,7 @@ def main() -> int:
             latest.replace(tzinfo=JST).isoformat(timespec="seconds"), encoding="utf-8")
 
     sealed = seal_periods(latest)
+    ensure_hourly()
     write_station_index()
     write_index(latest)
     write_headers()

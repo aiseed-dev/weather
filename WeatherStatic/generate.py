@@ -1358,10 +1358,14 @@ def build_data_amedas(env: Environment) -> None:
     src_index = AMEDAS_SRC / "index.json"
     meta = json.loads(src_index.read_text(encoding="utf-8")) if src_index.is_file() else {}
     archive = sorted(meta.get("archive", []), key=lambda a: a["start"])
+    hourly = {h["start"]: h for h in meta.get("hourly", [])}
+
+    def fmt_size(n: int) -> str:
+        return f"{n / 1024 / 1024:.1f} MB" if n >= 1024 * 1024 else f"{n / 1024:.0f} KB"
 
     # NetCDF は大きく増えていくので、同じ大きさ・時刻のものは写し直さない
     n_copied = 0
-    for a in archive:
+    for a in archive + list(hourly.values()):
         s, d = AMEDAS_SRC / a["path"], out / a["path"]
         if not s.is_file():
             continue
@@ -1420,11 +1424,12 @@ def build_data_amedas(env: Environment) -> None:
             a = have.get(first.isoformat())
             expected = ((last - first).days + 1) * 144
             if a:
-                size = a["bytes"]
+                h = hourly.get(a["start"])
                 periods.append({"start": a["start"], "end": a["end"], "path": a["path"],
                                 "slots": a["slots"], "expected": expected,
-                                "size": f"{size / 1024 / 1024:.1f} MB" if size >= 1024 * 1024
-                                        else f"{size / 1024:.0f} KB"})
+                                "size": fmt_size(a["bytes"]),
+                                "hourly": h["path"] if h else None,
+                                "hourly_size": fmt_size(h["bytes"]) if h else ""})
             else:
                 due = last + timedelta(days=window + 1)
                 periods.append({"start": first.isoformat(), "end": last.isoformat(),
@@ -1455,6 +1460,8 @@ def build_data_amedas(env: Environment) -> None:
         "elements": meta.get("elements", []),
         "generated_at": meta.get("generated_at"),
         "archive": [{**a, "url": f"/{AMEDAS_URL}/{a['path']}"} for a in archive],
+        "hourly": [{**h, "url": f"/{AMEDAS_URL}/{h['path']}"}
+                   for h in sorted(hourly.values(), key=lambda h: h["start"])],
         "missing_periods": [{"start": p["start"], "end": p["end"]}
                             for p in periods if not p["path"] and not p["pending"]],
         "daily": [{"url": f"/{AMEDAS_URL}/{d['path']}", "month": d["month"], "days": d["days"],
