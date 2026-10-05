@@ -74,7 +74,8 @@ python -m aiseed_weather.main</pre></div>
             <tr><td>WeatherStatic/</td>
                 <td>Web サイト（個人開発気象統計）。アプリとはデータ基盤を共有する</td></tr>
             <tr><td>docs/</td>
-                <td>運用手順・配信仕様。アプリが読むデータの形はここで決まる</td></tr>
+                <td>Web サイトとデータ基盤の文書（目次は docs/README.md）。運用手順・配信仕様。
+                    アプリが読むデータの形はここで決まる</td></tr>
         </table>
     </div>
 
@@ -83,16 +84,24 @@ python -m aiseed_weather.main</pre></div>
         <p>変更する領域に対応するスキル（<span class="app-kbd">.agents/skills/</span>）を
            <strong>編集の前に読む</strong>。これが唯一のハードルール。
            Flet の API 取り違えなど、実際に起きたバグはどれも読んでいれば防げた。</p>
+        <p>どのスキルを読むかは、作業の種類ごとに AGENTS.md の表で決まっている。
+           複数が当てはまるときは下の順に読む。<strong>いつも読むのは aiseed-conventions</strong>、
+           データを表示するビューに触れるなら user-action-fetch も。</p>
         <table class="app-table">
             <tr><th>順</th><th>スキル</th><th>何のガイドか</th></tr>
-            <tr><td>1</td><td>aiseed-conventions</td><td>プロジェクト全体の決まりと想定利用者</td></tr>
-            <tr><td>2</td><td>flet-declarative / flet-component-basics</td><td>Flet 0.85+ の書き方（宣言的 UI・hooks）</td></tr>
-            <tr><td>3</td><td>user-action-fetch</td><td>いつデータを取ってよいか（全ビューに関係）</td></tr>
-            <tr><td>4</td><td>first-run-setup</td><td>初回起動と config.toml</td></tr>
-            <tr><td>5</td><td>ecmwf-data-access / climatology-analysis</td><td>ECMWF Open Data と ERA5（中核）</td></tr>
-            <tr><td>6</td><td>jma-data-access / open-meteo-access</td><td>気象庁・Open-Meteo</td></tr>
-            <tr><td>7</td><td>weather-rendering / chart-base-design</td><td>総観規模の描画と図の層構造</td></tr>
-            <tr><td>8</td><td>figure-export / data-flow</td><td>書き出しとデータの流れ</td></tr>
+            <tr><td>1</td><td>aiseed-conventions</td><td>プロジェクト全体の決まりと想定利用者（いつも最初に）</td></tr>
+            <tr><td>2</td><td>flet-declarative</td><td>このプロジェクトでの Flet UI の書き方</td></tr>
+            <tr><td>3</td><td>flet-component-basics</td><td>Flet 0.85+ の入口・@ft.component・hooks</td></tr>
+            <tr><td>4</td><td>user-action-fetch</td><td>いつ・どうデータを取ってよいか（データを出すビュー全部に関係）</td></tr>
+            <tr><td>5</td><td>first-run-setup</td><td>config.toml の読み込みとデータソースの選択（設定画面は無い）</td></tr>
+            <tr><td>6</td><td>ecmwf-data-access</td><td>ECMWF Open Data と ERA5（データの中核）</td></tr>
+            <tr><td>7</td><td>data-flow</td><td>地図ビューで取得・GRIB キャッシュ・層・描画がどうつながるか</td></tr>
+            <tr><td>8</td><td>climatology-analysis</td><td>ERA5 の気候値・アノマリ・パーセンタイル（差別化の核）</td></tr>
+            <tr><td>9</td><td>jma-data-access</td><td>気象庁のレーダーと AMeDAS（日本の現況）</td></tr>
+            <tr><td>10</td><td>weather-rendering</td><td>総観規模の地図描画</td></tr>
+            <tr><td>11</td><td>chart-base-design</td><td>図の層構造（base / data / isoline / pill）</td></tr>
+            <tr><td>12</td><td>figure-export</td><td>出典つきの書き出し</td></tr>
+            <tr><td>13</td><td>open-meteo-access</td><td>補助の地点予報（優先度は低い）</td></tr>
         </table>
     </div>
 
@@ -115,15 +124,31 @@ python -m aiseed_weather.main</pre></div>
         <h3>データ層（それぞれ役割が違う）</h3>
         <table class="app-table">
             <tr><th>層</th><th>出所</th><th>役割</th></tr>
-            <tr><td>予報格子</td><td>ECMWF Open Data（AWS S3）</td><td>未来・地図ビュー</td></tr>
-            <tr><td>気候値・アノマリ</td><td>ERA5（AWS）</td><td>歴史的文脈。差別化の核</td></tr>
+            <tr><td>予報格子</td><td>ECMWF Open Data。config.toml で選んだミラー（GCP / AWS / Azure /
+                ECMWF 直）から (cycle, step) ごとに一括 GRIB を HTTPS で取る。aiseed の再配布パックも選べる</td>
+                <td>未来・地図ビュー</td></tr>
+            <tr><td>気候値・アノマリ</td><td>ERA5（AWS）。サービスはまだ無く、地点予報の平年値は今は
+                Open-Meteo の過去データから</td><td>歴史的文脈。差別化の核</td></tr>
             <tr><td>日本の現況</td><td>気象庁レーダー ＋ AMeDAS</td><td>「いま」のナウキャスト</td></tr>
             <tr><td>地点予報</td><td>Open-Meteo</td><td>補助ビュー</td></tr>
         </table>
         <p class="app-note" style="margin-top: 12px;">
-            AMeDAS はこのサイトの裏で動く収集基盤（R2 ミラー）からも読める。
-            気象庁のサーバーに全員が直接取りに行かなくて済むようにするためのもの。
-            配信の形は <a href="/About/">このサイトについて</a>と docs/ を参照。</p>
+            気象庁の観測は、このサイトでもまとめて配っている。気象庁では約 9 日で消える
+            AMeDAS の 10 分値・1 時間値は <a href="/Data/AMeDAS/">アメダス 10 分値アーカイブ</a>、
+            日別の気温・降水・日照（1880 年〜）は <a href="/Data/Daily/">日別の観測データ</a>。
+            配信の形は docs/ を参照。</p>
+    </div>
+
+    <div class="app-sec">
+        <h3>技術構成</h3>
+        <table class="app-table">
+            <tr><th>UI</th><td>Flet（Python、宣言的コンポーネント）</td></tr>
+            <tr><th>処理</th><td>xarray + cfgrib（GRIB2）、numpy</td></tr>
+            <tr><th>地図の描画</th><td>numpy + PIL + contourpy（figures/_layered_renderer.py）。
+                cartopy は海岸線のマスクを前もって作るためだけに使う</td></tr>
+            <tr><th>地点予報のグラフ</th><td>画面は flet.canvas、PNG のダウンロードは matplotlib</td></tr>
+            <tr><th>書き出し</th><td>予定（figure-export スキル）</td></tr>
+        </table>
     </div>
 
     <div class="app-sec">

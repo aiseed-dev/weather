@@ -85,13 +85,13 @@
             <text x="364" y="106" fill="var(--accent-dark)" font-weight="bold"
                   text-anchor="middle" font-size="14">AIseed Weather</text>
             <text x="364" y="128" fill="var(--accent-dark)" text-anchor="middle" font-size="11">重ね描き・注釈</text>
-            <text x="364" y="146" fill="var(--accent-dark)" text-anchor="middle" font-size="11">matplotlib + cartopy</text>
+            <text x="364" y="146" fill="var(--accent-dark)" text-anchor="middle" font-size="11">numpy + PIL + contourpy</text>
             <path d="M458 117 H 524" stroke="var(--border)" stroke-width="2" fill="none"/>
             <rect x="526" y="70" width="226" height="94" rx="10"
                   fill="var(--card)" stroke="var(--border)"/>
-            <text x="639" y="100" fill="var(--text)" text-anchor="middle" font-weight="bold">PNG / PDF</text>
+            <text x="639" y="100" fill="var(--text)" text-anchor="middle" font-weight="bold">書き出し（予定）</text>
             <text x="639" y="122" fill="var(--muted)" text-anchor="middle" font-size="11">出典・ラン時刻・ライセンスを</text>
-            <text x="639" y="138" fill="var(--muted)" text-anchor="middle" font-size="11">図とメタデータに自動で埋め込み</text>
+            <text x="639" y="138" fill="var(--muted)" text-anchor="middle" font-size="11">図とメタデータに埋め込む</text>
         </g>
     </svg>
 </div>
@@ -105,7 +105,8 @@
         </div>
         <div class="app-card">
             <h4>気候値とアノマリ</h4>
-            <p>ERA5（1940 年〜）を基準に、現況が平年からどれだけ離れているかを図にします。ここがこのアプリの差別化点です。</p>
+            <p>ERA5（1940 年〜）を基準に、現況が平年からどれだけ離れているかを図にします。ここがこのアプリの差別化点です。
+               （開発中。いまは地点予報の平年値を Open-Meteo の過去データから出しています）</p>
         </div>
         <div class="app-card">
             <h4>日本の現況</h4>
@@ -117,7 +118,8 @@
         </div>
         <div class="app-card">
             <h4>エクスポート</h4>
-            <p>PNG / PDF に出力すると、出典・ラン識別子・ライセンスが図とメタデータに必ず入ります。</p>
+            <p>（予定）書き出す図には、出典・ラン識別子・ライセンスを必ず入れます。
+               いまは地点予報のグラフを PNG でダウンロードできます。</p>
         </div>
         <div class="app-card">
             <h4>アニメーション</h4>
@@ -173,9 +175,9 @@
     </table>
     <p class="app-note" style="margin-top:14px;">
         <strong>帰属は省略できません。</strong>
-        エクスポートした図には、データの出典・ラン時刻・図法・（アノマリなら）基準期間が必ず入ります。
+        書き出す図には、データの出典・ラン時刻・図法・（アノマリなら）基準期間を必ず入れます（書き出しは開発中）。
         図を共有した相手から「これは何のデータ?」と聞かれたとき、図そのものが答えられる状態にしてあります。
-        気象庁データを合成・加工した場合は、その旨と編集責任の所在も併記されます。
+        気象庁データを合成・加工した場合は、その旨と編集責任の所在も併記します。
     </p>
 </div>
 
