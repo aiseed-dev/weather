@@ -1,5 +1,6 @@
 # 個人開発気象統計（静的サイトジェネレータ）の依存
-# セットアップ: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+# セットアップ（venv はリポジトリ直下に 1 つ。WeatherStatic から見て ../.venv）:
+#   python3 -m venv ../.venv && ../.venv/bin/pip install -r requirements.txt cf-publish
 jinja2>=3.1
 netCDF4>=1.7
 numpy>=2.0

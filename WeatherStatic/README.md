@@ -1,84 +1,81 @@
-# WeatherStatic
+# WeatherStatic — 個人開発気象統計
 
-WeatherCore（ASP.NET Core 2.2）を **静的サイト + Python 定期生成** へ移行するための土台。
-現状は **パイロット**：`/Temperature/HighsMain`（今日の最高気温・主要都市）を 1 ページ通しで再現。
+気象庁の観測データだけを扱う静的サイトと、その裏で動く収集・蓄積・配布の仕組み。
+旧 WeatherCore（ASP.NET Core）を、Python の定期生成と Cloudflare Pages に移したもの。
 
-## アーキテクチャ
+- サイト: https://weather-dj7.pages.dev/（約 3,100 ページ。実況と今日の最高・最低は 10 分ごと）
+- 観測データの配布: `/Data/Daily/`（日別、1880 年〜）・`/Data/AMeDAS/`（10 分値・1 時間値）
+- 予報は扱わない（予報業務には気象業務法の許可が要る）。防災情報も扱わない
 
-```
-Python（ローカル・cron 定期実行）
-  ├─ [取得層]  PostgreSQL / GCP Datastore / 気象庁  →  data/*.json   ★未実装（実データ環境が必要）
-  └─ [描画層]  generate.py + Jinja2 テンプレート     →  public/*.html ★このリポジトリで実装済み
-静的ホスティング（public/ をそのまま配信）
-```
+詳しい文書は [../docs/README.md](../docs/README.md) から辿れる。**動かすなら
+[../docs/operations.md](../docs/operations.md)**、**サイトを直すなら
+[../docs/web.md](../docs/web.md)**。
 
-- **取得層と描画層を分離**。元 C# が表示時に行っていた「キャッシュJSON＋予報のマージ」等の計算は
-  取得層（Python）に寄せ、描画層は完成した JSON を描画するだけにする。
-- 日付依存の分岐（夏/冬・今日/昨日・季節）は生成時に確定して JSON／コンテキストに焼き込む。
-
-## ディレクトリ
+## 全体の形
 
 ```
-generate.py            描画層のビルドドライバ
-weatherlib/
-  filters.py           ViewUtility/Jma の移植（ondo=気温表示, bcolor=平年差の色, jikan=時刻表示, weather_img）
-  season.py            Jma.IsSummer / IsSeason の移植
-templates/
-  _layout.html         共有レイアウト（外部フレームワーク無しの素の HTML/CSS/JS）
-  partials/_navbar.html
-  temperature/highsmain.html
-data/
-  highsmain.sample.json  合成サンプル（実データが無い環境用）
-assets/                自前の CSS/JS（site-base.css → site.css の順で読ませる）
-wwwroot/               画像・favicon・robots.txt（旧サイトから引き継いだ静的物）
-public/                出力（HTML＋assets/ と wwwroot/ からコピーした静的物）
-DATA_CONTRACT.md       取得層が出力すべき JSON の仕様
+気象庁 ──┬─ 地点別 10 分値 ── Worker（Cloudflare）── R2 ＋ deb2 の手元
+         ├─ 10 分値 map JSON ─────────────────────── deb2（半月ごとの NetCDF）
+         ├─ 最新の気象データ CSV（毎時）・確定値 CSV ─ deb2
+         └─ 過去の気象データ（etrn、月次）──────────── deb2
+                                                       │
+                     観測ストア store/observations.nc ＋ weather.sqlite
+                                                       │
+                     generate.py / generate_status.py → public/ → Cloudflare Pages
 ```
 
-## 使い方
+- **いつ何を取るかは deb2 が決める。** Cloudflare に cron は置かない。Worker は
+  頼まれた地点を取って R2 に置き、同じものを deb2 に返すだけ
+- **公開は 3 段。** dev（テストデータ）→ deb2（実データ）→ Cloudflare。段を飛ばさない
+
+## 道具
+
+| 道具 | どこで | 何を |
+|------|--------|------|
+| `fetch_points.py` | deb2・10 分ごと | 地点別 10 分値を Worker 経由で集める。最大瞬間風速などの日別の記録も作る |
+| `fetch_amedas_mirror.py` | deb2・10 分ごと | 10 分値 map JSON を複製し、半月ごとに NetCDF（10 分値・1 時間値）へ封入 |
+| `fetch_data.py` | deb2・毎時／10 分ごと | 最新の気象データ CSV・予報・現在値。`--points-only` で今日の最高・最低を 10 分値で重ね直す |
+| `accumulate.py` | deb2・毎日 1:30 | 観測ストアへの蓄積（時別値・確定値 CSV・日集計。7 日分を毎日取り直す） |
+| `backfill_etrn.py` | deb2・毎月 2 日 | 前月分を etrn の確定値で置き換える |
+| `build_site.py` | deb2・10 分ごと／毎時 | 生成 → 点検 → 公開（`--publish` のときだけ） |
+| `export_dist.py` | deb2（生成から呼ばれる） | 観測ストアの日別値を年ごと・地点ごとの NetCDF に（`/Data/Daily/`） |
+| `make_testdata.py` | dev | 作り物のデータで手元を組み立てる（公開は拒まれる） |
+| `sync_to_server.py` | dev | 作業ツリーのソースを deb2 へ送る（コミット済みなら git push → pull） |
+| `deploy_worker.py` | dev | 収集 Worker のデプロイ |
+| `repair_sentinels.py`・`clean_isolated.py` | dev／deb2 | 観測ストアの修復（2026-10 に使用。記録は運用手順書） |
+
+cron の一覧と入れる順番、資格情報の置き場所、障害時の対処は運用手順書にある。
+
+## 手元で動かす（テストデータ）
+
+venv はリポジトリ直下に 1 つ（`../.venv`）。サーバー（deb2）は
+`python3 -m venv ../.venv && ../.venv/bin/pip install -r requirements.txt cf-publish`
+で作った。開発機はデスクトップアプリと共用の環境（`environment.yml`）に、
+`requirements.txt` の分を足して使っている。
 
 ```bash
-python3 -m venv .venv && . .venv/bin/activate
-pip install jinja2 netCDF4 numpy
-
-# 初回のみ（マスター構築）
-python fetch_station_codes.py         # etrn 地点番号一覧 → master/station_codes.json
-python build_master.py                # 地点マスタ → master/stations.json
-python build_master.py --normals      # 平年値 → master/normals/{code}.json（要 master/raw/*.zip）
-
-# 定期実行（cron）
-python fetch_data.py                  # 現在値 → data/today.csv + today_meta.json + forecast.json
-python accumulate.py                  # 履歴蓄積 → store/observations.nc（7 日窓）
-python generate.py                    # HTML 生成 → public/
-python aggregate_votes.py <access.log>  # 服装投票の集計（配信サーバーのログから。1日1回程度）
-
-# 過去データのバックフィル（旧 PostgreSQL の jma_daily から。一度だけ）
-#   Windows 側: pg_dump -t jma_daily --data-only weather > jma_daily.dump
-python backfill_daily.py jma_daily.dump   # 地点コード=code 同一体系・×10 整数のため無変換で取込
-
-# 不足期間の機械取得（etrn 日別値。再開可能・夜間バッチ向け）
-python backfill_etrn.py --from 2025-01 --to 2026-06 --limit 500   # cron で毎晩 500 ページずつ
-
-# プレビュー（静的配信）
-python -m http.server 5099 --directory public
-#  → http://localhost:5099/Temperature/HighsMain/
+../.venv/bin/python make_testdata.py
+../.venv/bin/python build_site.py                          # 生成して点検（公開はしない）
+./serve_preview.sh                                         # public/ をポート 8765 で配信
 ```
 
-検証済み（2026-07-05）: accumulate.py の自前計算（日平均=毎正時 24 回平均、日降水量=1 時間値合計）が
-etrn の公式日別値と**完全一致**（東京 7/1〜7/4 の平均/最高/最低/降水量で突合）。
+## テスト
 
-## 実データを差し込むには
+`tests/` の各ファイルを直接実行する（例: `../.venv/bin/python tests/test_points_overlay.py`）。
+NetCDF の読み出しの不具合（`tests/test_nc_read_bug.py`）、今日の最高・最低の重ね、
+日別の記録、ミラーの 1 時間値と 404 の記録などを確かめる。
 
-1. 取得層スクリプトを書き、[DATA_CONTRACT.md](DATA_CONTRACT.md) 準拠の `data/highsmain.json` を出力する。
-   - 入力元は元 C# と同じ：キャッシュ `Highs/maindata.json`(夏)/`Highs/wmaindata.json`(冬)
-     ＋ Datastore `forecastSummaries`。これらをマージして完成 JSON にする。
-2. `python generate.py --data data/highsmain.json` で HTML 生成。
-3. cron 等で「取得層 → generate.py」を定期実行し、`public/` を配信/デプロイ。
+## データの形
 
-## 未対応・今後
+| | |
+|---|---|
+| [DATA_CONTRACT.md](DATA_CONTRACT.md) | 取得層と生成層の受け渡し |
+| [DATA_SOURCES.md](DATA_SOURCES.md) | 各データの出所と形式 |
+| [STORAGE_FORMATS.md](STORAGE_FORMATS.md) | observations.nc と weather.sqlite の形 |
+| [DESIGN.md](DESIGN.md) | 静的ジェネレータの設計 |
 
-- モバイル専用レイアウト（元 `_LayoutBootstrapA.NonPC`）は移植せず、
-  1 枚のレイアウトのメディアクエリで対応する方針に決めた（2026-08-28）。
-- 残りのページ群（Home / 各地 / ランキング / 月別 / 雨温図 / 降水量 / 天気図）は
-  この HighsMain と同じ型で順次移植する。DATA_CONTRACT.md 末尾の表を参照。
-- 広告（AdSense）・アクセス解析タグは元レイアウトから必要に応じて復元する。
+## ライセンス
+
+コードは AGPL-3.0-or-later。データは気象庁ホームページのコンテンツで、
+公共データ利用規約（第1.0版）に準拠して利用する（出典: 気象庁ホームページ。
+編集・加工したものはその旨を併記）。

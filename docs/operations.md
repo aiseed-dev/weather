@@ -53,14 +53,17 @@ deb2 を経由せず確かめたいときや cron が止まっているときに
 ## 公開の手順（3 段。飛ばさない）
 
 ```bash
-# 1. dev でテストデータで確認
+# 1. dev でテストデータで確認（venv はリポジトリ直下に 1 つ: ../.venv）
 cd ~/dev/weather/WeatherStatic
-./.venv/bin/python make_testdata.py --force
-./.venv/bin/python build_site.py
+../.venv/bin/python make_testdata.py
+../.venv/bin/python build_site.py
 
-# 2. ソースを送って deb2 で実データで確認
-./.venv/bin/python sync_to_server.py            # 下見
-./.venv/bin/python sync_to_server.py --apply
+# 2. ソースを deb2 へ送って実データで確認
+#    コミット済みなら git push → deb2 で git pull（deb2 には git がある）
+git push && ssh deb2 'cd dev/weather && git pull --ff-only'
+#    コミット前の作業ツリーを送るときは sync_to_server.py
+../.venv/bin/python sync_to_server.py            # 下見
+../.venv/bin/python sync_to_server.py --apply
 ssh deb2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py'
 
 # 3. deb2 から Cloudflare へ
@@ -72,8 +75,13 @@ ssh deb2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --pu
 **コードを変えたとき**だけ。データの更新は cron に任せる。
 
 公開の前に点検を通る必要がある。`_meta.source` が `TESTDATA` なら拒む。
-ページ数が目安（500）を下回るときも拒む。生成が途中で失敗したものを
+ページ数が目安（500）を下回るとき、地点別の実況ページが 1,000 枚を下回るとき
+（10 分値を読めていない）も拒む。生成が途中で失敗したものや、空の実況を
 上げないため。
+
+**deb2 に pull したコードは、次の 10 分ごとの実行で公開される。** cron が
+`build_site.py --publish` を回しているので、3 段目を手で打たなくても出る。
+pull の前に、dev で 1 段目を済ませておくこと。
 
 `release.py`（手元から）は臨時の経路。deb2 の `public/` を取り寄せて上げる。
 cron が止まっているときや、deb2 を経由せず確かめたいときに使う。

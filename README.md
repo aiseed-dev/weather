@@ -25,16 +25,23 @@ MSL、ジオポテンシャル高度、アノマリが何を意味するかご�
 
 ## できること
 
-- **全球予報図** ― ECMWF Open Data (IFS / AIFS)
-- **気候値・アノマリ図** ― ERA5 (1940 年〜現在)
+いま動くもの:
+
+- **全球予報図** ― ECMWF Open Data (IFS / AIFS)。海面気圧・2 m 気温・
+  降水量・降水強度・風。等圧線や風の重ね描き、極投影を含む領域の切り替え
+- **予報のタイムライン再生** ― 予報ステップの連続表示 (⏮ ▶ ⏭ とスライダー)
 - **日本の雨量ナウキャスト** ― 気象庁レーダータイル
 - **日本の地上観測** ― 気象庁 AMeDAS (約 1,300 地点)
-- **多層合成** ― 等圧線、気温場、風、降水、任意の気圧面のジオポ
-  テンシャル
+- **地点予報** ― Open-Meteo (アンサンブル・平年値) と気象庁の予報。
+  グラフは PNG でダウンロードできる
+
+予定:
+
+- **気候値・アノマリ図** ― ERA5 (1940 年〜現在)。ERA5 のサービスはまだ無く、
+  地点予報の平年値はいま Open-Meteo の過去データから出している
+- **図の書き出し** ― 帰属情報と起源メタデータを埋め込んだ PNG / PDF
 - **注釈** ― テキストラベル、矢印、領域ハイライトによる説明補助
-- **エクスポート** ― 帰属情報と起源メタデータを埋め込んだ PNG / PDF
-- **アニメーション** ― 予報ステップ、または過去の日付範囲の連続表示
-- **地点予報** ― Open-Meteo を補助ビューとして利用
+- **任意の気圧面** ― 500 hPa 等のジオポテンシャル高度などの多層合成
 
 ## 知っておくべき 2 つの設計原則
 
@@ -54,20 +61,26 @@ MSL、ジオポテンシャル高度、アノマリが何を意味するかご�
 
 ## ステータス
 
-初期開発段階。スケルトン、サービス層、規約、ナビゲーションが整備済み。
-次のマイルストーン: 実 ECMWF ラン 1 本から MSL 図を 1 枚描画する。
+初期開発段階。地図ビュー (ECMWF の予報図とタイムライン再生)、レーダー、
+AMeDAS、地点予報の各ビューが動く。次は ERA5 の気候値と図の書き出し。
+
 
 ## 技術スタック
 
 - [Flet](https://flet.dev/) ― 宣言的 Python UI
 - [ECMWF Open Data](https://www.ecmwf.int/en/forecasts/datasets/open-data) ―
-  AWS S3 ミラー (`s3://ecmwf-forecasts`) 経由、主要データソース
-- [ERA5](https://registry.opendata.aws/ecmwf-era5/) ― AWS (`s3://ecmwf-era5`)
-  経由、気候値・過去参照
+  主要データソース。`config.toml` で選んだミラー (GCP / AWS / Azure / ECMWF 直)
+  から、(cycle, step) ごとに一括 GRIB を HTTPS で取る。aiseed の再配布パック
+  (`forecast_source = "mirror"`、[docs/forecast-distribution.md](docs/forecast-distribution.md))
+  も選べる
+- [ERA5](https://registry.opendata.aws/ecmwf-era5/) ― AWS (`s3://ecmwf-era5`)。
+  気候値・過去参照 (予定)
 - [気象庁](https://www.jma.go.jp/) 公開エンドポイント ― 日本のレーダーと AMeDAS
 - [Open-Meteo](https://open-meteo.com/) ― 地点予報の補助
 - xarray + cfgrib ― GRIB2 デコード
-- matplotlib + cartopy ― 地図描画
+- numpy + PIL + contourpy ― 地図描画 (`figures/_layered_renderer.py`)。
+  cartopy は海岸線のマスクを前もって作るためだけに使う
+- 地点予報のグラフ ― 画面は `flet.canvas`、PNG のダウンロードは matplotlib
 
 ## セットアップ (Miniforge 必須)
 
@@ -242,8 +255,8 @@ WSL (Windows Subsystem for Linux) は本アプリには推奨しません。WSL 
 - 気象庁データ: 出典: 気象庁ホームページ ― 合成データ (レーダー重ね描き、
   AMeDAS 地点マップ等) には「処理データ」表記を併記
 
-エクスポート機能は帰属とデータラン識別子を自動で埋め込みます。本ツールから
-共有された図は、起源情報を必ず持って出ていきます。
+図の書き出し (予定) では、帰属とデータラン識別子を必ず埋め込みます。本ツールから
+共有された図が、起源情報を必ず持って出ていくようにするためです。
 
 ## プロジェクト構成
 
@@ -251,22 +264,44 @@ WSL (Windows Subsystem for Linux) は本アプリには推奨しません。WSL 
 src/aiseed_weather/
 ├── main.py
 ├── components/                       # Flet コンポーネント (UI のみ)
-│   ├── app.py                        # 地図 / レーダー / AMeDAS のナビ
-│   ├── map_view.py                   # ECMWF/ERA5 総観チャート
+│   ├── app.py                        # 地図 / レーダー / AMeDAS / 地点予報のナビ
+│   ├── map_view.py                   # ECMWF 総観チャートとタイムライン再生
 │   ├── radar_view.py                 # 気象庁レーダー雨量ナウキャスト
-│   └── amedas_view.py                # 気象庁 AMeDAS 地上観測
+│   ├── amedas_view.py                # 気象庁 AMeDAS 地上観測
+│   └── point_forecast_view.py        # 地点予報 (Open-Meteo・気象庁)
+├── figures/                          # 描画 (層構造のレンダラ、海岸線、各チャート)
+├── products/                         # 扱うプロダクトとミラーの一覧
 ├── services/                         # データ取得・デコード (Flet 非依存)
 │   ├── forecast_service.py           # ECMWF Open Data
-│   ├── point_forecast_service.py     # Open-Meteo
+│   ├── open_meteo_*.py               # Open-Meteo (予報・アンサンブル・過去)
+│   ├── point_climatology.py          # 地点予報の平年値
 │   ├── jma_radar_service.py          # 気象庁レーダータイル
 │   ├── jma_amedas_service.py         # 気象庁 AMeDAS
+│   ├── jma_forecast_service.py       # 気象庁の予報
 │   └── jma_endpoints.py              # URL レジストリ
 └── models/                           # データクラス、リアクティブモデル
-    └── user_settings.py
+
+viewer/                               # GPU ビューアの最小実装 (Rust + wgpu)
+WeatherStatic/                        # Web サイト「個人開発気象統計」とデータ基盤
+docs/                                 # Web とデータ基盤の文書 (目次は docs/README.md)
 ```
 
 ## コントリビュータと AI エージェント向け
 
-まず `CLAUDE.md`、続いて `AGENTS.md` を読んでください。その上で、該当する
-Skill を `.agents/skills/` 配下から参照します。Skill 群にはプロジェクト規約と、
-データソース間の優先度ルールがエンコードされています。
+まず `CLAUDE.md`、続いて `AGENTS.md` を読んでください。`AGENTS.md` の表が、
+作業の種類ごとに読むべき Skill (`.agents/skills/`) を示します。Skill 群には
+プロジェクト規約と、データソース間の優先度ルールがエンコードされています。
+
+これらはデスクトップアプリ (`src/`) のための文書です。同じリポジトリにある
+Web サイト (`WeatherStatic/`) とデータ基盤 (deb2 + Cloudflare) の文書は
+[docs/README.md](docs/README.md) から辿れます。
+
+## 気象庁の観測データの配布
+
+Web サイト「個人開発気象統計」で、気象庁の観測を NetCDF にまとめて配っています
+(出典: 気象庁ホームページ。気象庁のデータを編集・加工したもの)。
+
+- [日別の観測データ](https://weather-dj7.pages.dev/Data/Daily/) ― 気温・降水量・日照、
+  1880 年〜、廃止された地点を含む 1,342 地点
+- [アメダス 10 分値アーカイブ](https://weather-dj7.pages.dev/Data/AMeDAS/) ― 気象庁では
+  約 9 日で消える 10 分値・1 時間値、最大瞬間風速などの日別値

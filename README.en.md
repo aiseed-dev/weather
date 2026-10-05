@@ -27,16 +27,25 @@ expert workflow, not onboarding.
 
 ## What it does
 
-- **Global forecast maps** from ECMWF Open Data (IFS and AIFS)
-- **Climatology / anomaly maps** from ERA5 (1940-present)
+Working now:
+
+- **Global forecast maps** from ECMWF Open Data (IFS and AIFS): mean sea
+  level pressure, 2 m temperature, precipitation, precipitation rate, wind.
+  Isobar and wind overlays; regions including polar projections
+- **Forecast timeline playback** across forecast steps (⏮ ▶ ⏭ and a slider)
 - **Japan rainfall nowcast** from JMA radar tiles
 - **Japan ground observations** from JMA AMeDAS (~1,300 stations)
-- **Multi-layer composition**: pressure isobars, temperature fields, wind,
-  precipitation, geopotential at any pressure level
+- **Point forecasts** from Open-Meteo (ensemble, climatology) and JMA
+  forecasts; the chart can be downloaded as PNG
+
+Planned:
+
+- **Climatology / anomaly maps** from ERA5 (1940-present). There is no ERA5
+  service yet; the point-forecast climatology currently comes from the
+  Open-Meteo archive
+- **Figure export**: PNG and PDF with embedded attribution and provenance metadata
 - **Annotation**: text labels, arrows, region highlights for explanation
-- **Export**: PNG and PDF with embedded attribution and provenance metadata
-- **Animation**: across forecast steps or historical date ranges
-- **Point forecasts** from Open-Meteo as a supporting view
+- **Any pressure level**: geopotential height at 500 hPa and other levels
 
 ## Two principles you should know about
 
@@ -55,20 +64,26 @@ view shows a progress indicator and fetches.
 
 ## Status
 
-Early development. Skeleton, services, conventions, and navigation are in
-place. Next milestone: render a single MSL chart from a live ECMWF run.
+Early development. The map view (ECMWF forecast charts with timeline
+playback), radar, AMeDAS, and point-forecast views work. Next: ERA5
+climatology and figure export.
 
 ## Stack
 
 - [Flet](https://flet.dev/) — declarative Python UI
 - [ECMWF Open Data](https://www.ecmwf.int/en/forecasts/datasets/open-data)
-  via AWS S3 mirror (`s3://ecmwf-forecasts`) — primary data source
+  — primary data source. One bulk GRIB per (cycle, step) over HTTPS from the
+  mirror you pick in `config.toml` (GCP / AWS / Azure / ECMWF direct), or the
+  aiseed redistribution packs (`forecast_source = "mirror"`, see
+  [docs/forecast-distribution.md](docs/forecast-distribution.md))
 - [ERA5](https://registry.opendata.aws/ecmwf-era5/) via AWS (`s3://ecmwf-era5`)
-  — climatology and historical reference
+  — climatology and historical reference (planned)
 - [JMA](https://www.jma.go.jp/) public endpoints — Japan radar and AMeDAS
 - [Open-Meteo](https://open-meteo.com/) — supporting point forecasts
 - xarray + cfgrib for GRIB2 decoding
-- matplotlib + cartopy for map rendering
+- numpy + PIL + contourpy for map rendering (`figures/_layered_renderer.py`);
+  cartopy is used only to precompute coastline masks
+- Point-forecast chart: `flet.canvas` on screen, matplotlib for the PNG download
 
 ## Setup (Miniforge required)
 
@@ -240,9 +255,8 @@ Japanese input.
 - JMA data: 出典: 気象庁ホームページ — processed-data notice appears on
   composited figures (radar overlays, AMeDAS station maps)
 
-The export feature automatically embeds attribution and the data run
-identifier in every output, so figures shared from this tool carry their
-provenance.
+Figure export (planned) always embeds attribution and the data run
+identifier, so figures shared from this tool carry their provenance.
 
 ## Project layout
 
@@ -250,22 +264,47 @@ provenance.
 src/aiseed_weather/
 ├── main.py
 ├── components/                       # Flet components (UI only)
-│   ├── app.py                        # nav between map / radar / amedas
-│   ├── map_view.py                   # ECMWF/ERA5 synoptic charts
+│   ├── app.py                        # nav between map / radar / amedas / point forecast
+│   ├── map_view.py                   # ECMWF synoptic charts and timeline playback
 │   ├── radar_view.py                 # JMA rainfall nowcast
-│   └── amedas_view.py                # JMA ground observations
+│   ├── amedas_view.py                # JMA ground observations
+│   └── point_forecast_view.py        # point forecasts (Open-Meteo, JMA)
+├── figures/                          # rendering (layered renderer, coastlines, charts)
+├── products/                         # catalog of products and mirrors
 ├── services/                         # data fetching, decoding (no Flet imports)
 │   ├── forecast_service.py           # ECMWF Open Data
-│   ├── point_forecast_service.py     # Open-Meteo
+│   ├── open_meteo_*.py               # Open-Meteo (forecast, ensemble, archive)
+│   ├── point_climatology.py          # point-forecast climatology
 │   ├── jma_radar_service.py          # JMA radar tiles
 │   ├── jma_amedas_service.py         # JMA AMeDAS
+│   ├── jma_forecast_service.py       # JMA forecasts
 │   └── jma_endpoints.py              # URL registry
 └── models/                           # dataclasses, observable models
-    └── user_settings.py
+
+viewer/                               # minimal GPU viewer (Rust + wgpu)
+WeatherStatic/                        # the web site and the data infrastructure
+docs/                                 # docs for the web site and data infrastructure (index: docs/README.md)
 ```
 
 ## For contributors and AI agents
 
-Read `CLAUDE.md` first, then `AGENTS.md`, then the relevant skills under
-`.agents/skills/`. The skills encode this project's conventions and the
-prioritization between data sources.
+Read `CLAUDE.md` first, then `AGENTS.md`. The table in `AGENTS.md` says
+which skills under `.agents/skills/` to read for each kind of task. The
+skills encode this project's conventions and the prioritization between
+data sources.
+
+These cover the desktop app (`src/`). The web site (`WeatherStatic/`) and
+the data infrastructure (deb2 + Cloudflare) in the same repository are
+documented from [docs/README.md](docs/README.md).
+
+## JMA observation data distribution
+
+The companion web site publishes JMA observations as NetCDF (source: Japan
+Meteorological Agency website; edited and processed from JMA data):
+
+- [Daily observations](https://weather-dj7.pages.dev/Data/Daily/) —
+  temperature, precipitation, sunshine; 1880 onward; 1,342 stations
+  including closed ones
+- [AMeDAS 10-minute archive](https://weather-dj7.pages.dev/Data/AMeDAS/) —
+  10-minute and hourly values that JMA keeps for only about 9 days, plus
+  daily maximum gusts
