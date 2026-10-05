@@ -91,10 +91,8 @@ cron が止まっているときや、deb2 を経由せず確かめたいとき�
 ```cron
 # 10分毎: 10 分値を複製し半月 NetCDF へ封入
 */10 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_amedas_mirror.py >> $HOME/dev/weather/logs/amedas_mirror.log 2>&1
-# 10分毎: 現在値だけ更新（トップページが読む public/data/current.json）
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_data.py --current-only >> $HOME/dev/weather/logs/current.log 2>&1
-# 10分毎: 地点別 10 分値を集め、今日の最高・最低を重ね、サイトを作って公開
-*/10 * * * * cd $HOME/dev/weather/WeatherStatic && sleep 90 && { ../.venv/bin/python fetch_points.py; ../.venv/bin/python fetch_data.py --points-only && ../.venv/bin/python build_site.py --publish; } >> $HOME/dev/weather/logs/status.log 2>&1
+# 10分毎（8 分・18 分…）: 地点別 10 分値・現在値を取り、今日の最高・最低を重ね、サイトを作って公開
+8-59/10 * * * * cd $HOME/dev/weather/WeatherStatic && { ../.venv/bin/python fetch_points.py; ../.venv/bin/python fetch_data.py --current-only; ../.venv/bin/python fetch_data.py --points-only && ../.venv/bin/python build_site.py --publish; } >> $HOME/dev/weather/logs/status.log 2>&1
 # 毎時52分: 最新CSV・予報・現在天気 → サイト再生成 → 公開
 52 * * * * cd $HOME/dev/weather/WeatherStatic && { ../.venv/bin/python fetch_data.py && ../.venv/bin/python build_site.py --publish; } >> $HOME/dev/weather/logs/publish.log 2>&1
 # 日次 1:30: 統計の蓄積（気象庁の 1 時更新の後）
@@ -111,18 +109,25 @@ cron が止まっているときや、deb2 を経由せず確かめたいとき�
 | 段 | 前提 | 入れる行 |
 |---|---|---|
 | 1. 収集だけ | なし | `fetch_amedas_mirror.py`、`fetch_data.py --current-only`、`accumulate.py`、月次 `backfill_etrn.py`、毎時は公開なしの `fetch_data.py` 単独 |
-| 2. 公開 | `~/.config/cloudflare/pages.env`（Pages + R2） | 毎時の行を上の一覧のものにする。10 分ごとの行は `fetch_points.py;` を抜いた形（`{ fetch_data.py --points-only && build_site.py --publish; }`） |
+| 2. 公開 | `~/.config/cloudflare/pages.env`（Pages + R2） | 毎時の行を上の一覧のものにする。10 分ごとの行は `fetch_points.py;` を抜いた形 |
 | 3. 速報 | Worker のデプロイと `WEATHER_WORKER_*` の 2 行 | 10 分ごとの行を上の一覧のもの（先頭に `fetch_points.py;`）にする |
 
 **コマンドは `{ …; }` でまとめてからログへ送る。** `a && b >> log` と書くと
 ログに入るのは `b` の出力だけで、`a` の出力やエラーは cron のメールに流れて
 見えなくなる（2026-10-05 まで一覧がこの形だった）。
 
-10 分ごとの行の `fetch_points.py` の後ろが `;` なのは、一部のエリアが取れずに
-終了コード 1 になっても、取れた分で生成と公開を続けるため。
+10 分ごとの行の `fetch_points.py` と `--current-only` の後ろが `;` なのは、
+一部が取れずに終了コード 1 になっても、取れた分で生成と公開を続けるため。
+
+**10 分ごとの行は毎時 8 分・18 分…に動かす（`8-59/10`）。** 気象庁は各スロットを
+約 6 分半遅れで出す（2026-10-05 実測: 13:40 → 13:46:24、14:00 → 14:06:23、
+14:10 → 14:16:32）。0 分ちょうどや 1 分半に取りに行くと、そのスロットはまだ
+無く、10 分前のものを取ってしまう。以前の一覧にあった `sleep 90` は、取得と
+生成が別の行だった頃に「取得が終わるのを待つ」ためのもので、ひとつの行で
+順に動かす今は要らない。
 
 **生成と公開は `build_site.py` 自身が `public.lock` で直列にする。** 毎時 52 分の
-行と 10 分ごとの行（50 分 ＋ 90 秒待ち）はほぼ同時に走るが、片方は待たされる。
+行と 10 分ごとの行（48 分・58 分）が重なれば、片方は待たされる。
 15 分待って取れなければその回は見送る。
 
 投票集計は KV を用意してから。
