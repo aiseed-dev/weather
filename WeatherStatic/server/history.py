@@ -76,7 +76,8 @@ def _meta(mtime_st: float, mtime_slug: float) -> tuple[dict, dict]:
     meta = {}
     for s in st:
         pref = s.get("pref") or pref_of_prec.get(s.get("prec_no")) or ""
-        meta[s["code"]] = {"name": s.get("name") or str(s["code"]), "pref": pref}
+        meta[s["code"]] = {"name": s.get("name") or str(s["code"]), "pref": pref,
+                           "prec_no": s.get("prec_no") or 99}
     slugs_p = PUBLIC / "data" / "slugs.json"
     slugs = json.loads(slugs_p.read_text(encoding="utf-8")) if slugs_p.is_file() else {}
     return meta, slugs.get("stations", {})
@@ -89,15 +90,16 @@ def meta() -> tuple[dict, dict]:
 
 
 def _station(code: int, info: dict, slugs: dict) -> dict:
-    m = info.get(code, {"name": str(code), "pref": ""})
+    m = info.get(code, {"name": str(code), "pref": "", "prec_no": 99})
     slug = slugs.get(str(code))
-    return {"name": m["name"], "pref": m["pref"],
+    return {"name": m["name"], "pref": m["pref"], "order": (m["prec_no"], code),
             "url": f"/Stations/JP/{slug}/" if slug else None}
 
 
 def _ranked(rows: list[dict], key: str) -> list[dict]:
-    """値の大きい順に並べ、同じ値は同じ順位にする（1, 2, 2, 4 …）。"""
-    rows.sort(key=lambda r: -r[key])
+    """値の大きい順に並べ、同じ値は同じ順位にする（1, 2, 2, 4 …）。
+    同じ値の中は府県番号順・地点番号順（旧サイトと同じく北から）。"""
+    rows.sort(key=lambda r: (-r[key], r["order"]))
     prev, rank = None, 0
     for i, r in enumerate(rows, 1):
         if r[key] != prev:

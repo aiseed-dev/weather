@@ -150,6 +150,61 @@ backfill_etrn が自前で使う。**cron に flock を書く必要はない。*
 - accumulate は 40 分待って取れなければその回を見送る（7 日窓なので次回が拾う）
 - バックフィルは既定 1 時間待つ。その間 accumulate は見送られる
 
+## サーバー（deb2 の FastAPI）
+
+**しばらくは deb2 でサイトを配る。** 旧サイト（weather.time-j.net の WeatherCore）には、
+日ごと・月ごとの集計ページの URL が 2,000 件以上あり、静的に作ると組み合わせの数だけ
+ページが要る。旧サイトのリンクは大文字小文字も揺れている。`server/app.py` がそれを
+受け持つ。生成（`build_site.py`）の流れはそのままで、サーバーは生成済みの `public/` を
+読むだけ。
+
+1 つの入口で、次の順に判定する。
+
+1. 生成済みのファイル（`public/`）がその URL にあれば返す（ディレクトリはスラッシュ付きへ）
+2. 過去のページならその場で作る（`server/history.py`。配布用の日別データ
+   `dist/daily/years/` から）。いまは「その日の猛暑日などの地点」
+   （`/Temperature/SummerDay/{a|b|c|d}{YYYYMMDD}`）と「月の日ごとの地点数」
+   （`/Temperature/SummerMonth/{a|b|c|d}/{月}`）
+3. 生成済みの `_redirects` に当たれば転送（Pages と同じ規則）
+4. 大文字小文字だけ違うファイルがあれば正しい URL へ 301
+5. どれにも当たらなければ 404
+
+起動（試すとき）:
+
+```bash
+cd ~/dev/weather/WeatherStatic
+../.venv/bin/uvicorn server.app:app --host 127.0.0.1 --port 8770
+```
+
+常駐させるときは systemd のユーザー単位で（設定は運用者が行う）。
+`~/.config/systemd/user/weather-server.service` の例:
+
+```ini
+[Unit]
+Description=個人開発気象統計（FastAPI）
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/dev/weather/WeatherStatic
+ExecStart=%h/dev/weather/.venv/bin/uvicorn server.app:app --host 127.0.0.1 --port 8770 --workers 2
+Restart=always
+
+[Install]
+WantedBy=default.target
+```
+
+ログインしていなくても動かすには `sudo loginctl enable-linger dev` が要る。
+`systemctl --user daemon-reload && systemctl --user enable --now weather-server` で起動。
+コードを pull したあとは `systemctl --user restart weather-server`。
+
+**外に出すのは Cloudflare Tunnel。** 家のルーターに穴を開けず、`cloudflared` が deb2 から
+Cloudflare へ外向きにつなぐ。まず別のホスト名（例 `new.weather.time-j.net`）で確かめ、
+問題なければ `weather.time-j.net` を旧システムから切り替える。キャッシュは各応答の
+`Cache-Control` に従う（生成済みの HTML は 60 秒、確定した過去のページは 1 日）。
+
+**可用性。** deb2 が止まると、Tunnel 経由のサイトも止まる。Cloudflare Pages への公開は
+続けているので、そのあいだは `weather-dj7.pages.dev` で同じ内容（過去のページを除く）が見られる。
+
 ## いつ何を取りに行くか
 
 ### 統計（accumulate.py）
