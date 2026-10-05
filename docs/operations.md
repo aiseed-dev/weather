@@ -14,19 +14,19 @@
 | 経路 | 取得者 | 取得元 | 頻度 | 用途 | 止まると |
 |------|--------|--------|------|------|----------|
 | 速報 | Cloudflare Worker → R2 | 地点別 10 分値 | 10 分ごと | 実況ページ・Flet 版 | 実況が古くなる。10 日で取り返せなくなる |
-| 統計 | **dev2 が直接** | map 毎正時 ＋ 確定値 CSV | 1 日 1 回（1 時以降） | `observations.nc` | 7 日以内の再開なら自力で埋まる |
-| 公開 | dev2 | 自分の生成物 | 10 分ごと・毎時 | Cloudflare Pages | サイトが更新されない |
+| 統計 | **deb2 が直接** | map 毎正時 ＋ 確定値 CSV | 1 日 1 回（1 時以降） | `observations.nc` | 7 日以内の再開なら自力で埋まる |
+| 公開 | deb2 | 自分の生成物 | 10 分ごと・毎時 | Cloudflare Pages | サイトが更新されない |
 
 **速報と統計を分けてある。** 10 分値は実況用の速報で、統計には使わない。
 分けていないと、10 分値の収集が止まったときに統計まで欠ける。
 2026-08-29 に実際に 2 日止まり、実況ページだけが古いまま公開された。
 
-dev2 は生産者であって配信者ではない。押し出したあとは落ちていても
-利用者は困らない。**dev2 を公開する必要はない**（アウトバウンドのみ）。
+deb2 は生産者であって配信者ではない。押し出したあとは落ちていても
+利用者は困らない。**deb2 を公開する必要はない**（アウトバウンドのみ）。
 
 ## 道具と置き場所
 
-道具は動く場所で分かれている。手元専用のものは dev2 へ送らない
+道具は動く場所で分かれている。手元専用のものは deb2 へ送らない
 （向こうに置かなければ向こうで動かせない）。
 
 | 場所 | 道具 | すること |
@@ -34,20 +34,20 @@ dev2 は生産者であって配信者ではない。押し出したあとは落
 | dev | `make_testdata.py` | 作り物のデータを置く。見た目の確認用 |
 | dev | `sync_to_server.py` | ソースを送る。**自分と release.py は送らない** |
 | dev | `deploy_worker.py` | Worker を Cloudflare へデプロイする |
-| dev | `release.py` | dev2 の生成物を取り寄せて公開（臨時・確認用） |
-| dev2 | `fetch_points.py` | Worker を呼んで 10 分値を集める（速報） |
-| dev2 | `fetch_amedas_mirror.py` | 10 分値を複製し半月 NetCDF へ封入 |
-| dev2 | `accumulate.py` | map 毎正時と確定値 CSV から `observations.nc` を作る（統計） |
-| dev2 | `fetch_data.py` | 現在値・予報・現在天気 |
-| dev2 | `build_site.py --publish` | 生成・点検・**定期公開**。cron はこれ |
+| dev | `release.py` | deb2 の生成物を取り寄せて公開（臨時・確認用） |
+| deb2 | `fetch_points.py` | Worker を呼んで 10 分値を集める（速報） |
+| deb2 | `fetch_amedas_mirror.py` | 10 分値を複製し半月 NetCDF へ封入 |
+| deb2 | `accumulate.py` | map 毎正時と確定値 CSV から `observations.nc` を作る（統計） |
+| deb2 | `fetch_data.py` | 現在値・予報・現在天気 |
+| deb2 | `build_site.py --publish` | 生成・点検・**定期公開**。cron はこれ |
 | Worker | `workers/amedas-point/` | 渡された地点を取り、渡された名前で R2 に 1 本置く |
 
-**定期公開は dev2 が行う。** サイトは 10 分ごとに更新されるので、生成だけ
+**定期公開は deb2 が行う。** サイトは 10 分ごとに更新されるので、生成だけ
 して誰も上げない形は成り立たない。`release.py`（手元から）は臨時の経路で、
-dev2 を経由せず確かめたいときや cron が止まっているときに使う。
+deb2 を経由せず確かめたいときや cron が止まっているときに使う。
 
 **Worker に判断を持たせない。** いつ・何を取るか、失敗をどう呼び直すかは
-すべて dev2 が決める。Worker は重い取得を肩代わりする手足に徹する。
+すべて deb2 が決める。Worker は重い取得を肩代わりする手足に徹する。
 そうしないと、地点の増減のたびに Worker の再デプロイが要る。
 
 ## 公開の手順（3 段。飛ばさない）
@@ -58,14 +58,14 @@ cd ~/dev/weather/WeatherStatic
 ./.venv/bin/python make_testdata.py --force
 ./.venv/bin/python build_site.py
 
-# 2. ソースを送って dev2 で実データで確認
+# 2. ソースを送って deb2 で実データで確認
 ./.venv/bin/python sync_to_server.py            # 下見
 ./.venv/bin/python sync_to_server.py --apply
-ssh dev2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py'
+ssh deb2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py'
 
-# 3. dev2 から Cloudflare へ
-ssh dev2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --dry-run'
-ssh dev2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --publish'
+# 3. deb2 から Cloudflare へ
+ssh deb2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --dry-run'
+ssh deb2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --publish'
 ```
 
 そのあとは cron が 10 分ごと・毎時に同じことを行う。手順を踏むのは、
@@ -75,13 +75,13 @@ ssh dev2 'cd dev/weather/WeatherStatic && ../.venv/bin/python build_site.py --pu
 ページ数が目安（500）を下回るときも拒む。生成が途中で失敗したものを
 上げないため。
 
-`release.py`（手元から）は臨時の経路。dev2 の `public/` を取り寄せて上げる。
-cron が止まっているときや、dev2 を経由せず確かめたいときに使う。
+`release.py`（手元から）は臨時の経路。deb2 の `public/` を取り寄せて上げる。
+cron が止まっているときや、deb2 を経由せず確かめたいときに使う。
 
 `sync_to_server.py --stale` で「向こうにだけあるファイル」を調べられる。
 こちらで消したものが残っていると、古いコードからデプロイしてしまう。
 
-## cron（dev2）
+## cron（deb2）
 
 **cron の設定は運用者が行う。** ここに載せるのは照合用の一覧で、
 道具や手順書がこれを自動で登録することはしない。二重登録すると同じ処理が
@@ -205,9 +205,9 @@ D1."）。地点ごとに置くと fetch N ＋ put N ＝ 2N になり 25 地点�
 | | 回数 | 誰が |
 |---|---|---|
 | 地点別 10 分値 | 1,286 × 144 | Worker |
-| map（速報の補完） | 144 | dev2 |
-| map（統計の時別） | 168 | dev2 |
-| 確定値 CSV | 14 | dev2 |
+| map（速報の補完） | 144 | deb2 |
+| map（統計の時別） | 168 | deb2 |
+| 確定値 CSV | 14 | deb2 |
 
 ## デプロイ（cf-publish。wrangler は使わない）
 
@@ -221,7 +221,7 @@ D1."）。地点ごとに置くと fetch N ＋ put N ＝ 2N になり 25 地点�
 `deploy_worker.py` はどのディレクトリから実行してもよい。既定は下見で、
 `--apply` を付けたときだけ上げる。合言葉がまだ無ければ `--init-token` で作る
 （値は表示しない）。デプロイ後に `workers.dev` の URL を拾って `pages.env` に
-書き戻し、dev2 へ足す 2 行を表示する。
+書き戻し、deb2 へ足す 2 行を表示する。
 
 R2 バケット `weather-amedas` は `wrangler.toml` に書いてあるので、無ければ
 cf-publish が作る（トークンに `Workers R2 Storage: Edit` が要る）。
@@ -231,7 +231,7 @@ cf-publish が作る（トークンに `Workers R2 Storage: Edit` が要る）�
 `wrangler.toml` から拾う既定にも `[[services]]` は含まれない。
 
 **R2 に独自ドメインは要らない**（収集には）。Worker → R2 はバインディング、
-dev2 → Worker は `*.workers.dev` で足りる。ドメインが要るのは、ブラウザや
+deb2 → Worker は `*.workers.dev` で足りる。ドメインが要るのは、ブラウザや
 Flet が HTTP で読みに行くときだけ。
 
 ## 資格情報の置き場所（値は書かない）
@@ -244,14 +244,14 @@ Flet が HTTP で読みに行くときだけ。
 |--------|----------|----------|
 | dev | `deploy_worker.py`（Worker のデプロイ・バケット作成） | `Workers Scripts: Edit` ＋ `Workers R2 Storage: Edit` |
 | dev | `release.py`（臨時の公開・確認） | `Cloudflare Pages: Edit` |
-| dev2 | `build_site.py --publish`（**定期公開**） | `Cloudflare Pages: Edit` |
-| dev2 | `cf-publish r2 sync`（予報パック・過去観測） | `Workers R2 Storage: Edit` |
+| deb2 | `build_site.py --publish`（**定期公開**） | `Cloudflare Pages: Edit` |
+| deb2 | `cf-publish r2 sync`（予報パック・過去観測） | `Workers R2 Storage: Edit` |
 
-トークンは 1 マシン 1 本。dev は上の 2 行ぶんを合わせた権限、dev2 は下の
+トークンは 1 マシン 1 本。dev は上の 2 行ぶんを合わせた権限、deb2 は下の
 2 行ぶんを合わせた権限を持たせる。
 
-**dev2 にも `Pages:Edit` が要る。** サイトは 10 分ごとに更新されるので、
-定期公開は dev2 が行う。手元からしか上げられない形にすると、dev の電源が
+**deb2 にも `Pages:Edit` が要る。** サイトは 10 分ごとに更新されるので、
+定期公開は deb2 が行う。手元からしか上げられない形にすると、dev の電源が
 入っているときしか site が更新されない。
 
 置き場所（`~/.config/cloudflare/`。cf-publish は `pages.env` を既定で読む）:
@@ -262,11 +262,11 @@ Flet が HTTP で読みに行くときだけ。
 | 場所 | 中身 |
 |------|------|
 | dev | `CLOUDFLARE_API_TOKEN`（Pages ＋ Workers ＋ R2）／`CLOUDFLARE_ACCOUNT_ID`／`WEATHER_WORKER_TOKEN` |
-| dev2 | `CLOUDFLARE_API_TOKEN`（Pages ＋ R2）／`CLOUDFLARE_ACCOUNT_ID`／`WEATHER_WORKER_TOKEN`／`WEATHER_WORKER_URL` |
+| deb2 | `CLOUDFLARE_API_TOKEN`（Pages ＋ R2）／`CLOUDFLARE_ACCOUNT_ID`／`WEATHER_WORKER_TOKEN`／`WEATHER_WORKER_URL` |
 
-`WEATHER_WORKER_TOKEN` は**両マシンで同じ値**（Worker 側の secret と dev2 が
+`WEATHER_WORKER_TOKEN` は**両マシンで同じ値**（Worker 側の secret と deb2 が
 送る値が一致していないと 403 になる）。`deploy_worker.py` が dev のこの値を
-そのまま Worker の secret にするので、dev2 へは同じ値を書き写す。
+そのまま Worker の secret にするので、deb2 へは同じ値を書き写す。
 
 **ファイルごと配らない。** 向こうには向こうの資格情報が入っている。足すのは
 `WEATHER_WORKER_URL` と `WEATHER_WORKER_TOKEN` の 2 行だけ。
@@ -274,13 +274,13 @@ Flet が HTTP で読みに行くときだけ。
 **二種類の秘密を混ぜない。**
 
 - Cloudflare API トークン … デプロイする権限。アカウントを操作できる
-- `WEATHER_WORKER_TOKEN` … dev2 だけが Worker を呼べるようにする合言葉
+- `WEATHER_WORKER_TOKEN` … deb2 だけが Worker を呼べるようにする合言葉
 
-後者に前者を流用しない。合言葉は dev2 の設定と Worker の環境の両方に置かれ、
+後者に前者を流用しない。合言葉は deb2 の設定と Worker の環境の両方に置かれ、
 呼び出しのたびに HTTP ヘッダで飛ぶ。漏れたときに失うものを「その Worker を
 呼べる」だけに留める。
 
-Worker 側の secret と dev2 が送る値は同じでなければならない。手で二度打つと
+Worker 側の secret と deb2 が送る値は同じでなければならない。手で二度打つと
 食い違うので、`deploy_worker.py` が dev の `pages.env` の値をそのまま
 secret にする。
 
@@ -307,8 +307,8 @@ secret にする。
 ## 観測ストアの由来
 
 観測ストア（`store/observations.nc` ＋ `weather.sqlite`）の正本は
-**dev2（192.168.100.3）**。2026-08-26 に tgsvr で稼働を始め、
-2026-10-01 に dev2 へ移した。
+**deb2（192.168.100.3）**。2026-08-26 に tgsvr で稼働を始め、
+2026-10-01 に deb2 へ移した。
 
 - 初期データ: 旧 WeatherCore の pg_dump（weather.gz）の jma_daily を
   `backfill_daily.py` で投入済み（1880-11-01〜2022-03-14、69.1M セル）
@@ -317,11 +317,14 @@ secret にする。
 - ギャップ（2022-04〜2026-07）は `backfill_etrn.py` で取得
 - 進行中の月は etrn 対象外のため、月初の穴は毎月 2 日の月次 cron が埋める
 
-### tgsvr → dev2 移行の記録（2026-10-01）
+### tgsvr → deb2 移行の記録（2026-10-01）
 
 - store / public_amedas / master / data を rsync で移した。store は
   `store.lock` を取って取得し、**md5 が両端で一致**することを確認した
-- コードは git で揃えた（dev2 には git がある。tgsvr には無かった）
+- コードは git で揃えた（deb2 には git がある。tgsvr には無かった）
+- 2026-10-05 まで手順書・道具・コミットメッセージでは誤って「dev2」と
+  書いていた（ホスト名は deb2）。dev の `~/.ssh/config` では `deb2` が
+  正式名で、`dev2` も別名として残してある
 - **tgsvr の蓄積は 2026-08-30 で止まっていた。** crontab が venv 統一前の
   `./.venv/bin/python` を指したままで、毎時 exec 失敗していた
   （cron のパスは手順書の一覧と必ず照合すること）。9 月の時別値・10 分値は
@@ -408,10 +411,10 @@ ncdump は行単位で読むので正しく見える。netCDF4-python 経由で�
 - 2026-10-02 に入れた「close() のときだけ揃える」は不十分だった
   （閉じた後の読み手は守れるが、同じ実行の中の読み書きは守れない）
 
-## バックアップ（dev2 → dev）
+## バックアップ（deb2 → dev）
 
 tgsvr は main PC に転用する予定なので、転用後は観測データの実コピーが
-**dev2 の 1 か所だけ**になる。日別値は weather.gz ＋ etrn でほぼ再建できるが、
+**deb2 の 1 か所だけ**になる。日別値は weather.gz ＋ etrn でほぼ再建できるが、
 **時別値・10 分値の蓄積（store と data）は消えたら戻らない**。
 量は小さい（store 83MB ＋ data ＋ master ＋ public_amedas ≒ 170MB）ので、
 日付つきの世代で丸ごと取る。
@@ -421,7 +424,7 @@ dev で実行:
 ```bash
 d=~/backup/weather/$(date +%Y%m%d)
 mkdir -p "$d"
-ssh dev2 'flock ~/dev/weather/WeatherStatic/store.lock \
+ssh deb2 'flock ~/dev/weather/WeatherStatic/store.lock \
     tar -C ~/dev/weather/WeatherStatic -cf - store data master public_amedas' \
     | tar -xf - -C "$d"
 ```
@@ -430,14 +433,14 @@ ssh dev2 'flock ~/dev/weather/WeatherStatic/store.lock \
   拾うため。ロックの実体は `WeatherStatic/store.lock`
   （`weatherlib/storelock.py` の既定。リポジトリ直下ではない）
 - 頻度は週 1 回を目安に手で。自動化するなら **dev 側の** cron に入れる
-  （dev2 の crontab は収集系の台帳なので混ぜない）
+  （deb2 の crontab は収集系の台帳なので混ぜない）
 - 古い世代の削除は人が決める。道具からは消さない
 
-復元（dev2 の cron を止めてから。既存を上書きする）:
+復元（deb2 の cron を止めてから。既存を上書きする）:
 
 ```bash
 tar -C "$d" -cf - store data master public_amedas \
-    | ssh dev2 'tar -xf - -C ~/dev/weather/WeatherStatic'
+    | ssh deb2 'tar -xf - -C ~/dev/weather/WeatherStatic'
 ```
 
 ## まだ手つかず

@@ -3,15 +3,15 @@
 
     dev    make_testdata.py   作り物のデータで見た目を確かめる
     dev    sync_to_server.py   ソースを送る
-    dev2  build_site.py      実データで生成・点検・公開      ← これ
+    deb2  build_site.py      実データで生成・点検・公開      ← これ
     dev    release.py         手元から公開する（臨時・確認用）
 
 **定期公開はここが行う。** サイトは 10 分ごとに更新されるので、生成だけして
-誰も上げない形は成り立たない。cron から --publish で呼ぶ。そのため dev2 の
+誰も上げない形は成り立たない。cron から --publish で呼ぶ。そのため deb2 の
 トークンには Pages:Edit が要る。
 
-release.py（手元から）は、dev2 の生成物を取り寄せて上げる別経路。定期運用は
-こちらではなく build_site.py --publish。手元からの公開は、dev2 を経由せずに
+release.py（手元から）は、deb2 の生成物を取り寄せて上げる別経路。定期運用は
+こちらではなく build_site.py --publish。手元からの公開は、deb2 を経由せずに
 確かめたいときや、cron が止まっているときの手当てに使う。
 
 点検を通らなければ公開しない

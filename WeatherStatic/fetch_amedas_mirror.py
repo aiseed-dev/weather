@@ -2,11 +2,11 @@
 """アメダス 10 分値のアーカイブ化。生の JSON を NetCDF-4 へ封入する。
 
 役割分担:
-    収集 … このスクリプト（dev2）が気象庁から取得する。**Cloudflare の cron は
-           使わない**。いつ何を取るかを決めるのは dev2 側に一本化する
+    収集 … このスクリプト（deb2）が気象庁から取得する。**Cloudflare の cron は
+           使わない**。いつ何を取るかを決めるのは deb2 側に一本化する
            （日付の切り替わりや取りこぼしの追跡を 1 箇所に集めるため）。
-           重い取得を肩代わりさせたいときは workers/amedas-point を dev2 から
-           呼ぶ。あちらも cron を持たず、dev2 の指示で動く
+           重い取得を肩代わりさせたいときは workers/amedas-point を deb2 から
+           呼ぶ。あちらも cron を持たず、deb2 の指示で動く
     封入 … このスクリプトが NetCDF へまとめる。netCDF4 / numpy を使う処理は
            Workers の CPU 10ms・メモリ 128MB に載らないので、すべてここで行う
 
@@ -383,9 +383,9 @@ def seal_periods(latest: datetime) -> int:
 def write_station_index() -> None:
     """地点索引を公開ツリーへ置く（消費側が読む地点マスタ）。
 
-    正本は dev2 の master/stations.json。これはその写しで、ブラウザや
+    正本は deb2 の master/stations.json。これはその写しで、ブラウザや
     Flet 版が地点名や座標を引くために使う。Worker は読まない（担当地点は
-    dev2 が呼ぶときに渡す。そのぶん地点の増減に再デプロイが要らない）。
+    deb2 が呼ぶときに渡す。そのぶん地点の増減に再デプロイが要らない）。
 
     並びは府県予報区（prec_no）順にする。地理的にまとまるので、障害時に
     どの地域が欠けたか分かる。

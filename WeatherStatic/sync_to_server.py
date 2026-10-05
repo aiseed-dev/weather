@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""ソースを dev2 へ送る。rsync を毎回手で打たないための道具。
+"""ソースを deb2 へ送る。rsync を毎回手で打たないための道具。
 
 送るもの
     git が知っているファイル。git ls-files を出処にしているので、.gitignore に
     ある store/ data/ public/ master/ logs/ は自動的に外れる。運用データは
-    dev2 のもの、ソースは手元のもの、という区切りが .gitignore と一致する。
+    deb2 のもの、ソースは手元のもの、という区切りが .gitignore と一致する。
 
-    観測所情報 stations/ も送る。dev2 の crontab は accumulate.py と
-    backfill_etrn.py だけで watch_stations.py を回していないので、dev2 が
+    観測所情報 stations/ も送る。deb2 の crontab は accumulate.py と
+    backfill_etrn.py だけで watch_stations.py を回していないので、deb2 が
     stations/ を書き換えることはない。検知用の控え .amedastable.prev.adoc は
-    .gitignore にあるため、送っても dev2 側の基準は保たれる。
+    .gitignore にあるため、送っても deb2 側の基準は保たれる。
 
 手元専用の道具（このファイルと release.py）は送らない。向こうに置かなければ
 向こうでは動かせない。
 2026-08-28 に dev 向けのコマンド列をサーバー(当時 tgsvr)のシェルに貼ってサーバー→サーバーの
 rsync が走りかけたが、道具が向こうに無ければその事故は起こりようがない。
 
-dev2 でしかできないこと（実データでの生成と点検）は build_site.py。
-あちらは dev2 で動かす前提なので、送る対象に入れてある。
+deb2 でしかできないこと（実データでの生成と点検）は build_site.py。
+あちらは deb2 で動かす前提なので、送る対象に入れてある。
 
 安全のための決まり
     - 既定は下見だけ。実際に送るのは --apply を付けたときだけ
@@ -42,7 +42,7 @@ REPO = BASE.parent                              # …/weather
 # 手元でしか使わない道具は送らない。向こうに置かなければ向こうでは動かせない。
 DEV_ONLY = {Path(__file__).name, "release.py"}
 
-HOST = os.environ.get("WEATHER_SYNC_HOST", "dev2")
+HOST = os.environ.get("WEATHER_SYNC_HOST", "deb2")
 DEST = os.environ.get("WEATHER_SYNC_PATH", "dev/weather/WeatherStatic")
 # 向こうの python。venv は repo 直下に 1 つ（WeatherStatic からは 1 つ上）
 REMOTE_PY = os.environ.get("WEATHER_SYNC_PY", "../.venv/bin/python")
@@ -97,7 +97,7 @@ def warn_uncommitted() -> None:
 
 
 def rsync(rels: list[str], apply: bool) -> int:
-    # -c（内容比較）が要る。dev2 は git clone なので mtime が checkout 時刻に
+    # -c（内容比較）が要る。deb2 は git clone なので mtime が checkout 時刻に
     # なっており、既定の size+mtime 判定だと同内容でも全ファイル送り直しになる。
     # 対象は 230 ファイル程度なので checksum の計算コストは気にならない。
     cmd = ["rsync", "-ac", "--itemize-changes", "--files-from=-",

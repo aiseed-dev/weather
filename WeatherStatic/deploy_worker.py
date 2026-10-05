@@ -8,9 +8,9 @@
 
 二種類の秘密を混ぜない
     Cloudflare API トークン … デプロイする権限。Cloudflare アカウントを操作できる
-    Worker の TOKEN         … dev2 だけが Worker を呼べるようにする合言葉
+    Worker の TOKEN         … deb2 だけが Worker を呼べるようにする合言葉
 
-    後者に前者を使ってはいけない。合言葉は dev2 の設定ファイルと Worker の
+    後者に前者を使ってはいけない。合言葉は deb2 の設定ファイルと Worker の
     環境の両方に置かれ、呼び出しのたびに HTTP ヘッダで飛ぶ。漏れたときに
     失うものを「その Worker を呼べる」だけに留める。
 
@@ -18,7 +18,7 @@
     Cloudflare まわりは **1 マシン 1 ファイル**にする。
 
         dev   ~/.config/cloudflare/pages.env  資格情報 ＋ WEATHER_WORKER_TOKEN
-        dev2 ~/.config/cloudflare/pages.env  資格情報 ＋ 同じ TOKEN ＋ URL
+        deb2 ~/.config/cloudflare/pages.env  資格情報 ＋ 同じ TOKEN ＋ URL
 
     このファイルは cf-publish が既定で読むので、資格情報をここから渡す必要は
     ない（あちらが自分で読む）。渡すのは合言葉だけ。
@@ -26,10 +26,10 @@
     dev のトークンには Pages に加えて Workers Scripts: Edit が要る
     （バケットを作らせるなら Workers R2 Storage: Edit も）。
 
-    **pages.env を dev2 へ丸ごう配らない。** 向こうには向こうの資格情報が
+    **pages.env を deb2 へ丸ごう配らない。** 向こうには向こうの資格情報が
     入っている。足すのは WEATHER_WORKER_URL と WEATHER_WORKER_TOKEN の 2 行。
 
-    合言葉は Worker 側の secret と dev2 が送る値が**同じでなければならない**。
+    合言葉は Worker 側の secret と deb2 が送る値が**同じでなければならない**。
     手で二度打つと食い違うので、ここで読んだものをそのまま secret にする。
     cf-publish へは同名の環境変数として渡し、引数には置かない（ps で見える）。
     まだ無ければ --init-token で作れる。生成した値も表示しない。
@@ -50,7 +50,7 @@ WORKER_DIR = BASE / "workers" / "amedas-point"
 # Cloudflare まわりは 1 マシン 1 ファイル。cf-publish が既定で読む場所でもある
 # ので、資格情報はここから渡さなくてよい（あちらが自分で読む）。
 CF_ENV = Path.home() / ".config" / "cloudflare" / "pages.env"
-# dev2 側で fetch_points.py が読むファイル。**丸ごと配らない** —
+# deb2 側で fetch_points.py が読むファイル。**丸ごと配らない** —
 # 向こうには向こうの資格情報が入っているので、
 # WEATHER_WORKER_URL と WEATHER_WORKER_TOKEN の 2 行だけを足す。
 REMOTE_ENV = "~/.config/cloudflare/pages.env"
@@ -102,7 +102,7 @@ def init_token() -> int:
     values[TOKEN_KEY] = secrets.token_urlsafe(32)
     write_env_file(values)
     log(f"{TOKEN_KEY} を作って {CF_ENV} に書きました（値は表示しません）")
-    log(f"  デプロイ後、dev2 の {REMOTE_ENV} にも同じ値を足してください")
+    log(f"  デプロイ後、deb2 の {REMOTE_ENV} にも同じ値を足してください")
     return 0
 
 
@@ -167,13 +167,13 @@ def deploy(apply: bool) -> int:
             write_env_file(values)
             log(f"{URL_KEY} を {CF_ENV} に書きました")
         # ファイルごと配ると向こうの資格情報を潰すので、2 行だけ足させる
-        log(f"  dev2 の {REMOTE_ENV} に次の 2 行を足してください（値は各自で）:")
+        log(f"  deb2 の {REMOTE_ENV} に次の 2 行を足してください（値は各自で）:")
         log(f"    {URL_KEY}={url}")
         log(f"    {TOKEN_KEY}=<{CF_ENV} と同じ値>")
     else:
         log("公開 URL を読み取れませんでした。上の出力を確認してください")
 
-    log("次: ssh dev2 'cd dev/weather/WeatherStatic && "
+    log("次: ssh deb2 'cd dev/weather/WeatherStatic && "
         "../.venv/bin/python fetch_points.py --dry-run'")
     return 0
 

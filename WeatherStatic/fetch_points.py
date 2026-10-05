@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""アメダス地点別 10 分値を集める。dev2 で操作する道具。
+"""アメダス地点別 10 分値を集める。deb2 で操作する道具。
 
 流れ
     1. 気象庁の latest_time.txt で最新スロットを知る（1 リクエスト）
@@ -7,10 +7,10 @@
     3. 地点別に無い要素だけ map JSON から取る（1 リクエスト）
 
 なぜ Worker に取らせるか
-    1,286 地点を dev2 から 1 秒間隔で取ると 21 分かかる。Worker なら並列に
-    走る。dev2 は「いつ・何を取るか」を決め、重い取得は手足に任せる。
+    1,286 地点を deb2 から 1 秒間隔で取ると 21 分かかる。Worker なら並列に
+    走る。deb2 は「いつ・何を取るか」を決め、重い取得は手足に任せる。
     Worker に cron は持たせない。日付の切り替わりや取りこぼしの追跡を
-    1 箇所（dev2）に集めるため。
+    1 箇所（deb2）に集めるため。
 
 なぜ一部だけ map か
     地点別エンドポイントに積雪と天気が無い（2026-08-29 実測。A〜G の 12 地点で
@@ -45,14 +45,14 @@
 R2 に独自ドメインは要らない
     Worker → R2 はバインディングで書くので、ドメインが無くても収集は動く。
     ドメインが要るのは、ブラウザや Flet が HTTP で読みに行くときだけ。
-    dev2 が引き戻す必要も本来は無い（R2 から端末が直接読む）ので、
+    deb2 が引き戻す必要も本来は無い（R2 から端末が直接読む）ので、
     取り寄せは既定で行わない。
 
 使い方
     python fetch_points.py                 # 最新スロットを取りに行く
     python fetch_points.py --dry-run       # 何をするかだけ見る
     python fetch_points.py --day 20260829 --hour 12   # ブロックを指定
-    python fetch_points.py --pull          # R2 から dev2 へも取り寄せる
+    python fetch_points.py --pull          # R2 から deb2 へも取り寄せる
     python fetch_points.py --pull-only     # 呼ばずに取り寄せるだけ
 """
 from __future__ import annotations
@@ -82,7 +82,7 @@ UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)"
 # なので 49 まで可能だが、余裕を持たせて 30 で切る。実データ（64 エリア /
 # 1,286 地点）では 8 エリアだけが 2 回に分かれ、呼び出しは 64 → 72 回になる。
 CHUNK = 30
-PARALLEL = 6                 # 同時に呼ぶ数。dev2 側の礼儀として控えめに
+PARALLEL = 6                 # 同時に呼ぶ数。deb2 側の礼儀として控えめに
 
 
 def log(msg: str) -> None:
@@ -292,7 +292,7 @@ def main() -> int:
     ap.add_argument("--day", metavar="YYYYMMDD", help="対象日（既定は最新スロットの日）")
     ap.add_argument("--hour", metavar="HH", help="3 時間ブロック（00/03/…/21）")
     ap.add_argument("--pull", action="store_true",
-                    help="R2 から dev2 へ取り寄せる（既定はしない。"
+                    help="R2 から deb2 へ取り寄せる（既定はしない。"
                          "端末が R2 を直接読むなら不要）")
     ap.add_argument("--pull-only", action="store_true", help="Worker は起こさず取り寄せるだけ")
     ap.add_argument("--dry-run", action="store_true", help="何をするかだけ見る")
@@ -320,7 +320,7 @@ def main() -> int:
         fetch_extra(slot, args.dry_run)
 
     # 取り寄せは既定で行わない。R2 に置いた時点で端末（Flet・ブラウザ）は
-    # そこから直接読める。同じデータを dev2 へ引き戻すのは二度手間で、
+    # そこから直接読める。同じデータを deb2 へ引き戻すのは二度手間で、
     # R2 の公開ドメインも要求してしまう。
     got = pull(day, hour, list(groups), args.dry_run) if args.pull else 0
     if args.dry_run:
