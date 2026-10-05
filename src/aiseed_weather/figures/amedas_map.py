@@ -3,11 +3,12 @@
 
 """AMeDAS snapshot as station markers over Japan.
 
-One marker per station, coloured by the selected element, on a plain
-latitude/longitude frame (equal-area-ish: the x axis is scaled by
-cos 36°). ~1,300 stations outline the archipelago on their own; a
-coastline layer would need a finer mask than the 0.25° ones in
-``_coastline_masks.npz`` and is left for later.
+One marker per station, coloured by the selected element, on the app's
+gray land / sea base with a dark coastline (chart-base-design), in a
+latitude/longitude frame whose x axis is scaled by cos 36°. The outline
+is Natural Earth 10m, precomputed for this frame by
+``_precompute_japan_coast.py`` — the 0.25° masks the model charts use
+are coarser than the station spacing.
 
 Palettes: temperature and wind speed reuse the model charts' anchors
 (``_chart_specs``) so the same colour means the same value across the
@@ -21,13 +22,16 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import numpy as np
 from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.collections import PolyCollection
 from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
 from matplotlib.figure import Figure
 
+from aiseed_weather.figures._basemap import COASTLINE_RGB, LAND_RGB, SEA_RGB
 from aiseed_weather.figures._chart_specs import T2M, WIND10M
 from aiseed_weather.figures._fonts import configure_cjk_font
 from aiseed_weather.figures._palette import build_continuous_lut
@@ -40,6 +44,24 @@ _JST = ZoneInfo("Asia/Tokyo")
 _BG = "#f7f7f5"
 _FRAME = "#585c64"
 _AXIS_FG = "#202428"
+_COAST_PATH = Path(__file__).parent / "_japan_coastline.npz"
+
+
+def _load_outline() -> tuple[list[np.ndarray], np.ndarray] | None:
+    if not _COAST_PATH.exists():
+        return None
+    with np.load(_COAST_PATH) as d:
+        land, coast = d["land"], d["coast"]
+    breaks = np.nonzero(np.isnan(land[:, 0]))[0]
+    rings = [r for r in np.split(land, breaks) if len(r) > 3]
+    return [r[~np.isnan(r[:, 0])] for r in rings], coast
+
+
+_OUTLINE = _load_outline()
+
+
+def _rgb(c: np.ndarray) -> tuple[float, float, float]:
+    return tuple(float(x) / 255 for x in c)
 
 # 気象庁の降水量の配色（mm）
 _JMA_PRECIP_BOUNDS = (0.0, 1.0, 5.0, 10.0, 20.0, 30.0, 50.0, 80.0, 1000.0)
@@ -94,11 +116,16 @@ def render_amedas_map(lons: np.ndarray, lats: np.ndarray, values: np.ndarray, *,
     fig = Figure(figsize=(8.0, 8.6), facecolor=_BG)
     FigureCanvasAgg(fig)
     ax = fig.add_axes((0.07, 0.12, 0.80, 0.78))
-    ax.set_facecolor("#e9eaec")
+    ax.set_facecolor(_rgb(SEA_RGB))
+    if _OUTLINE is not None:
+        rings, coast = _OUTLINE
+        ax.add_collection(PolyCollection(rings, facecolors=[_rgb(LAND_RGB)], edgecolors="none",
+                                         zorder=0.5))
+        ax.plot(coast[:, 0], coast[:, 1], color=_rgb(COASTLINE_RGB), linewidth=0.5, zorder=0.6)
     ax.set_xlim(EXTENT[0], EXTENT[1])
     ax.set_ylim(EXTENT[2], EXTENT[3])
     ax.set_aspect(1 / np.cos(np.radians(36.0)))
-    ax.grid(color="#ffffff", linewidth=0.8)
+    ax.grid(color="#ffffff", linewidth=0.5, alpha=0.35)
     ax.set_xticks(range(125, 150, 5), [f"{x}°E" for x in range(125, 150, 5)])
     ax.set_yticks(range(25, 47, 5), [f"{y}°N" for y in range(25, 47, 5)])
     ax.tick_params(colors=_AXIS_FG, labelsize=8, length=0)
@@ -106,10 +133,10 @@ def render_amedas_map(lons: np.ndarray, lats: np.ndarray, values: np.ndarray, *,
         s.set_color(_FRAME)
     cmap, norm = _cmap_norm(el)
     zero = (values <= 0) if el.hide_zero else np.zeros(len(values), bool)
-    ax.scatter(lons[zero], lats[zero], s=4, color="#9aa0a8", linewidths=0)
+    ax.scatter(lons[zero], lats[zero], s=4, color="#c8ccd2", linewidths=0, zorder=2)
     order = np.argsort(np.abs(values[~zero] - (el.vmin + el.vmax) / 2))   # extremes on top
     sc = ax.scatter(lons[~zero][order], lats[~zero][order], c=values[~zero][order],
-                    cmap=cmap, norm=norm, s=16, linewidths=0.3, edgecolors="#30343a")
+                    cmap=cmap, norm=norm, s=14, linewidths=0, zorder=3)
     cax = fig.add_axes((0.89, 0.12, 0.025, 0.78))
     cb = fig.colorbar(sc, cax=cax)
     cb.set_label(f"{el.label}（{el.unit}）", color=_AXIS_FG, fontsize=9)
@@ -120,8 +147,8 @@ def render_amedas_map(lons: np.ndarray, lats: np.ndarray, values: np.ndarray, *,
     jst = valid.astimezone(_JST)
     title = f"アメダス {el.label}  {jst:%Y-%m-%d %H:%M} JST（{utc:%H:%M} UTC）"
     fig.text(0.07, 0.955, title, fontsize=12, color=_AXIS_FG, ha="left", va="top", weight="bold")
-    fig.text(0.07, 0.925, f"{len(values)} 地点" + ("。灰色の小さな点は 0" if el.hide_zero else ""),
-             fontsize=8.5, color="#6b7078", ha="left", va="top")
+    note = f"{len(values)} 地点" + ("。白っぽい小さな点は 0" if el.hide_zero else "")
+    fig.text(0.07, 0.925, note, fontsize=8.5, color="#6b7078", ha="left", va="top")
     apply_footer(fig, data_source="JMA AMeDAS", run_id=f"{jst:%Y-%m-%d %H:%M} JST",
                  license_text=attribution, run_label="valid")
     buf = io.BytesIO()

@@ -143,9 +143,11 @@ Always check for variable presence before reading; not all stations have all var
 Implemented as the 今 panel of the 観測 tab (`components/amedas_view.py`,
 figure `figures/amedas_map.py`). Temperature and wind reuse the model
 charts' anchors (`T2M`, `WIND10M`) so a colour means the same value across
-the app; precipitation uses JMA's bins. There is no coastline yet: the
-precomputed masks are 0.25° and too coarse for station spacing, and a finer
-one needs a one-off Natural Earth download (ask the user first).
+the app; precipitation uses JMA's bins. The land / coastline under the stations
+is Natural Earth 10m clipped to the map frame
+(`figures/_japan_coastline.npz`, built once by
+`figures/_precompute_japan_coast.py`); the 0.25° masks the model charts use
+are too coarse for station spacing. cartopy runs only in that precompute.
 
 ## Daily records since 1880 (redistributed)
 
