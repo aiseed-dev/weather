@@ -26,7 +26,7 @@
     dev のトークンには Pages に加えて Workers Scripts: Edit が要る
     （バケットを作らせるなら Workers R2 Storage: Edit も）。
 
-    **pages.env を deb2 へ丸ごう配らない。** 向こうには向こうの資格情報が
+    **pages.env を deb2 へ丸ごと配らない。** 向こうには向こうの資格情報が
     入っている。足すのは WEATHER_WORKER_URL と WEATHER_WORKER_TOKEN の 2 行。
 
     合言葉は Worker 側の secret と deb2 が送る値が**同じでなければならない**。
