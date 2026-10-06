@@ -391,7 +391,8 @@ def _rank_page(env, stations, kind: str) -> None:
                           lambda r, v: f"{r['name']}（{r['pref']}） 積雪 {v} cm",
                           small=lambda v: v == 0,
                           note=("積雪の無い地点（0 cm）は小さな灰色の点" if any_snow
-                                else "いま積雪のある地点はありません（積雪を測る地点を灰色の点で示しています）"))]
+                                else "いま積雪のある地点はありません（積雪を測る地点を灰色の点で示しています）"
+                                if rows else "いまは積雪の観測を休んでいる時期です（冬の間、積雪を測る地点を描きます）"))]
 
     html = env.get_template(tmpl).render(
         page_title=f"{title}（10 分ごと更新）", nav_active="status",
