@@ -23,7 +23,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from weatherlib.filters import CLOTHES_BANDS, FILTERS, TEMP_ANCHORS, bcolor
+from weatherlib.filters import ANOM_ANCHORS, CLOTHES_BANDS, FILTERS, TEMP_ANCHORS, bcolor
+from weatherlib.hourly_normals import HourlyNormals
 from weatherlib import siteurl
 from weatherlib.season import is_season, is_summer, winter_start
 from weatherlib.stations import MAIN_STATIONS
@@ -541,17 +542,38 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
             return ""
         hm = f"{t.hour}時" + (f"{t.minute}分" if t.minute else "")
         return f"気象庁 {'前日' if t.date() < now.date() else ''}{hm}発表"
+    # 地図は今の気温の平年差。平年は時別の平年値（build_hourly_normals.py、主要 10 都市）から、
+    # ほかの官署は近い都市の日変化の形を借りて推定する（weatherlib/hourly_normals.py）。
+    # 時別の平年値がまだ無ければ地図は今の気温のまま
+    main_order = list(main_city_order(stations))
+    amedas_time = (datetime.fromisoformat(current["amedas_time"])
+                   if current.get("amedas_time") else None)
+    daily_cache: dict[int, dict | None] = {}
+
+    def daily(code: int, elem: str, d: date) -> int | None:
+        if code not in daily_cache:
+            daily_cache[code] = load_normals(code)
+        try:
+            return daily_cache[code]["daily"][str(d.month)][elem][d.day - 1]
+        except (TypeError, KeyError, IndexError):
+            return None
+    hourly = HourlyNormals(MASTER / "normals_hourly", daily,
+                           {code: (rec["lat"], rec["lon"]) for code, rec in main_order})
     now_cities = []
-    for code, rec in main_city_order(stations):
+    for code, rec in main_order:
         t = today.get(code)
         if t is None:
             continue
         cur = current["stations"].get(str(code), {})
+        ncurve, nfrom = hourly.curve(code, amedas_time.date()) if (hourly and amedas_time) else (None, None)
         now_cities.append({
             "code": code, "name": rec["name"], "pref": rec["pref"],
             "url": siteurl.url(f"/Stations/JP/{station_slug(rec)}/"),
             "lat": rec["lat"], "lon": rec["lon"],
             "temp": cur.get("temp"), "wthr": cur.get("wthr"),
+            # その日（normals_date）の 0〜24 時の毎正時の平年（×10）。ページが今の時刻に合わせて補間する。
+            # nown: 自前の時別の平年値か（偽なら近い都市の日変化の形を借りた推定）
+            "ncurve": ncurve, "nown": nfrom == code if nfrom is not None else None,
             "tmax": t.get("tmax"), "tmin": t.get("tmin"),
             "ntmax": normal_daily(code, "tmax", now.date()),
             "ntmin": normal_daily(code, "tmin", now.date()),
@@ -584,8 +606,9 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         "period_end": end, "days_diff": (now - end).days,
         "cities": cities,
         "graph": graph, "graph_svg": graph_svg,
-        "temp_anchors": TEMP_ANCHORS, "clothes_bands": CLOTHES_BANDS,
+        "temp_anchors": TEMP_ANCHORS, "anom_anchors": ANOM_ANCHORS, "clothes_bands": CLOTHES_BANDS,
         "now_cities": now_cities, "now_default": HOME_CITIES,
+        "normals_date": amedas_time.date().isoformat() if amedas_time else None,
         "fc_night": fc_night, "fc_label": fc_label,
         # 地図の輪郭（make_japan_outline.py が作る。Natural Earth 10m）
         "japan_map": json.loads((BASE / "assets" / "japan_outline.json").read_text(encoding="utf-8")),

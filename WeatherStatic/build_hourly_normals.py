@@ -85,6 +85,7 @@ from pathlib import Path
 import numpy as np
 
 from weatherlib import jma
+from weatherlib.hourly_normals import normal_at  # noqa: F401  利用側の参照実装
 from weatherlib.stations import BY_CODE, MAIN_STATIONS
 
 BASE = Path(__file__).resolve().parent
@@ -809,31 +810,7 @@ def cmd_build(args) -> int:
 
 # ---------------------------------------------------------------- 利用側のための参照実装
 
-def normal_at(obj: dict, month: int, day: int, hour: int, minute: int = 0) -> float | None:
-    """時別平年（出力 JSON を読んだ dict）から、JST の時刻 hour:minute の平年気温 [℃] を返す。
-
-    毎正時の値の間は線形補間。0:00〜1:00 は「前日の 24 時」(=その日の 0:00) を使う。
-    最寄りの正時を使うなら round(hour + minute/60) を使えばよい（0 時と 24 時は同じ値）。
-    """
-    def row(m, d):
-        try:
-            return obj["daily"][str(m)]["temp"][d - 1]
-        except (KeyError, IndexError):
-            return None
-
-    cur = row(month, day)
-    prev_d = date(LEAP, month, day) - timedelta(days=1)
-    prev = row(prev_d.month, prev_d.day)
-    if cur is None:
-        return None
-    t = hour + minute / 60.0                 # 0 <= t < 24
-    pts = {0: (prev or cur)[23]}             # 0:00 = 前日 24 時（前日が無ければ当日の 24 時で代用）
-    for i in range(24):
-        pts[i + 1] = cur[i]
-    h0 = int(math.floor(t))
-    h1 = min(h0 + 1, 24)
-    f = t - h0
-    return (pts[h0] * (1 - f) + pts[h1] * f) / 10.0
+# normal_at() は weatherlib/hourly_normals.py にある（トップの地図と共用）
 
 
 def cmd_show(args) -> int:

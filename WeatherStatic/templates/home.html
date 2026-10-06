@@ -10,7 +10,8 @@
 
   コンテキスト: now_cities（官署 57 地点。北から）/ now_default / counts / summer / hour0 /
                 cities（主要 10 都市の最高・最低と記録）/ graph_svg / japan_map / temp_anchors /
-                clothes_bands / current_time / wthr_time
+                clothes_bands / current_time / wthr_time / anom_anchors / normals_date
+                （now_cities の ncurve: 時別の平年。地図を今の気温の平年差にする）
 #}
 {% extends "_layout.html" %}
 
@@ -68,6 +69,7 @@
     .hotcold div { background: rgba(255,255,255,0.08); border-radius: 10px; padding: 8px 12px; font-size: 13px;
         animation: fadeUp 0.6s ease both; }
     .hotcold b { font-size: 20px; margin-left: 6px; }
+    .hotcold small { margin-left: 8px; color: #a9c2dd; font-size: 11px; }
 
     /* 都市（天気と気温 → 最高・最低 → 服装の目安 を順に出す） */
     .sc-city { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 20px; height: 100%; align-items: center; }
@@ -229,7 +231,8 @@
         </div>
     </div>
     <p class="stage-note">気温はアメダスの 10 分ごとの観測値、天気は気象庁「推計気象分布」{% if wthr_time %}（{{ wthr_time.hour }}時現在）{% endif %}による推計値。
-        天気予報は気象庁の府県天気予報（発表や変更から 10 分ほどで反映）。服装の目安はその日の予想最高気温から算出。設定はこのブラウザに保存されます。出典: 気象庁ホームページ</p>
+        天気予報は気象庁の府県天気予報（発表や変更から 10 分ほどで反映）。服装の目安はその日の予想最高気温から算出。
+        平年差の「この時刻の平年」は、気象庁の日別平年値（1991〜2020）に、過去の時別値から求めた日変化を重ねて当サイトで作成（主要 10 都市。ほかの都市は近い都市の日変化の形を借りた推定）。設定はこのブラウザに保存されます。出典: 気象庁ホームページ</p>
 </section>
 
 <section class="guide">
@@ -338,6 +341,11 @@ var CITIES = {{ now_cities | tojson }};
 var DEFAULT_CITIES = {{ now_default | tojson }};
 var BANDS = {{ clothes_bands | tojson }};
 var TEMP_ANCHORS = {{ temp_anchors | tojson }};
+var ANOM_ANCHORS = {{ anom_anchors | tojson }};
+// 平年差: 各都市の ncurve は NORMALS_DATE の 0〜24 時の毎正時の平年（×10）。観測時刻（NOW_T。
+// 10 分ごとの更新で進む）に合わせて補間する。日付が変わったら平年差は出さない（地図は今の気温に戻る）
+var NORMALS_DATE = {{ normals_date | tojson }};
+var NOW_T = {{ (current_time.isoformat() if current_time else none) | tojson }};
 var W_ICONS = {{ W_ICONS | tojson }};
 var MAP = {{ japan_map | tojson }};
 var COUNTS = {{ counts | tojson }};
@@ -433,9 +441,11 @@ function clothesStr(t) {
     for (var i = 0; i < BANDS.length; i++) if (t >= BANDS[i][0]) return BANDS[i][1];
     return '';
 }
-function tempColor(t) {
+function tempColor(t) { return rampColor(TEMP_ANCHORS, t); }
+function anomColor(d) { return rampColor(ANOM_ANCHORS, d); }
+function rampColor(a, t) {
     if (t == null) return 'rgba(255,255,255,0.3)';
-    var a = TEMP_ANCHORS, c;
+    var c;
     if (t <= a[0][0]) c = a[0][1];
     else if (t >= a[a.length - 1][0]) c = a[a.length - 1][1];
     else for (var i = 0; i + 1 < a.length; i++) {
@@ -447,6 +457,17 @@ function tempColor(t) {
     }
     return 'rgb(' + c.join(',') + ')';
 }
+// 今の時刻の平年（×10。無ければ null）と平年差
+function normalNow(c) {
+    if (!c.ncurve || !NOW_T || NOW_T.slice(0, 10) !== NORMALS_DATE) return null;
+    var h = Number(NOW_T.slice(11, 13)) + Number(NOW_T.slice(14, 16)) / 60, h0 = Math.floor(h), f = h - h0;
+    return c.ncurve[h0] + (c.ncurve[Math.min(h0 + 1, 24)] - c.ncurve[h0]) * f;
+}
+function anomNow(c) {
+    var n = normalNow(c);
+    return (c.temp == null || n == null) ? null : Math.round(c.temp - n);
+}
+function signed(d) { return (d >= 0 ? '+' : '−') + Math.abs(d / 10).toFixed(1); }
 // 沖縄・奄美は右下の差し込み図に置く（make_japan_outline.py）
 function xy(c) {
     var I = MAP.inset, M = MAP.main;
@@ -480,34 +501,48 @@ function countUp(el, to, decimals, ms) {
 }
 
 // ---- 場面 ----
-// 地図は実測値（今の気温）。時別の平年値ができたら、今の気温の平年差にする
+// 地図は今の気温の平年差（時別の平年値。generate.py の build_home）。平年が無いときは今の気温
 function mapScene(el) {
     var withT = CITIES.filter(function (c) { return c.temp != null; });
+    var anom = withT.some(function (c) { return anomNow(c) != null; });
+    var val = anom ? anomNow : function (c) { return c.temp; };
+    var color = anom ? anomColor : tempColor;
+    var fmt = anom ? function (c) { return signed(anomNow(c)); } : function (c) { return num(c.temp); };
     var pick = {};
     tourCities().forEach(function (c) { pick[c.code] = 1; });
     var order = withT.slice().sort(function (a, b) { return b.lat - a.lat; });
     var dots = order.map(function (c, i) {
-        var p = xy(c), delay = (i * 70) + 'ms';
-        var s = '<circle class="dot" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="' + (pick[c.code] ? 6.5 : 4.6) +
-            '" fill="' + tempColor(c.temp) + '" stroke="rgba(6,20,40,0.6)" stroke-width="0.8" style="animation-delay:' + delay + '"/>';
-        if (pick[c.code]) {
+        var p = xy(c), delay = (i * 70) + 'ms', v = val(c);
+        var s = '<circle class="dot" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="' + (v == null ? 2.6 : pick[c.code] ? 6.5 : 4.6) +
+            '" fill="' + color(v) + '" stroke="rgba(6,20,40,0.6)" stroke-width="0.8" style="animation-delay:' + delay + '"/>';
+        if (pick[c.code] && v != null) {
             s += '<text class="lbl" x="' + (p[0] + 8.5).toFixed(1) + '" y="' + (p[1] + 3.5).toFixed(1) + '" style="animation-delay:' + delay + '">' +
-                esc(c.name) + ' <tspan class="t">' + num(c.temp) + '</tspan></text>';
+                esc(c.name) + ' <tspan class="t">' + fmt(c) + '</tspan></text>';
         }
         return s;
     }).join('');
-    var hot = withT.slice().sort(function (a, b) { return b.temp - a.temp; })[0];
-    var cold = withT.slice().sort(function (a, b) { return a.temp - b.temp; })[0];
-    var stops = TEMP_ANCHORS.map(function (a, i) { return tempColor(a[0]) + ' ' + (i * 100 / (TEMP_ANCHORS.length - 1)) + '%'; }).join(',');
+    var ranked = withT.filter(function (c) { return val(c) != null; });
+    var hot = ranked.slice().sort(function (a, b) { return val(b) - val(a); })[0];
+    var cold = ranked.slice().sort(function (a, b) { return val(a) - val(b); })[0];
+    var anchors = anom ? ANOM_ANCHORS : TEMP_ANCHORS;
+    var stops = anchors.map(function (a, i) { return color(a[0]) + ' ' + (i * 100 / (anchors.length - 1)) + '%'; }).join(',');
+    var ticks = anom ? ['−6', '−3', '0', '+3', '+6℃'] : ['-20', '0', '20', '40℃'];
     var end = order.length * 70;
-    el.innerHTML = '<div class="sc-map"><svg viewBox="' + MAP.viewBox + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="全国の今の気温">' +
+    function extreme(c, word, ms) {
+        return '<div style="animation-delay:' + ms + 'ms">' + word + '<br/>' + esc(c.name) + '<b>' + fmt(c) + '℃</b>' +
+            (anom ? '<small>いま ' + num(c.temp) + '℃</small>' : '') + '</div>';
+    }
+    el.innerHTML = '<div class="sc-map"><svg viewBox="' + MAP.viewBox + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="' + (anom ? '全国の今の気温の平年差' : '全国の今の気温') + '">' +
         landSvg() + dots + '</svg>' +
-        '<div><div class="h-big">いまの気温</div><p class="h-sub">アメダスの観測値。全国 ' + withT.length + ' 都市（官署）、北から順に</p>' +
+        '<div><div class="h-big">' + (anom ? 'いまの気温の平年差' : 'いまの気温') + '</div>' +
+        '<p class="h-sub">' + (anom
+            ? 'アメダスの観測値と、この時刻の平年（1991〜2020）との差。全国 ' + ranked.length + ' 都市（官署）'
+            : 'アメダスの観測値。全国 ' + withT.length + ' 都市（官署）、北から順に') + '</p>' +
         '<div class="legend" style="background:linear-gradient(90deg,' + stops + ')"></div>' +
-        '<div class="legend-ticks"><span>-20</span><span>0</span><span>20</span><span>40℃</span></div>' +
+        '<div class="legend-ticks">' + ticks.map(function (x) { return '<span>' + x + '</span>'; }).join('') + '</div>' +
         '<div class="hotcold">' +
-        (hot ? '<div style="animation-delay:' + end + 'ms">いちばん高い<br/>' + esc(hot.name) + '<b>' + num(hot.temp) + '℃</b></div>' : '') +
-        (cold ? '<div style="animation-delay:' + (end + 200) + 'ms">いちばん低い<br/>' + esc(cold.name) + '<b>' + num(cold.temp) + '℃</b></div>' : '') +
+        (hot ? extreme(hot, anom ? '平年よりいちばん高い' : 'いちばん高い', end) : '') +
+        (cold ? extreme(cold, anom ? '平年よりいちばん低い' : 'いちばん低い', end + 200) : '') +
         '</div></div></div>';
 }
 
@@ -523,6 +558,7 @@ function cityScene(el, c, ctx) {
         '<div class="step">' + (W_ICONS[c.wthr] || W_ICONS['くもり']) +
             '<div><div class="lab">いまの気温（観測）' + (c.wthr ? '・' + esc(c.wthr) : '') + '</div>' +
             '<div class="big"><span class="cu" data-v="' + (c.temp == null ? '' : c.temp / 10) + '">-</span><small>℃</small></div>' +
+            (anomNow(c) != null ? '<div class="obs">この時刻の平年より ' + signed(anomNow(c)) + '℃</div>' : '') +
             (c.tmax != null || c.tmin != null ? '<div class="obs">' + DAY + 'ここまでの最高 ' + num(c.tmax) + '℃・最低 ' + num(c.tmin) + '℃</div>' : '') +
             '</div></div>',
         // 2 ページ目は天気予報だけ（気象庁の発表のまま。値と天気の文は手を加えない）。
@@ -715,6 +751,7 @@ function updateLive() {
                 if (e) { c.temp = e.temp; c.wthr = e.wthr; }
             });
             var el = document.getElementById('cur-time');
+            if (cur.amedas_time) NOW_T = cur.amedas_time;
             if (el && cur.amedas_time) {
                 var d = new Date(cur.amedas_time);
                 el.textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0') + ' 現在';
