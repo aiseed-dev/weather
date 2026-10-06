@@ -38,7 +38,7 @@
     .stage-head { display: flex; align-items: center; gap: 10px; padding: 10px 16px 0; }
     .stage-title { font-size: 13px; letter-spacing: 0.08em; color: #9fc3ea; font-weight: 700; }
     .stage-time { font-size: 12px; color: #9fb4cc; margin-left: auto; font-variant-numeric: tabular-nums; }
-    .stage-screen { position: relative; height: 440px; }
+    .stage-screen { position: relative; height: 500px; }
     .scene { position: absolute; inset: 0; padding: 8px 22px 16px; animation: sceneIn 0.7s cubic-bezier(.2,.8,.2,1) both; }
     .scene.leaving { animation: sceneOut 0.45s ease both; }
     @keyframes sceneIn { from { opacity: 0; transform: translateX(40px) scale(0.98); } to { opacity: 1; transform: none; } }
@@ -53,10 +53,11 @@
     .h-big { font-size: clamp(22px, 3.4vw, 34px); font-weight: 800; margin: 2px 0 4px; letter-spacing: 0.02em; }
     .h-sub { color: #a9c2dd; font-size: 13.5px; margin: 0 0 10px; }
     .land { fill: rgba(255,255,255,0.13); stroke: rgba(255,255,255,0.35); stroke-width: 0.6; }
+    .inset-box { fill: rgba(6,20,40,0.35); stroke: rgba(255,255,255,0.45); stroke-width: 0.8; }
 
     /* 全国の地図 */
-    .sc-map { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; align-items: center; height: 100%; }
-    .sc-map svg { width: 100%; height: 100%; max-height: 410px; }
+    .sc-map { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 18px; align-items: center; height: 100%; }
+    .sc-map svg { width: 100%; height: 100%; max-height: 476px; }
     .sc-map .dot { transform-box: fill-box; transform-origin: center; animation: pop 0.5s cubic-bezier(.3,1.6,.5,1) both; }
     .sc-map .lbl { font-size: 9.5px; font-weight: 700; fill: #fff; paint-order: stroke; stroke: rgba(6,20,40,0.85);
         stroke-width: 2.6px; animation: fadeUp 0.5s ease both; }
@@ -151,10 +152,10 @@
     .disclaimer { font-size: 12px; color: var(--muted); margin-top: 26px; line-height: 1.7; }
 
     @media (max-width: 860px) {
-        .stage-screen { height: 470px; }
+        .stage-screen { height: 520px; }
         .scene { padding: 6px 16px 12px; }
         .sc-map { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; gap: 6px; }
-        .sc-map svg { max-height: 360px; }
+        .sc-map svg { max-height: 380px; }
         .hotcold { grid-template-columns: 1fr 1fr; margin-top: 6px; }
         .sc-city { grid-template-columns: 1fr; grid-template-rows: auto auto; align-content: center; gap: 4px; }
         .mini { position: absolute; right: 10px; top: 4px; width: 92px; opacity: 0.9; }
@@ -203,7 +204,7 @@
         <label><input type="radio" name="set-mode" value="focus"> 1 都市を見つめる</label>
         <select id="set-focus" aria-label="見つめる都市"></select>
         <h5>はさむ場面</h5>
-        <label><input type="checkbox" id="set-map"> 全国の地図</label>
+        <label><input type="checkbox" id="set-map"> 全国の地図（平年差）</label>
         <label><input type="checkbox" id="set-nation"> 全国のようす</label>
         <h5>速さ</h5>
         <select id="set-speed">
@@ -338,6 +339,10 @@ var RAINY = { '雨': 1, '雨または雪': 1, '雪': 1 };
 var STORE_KEY = 'stage-settings-v2';
 var REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 var DAY = HOUR0 ? '昨日' : '今日';
+// 地図の平年差: 午前は今朝の最低気温、正午からは今日の最高気温（0 時台は昨日の最高）。
+// 時別の平年値は気象庁にも無いので、日の最高・最低で比べる
+var ANOM_MIN = !HOUR0 && {{ now.hour }} < 12;
+var ANOM_ANCHORS = [[-50, [40, 90, 205]], [-25, [125, 165, 235]], [0, [236, 236, 236]], [25, [245, 155, 115]], [50, [205, 45, 45]]];
 var STEP_SEC = 2.8;          // 都市の 1 項目を出しておく秒数（速さで伸び縮み）
 
 // ---- 小道具 ----
@@ -363,7 +368,41 @@ function tempColor(t) {
     }
     return 'rgb(' + c.join(',') + ')';
 }
-function xy(c) { return [(c.lon - MAP.lon0) * MAP.kx * MAP.scale, (MAP.lat1 - c.lat) * MAP.scale]; }
+// 沖縄・奄美は右下の差し込み図に置く（make_japan_outline.py）
+function xy(c) {
+    var I = MAP.inset, M = MAP.main;
+    if (c.lat < I.lat_max && c.lon < I.lon_max) {
+        return [I.x + (c.lon - I.lon0) * MAP.kx * I.scale, I.y + (I.lat1 - c.lat) * I.scale];
+    }
+    return [(c.lon - M.lon0) * MAP.kx * M.scale, (M.lat1 - c.lat) * M.scale];
+}
+var clipSeq = 0;
+function landSvg() {
+    var I = MAP.inset, id = 'ins' + (++clipSeq);
+    return '<defs><clipPath id="' + id + '"><rect x="' + I.x + '" y="' + I.y + '" width="' + I.w + '" height="' + I.h + '"/></clipPath></defs>' +
+        '<path class="land" d="' + MAP.main.d + '"/>' +
+        '<rect class="inset-box" x="' + I.x + '" y="' + I.y + '" width="' + I.w + '" height="' + I.h + '" rx="3"/>' +
+        '<path class="land" clip-path="url(#' + id + ')" d="' + I.d + '"/>';
+}
+function anomColor(d) {
+    if (d == null) return 'rgba(255,255,255,0.3)';
+    var a = ANOM_ANCHORS, c;
+    if (d <= a[0][0]) c = a[0][1];
+    else if (d >= a[a.length - 1][0]) c = a[a.length - 1][1];
+    else for (var i = 0; i + 1 < a.length; i++) {
+        if (d >= a[i][0] && d <= a[i + 1][0]) {
+            var f = (d - a[i][0]) / (a[i + 1][0] - a[i][0]);
+            c = [0, 1, 2].map(function (k) { return Math.round(a[i][1][k] + (a[i + 1][1][k] - a[i][1][k]) * f); });
+            break;
+        }
+    }
+    return 'rgb(' + c.join(',') + ')';
+}
+function anomOf(c) {
+    var v = ANOM_MIN ? c.tmin : c.tmax, n = ANOM_MIN ? c.ntmin : c.ntmax;
+    return v == null || n == null ? null : v - n;
+}
+function signed(d) { return (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d / 10).toFixed(1); }
 function devHtml(v, n) {
     if (v == null || n == null) return '';
     var d = v - n;
@@ -382,32 +421,33 @@ function countUp(el, to, decimals, ms) {
 
 // ---- 場面 ----
 function mapScene(el) {
-    var withT = CITIES.filter(function (c) { return c.temp != null; });
+    var withD = CITIES.filter(function (c) { return anomOf(c) != null; });
     var pick = {};
     tourCities().forEach(function (c) { pick[c.code] = 1; });
-    var order = withT.slice().sort(function (a, b) { return b.lat - a.lat; });
+    var order = withD.slice().sort(function (a, b) { return b.lat - a.lat; });
     var dots = order.map(function (c, i) {
-        var p = xy(c), delay = (i * 70) + 'ms';
-        var s = '<circle class="dot" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="' + (pick[c.code] ? 6 : 4.2) +
-            '" fill="' + tempColor(c.temp) + '" stroke="rgba(6,20,40,0.6)" stroke-width="0.8" style="animation-delay:' + delay + '"/>';
+        var p = xy(c), d = anomOf(c), delay = (i * 70) + 'ms';
+        var s = '<circle class="dot" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="' + (pick[c.code] ? 6.5 : 4.6) +
+            '" fill="' + anomColor(d) + '" stroke="rgba(6,20,40,0.6)" stroke-width="0.8" style="animation-delay:' + delay + '"/>';
         if (pick[c.code]) {
-            s += '<text class="lbl" x="' + (p[0] + 8).toFixed(1) + '" y="' + (p[1] + 3.5).toFixed(1) + '" style="animation-delay:' + delay + '">' +
-                esc(c.name) + ' <tspan class="t">' + num(c.temp) + '</tspan></text>';
+            s += '<text class="lbl" x="' + (p[0] + 8.5).toFixed(1) + '" y="' + (p[1] + 3.5).toFixed(1) + '" style="animation-delay:' + delay + '">' +
+                esc(c.name) + ' <tspan class="t">' + signed(d) + '</tspan></text>';
         }
         return s;
     }).join('');
-    var hot = withT.slice().sort(function (a, b) { return b.temp - a.temp; })[0];
-    var cold = withT.slice().sort(function (a, b) { return a.temp - b.temp; })[0];
-    var stops = TEMP_ANCHORS.map(function (a, i) { return tempColor(a[0]) + ' ' + (i * 100 / (TEMP_ANCHORS.length - 1)) + '%'; }).join(',');
+    var hot = withD.slice().sort(function (a, b) { return anomOf(b) - anomOf(a); })[0];
+    var cold = withD.slice().sort(function (a, b) { return anomOf(a) - anomOf(b); })[0];
+    var stops = ANOM_ANCHORS.map(function (a, i) { return anomColor(a[0]) + ' ' + (i * 100 / (ANOM_ANCHORS.length - 1)) + '%'; }).join(',');
+    var what = ANOM_MIN ? '今朝の最低気温' : DAY + 'の最高気温';
     var end = order.length * 70;
-    el.innerHTML = '<div class="sc-map"><svg viewBox="' + MAP.viewBox + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="全国の今の気温">' +
-        '<path class="land" d="' + MAP.d + '"/>' + dots + '</svg>' +
-        '<div><div class="h-big">いまの気温</div><p class="h-sub">全国 ' + withT.length + ' 都市（官署）。北から順に</p>' +
+    el.innerHTML = '<div class="sc-map"><svg viewBox="' + MAP.viewBox + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="全国の' + what + 'の平年差">' +
+        landSvg() + dots + '</svg>' +
+        '<div><div class="h-big">平年との差</div><p class="h-sub">' + what + 'と平年値の差。全国 ' + withD.length + ' 都市（官署）、北から順に</p>' +
         '<div class="legend" style="background:linear-gradient(90deg,' + stops + ')"></div>' +
-        '<div class="legend-ticks"><span>-20</span><span>0</span><span>20</span><span>40℃</span></div>' +
+        '<div class="legend-ticks"><span>−5℃</span><span>平年並み</span><span>+5℃</span></div>' +
         '<div class="hotcold">' +
-        (hot ? '<div style="animation-delay:' + end + 'ms">いちばん高い<br/>' + esc(hot.name) + '<b>' + num(hot.temp) + '℃</b></div>' : '') +
-        (cold ? '<div style="animation-delay:' + (end + 200) + 'ms">いちばん低い<br/>' + esc(cold.name) + '<b>' + num(cold.temp) + '℃</b></div>' : '') +
+        (hot ? '<div style="animation-delay:' + end + 'ms">平年よりいちばん高い<br/>' + esc(hot.name) + '<b>' + signed(anomOf(hot)) + '℃</b></div>' : '') +
+        (cold ? '<div style="animation-delay:' + (end + 200) + 'ms">平年よりいちばん低い<br/>' + esc(cold.name) + '<b>' + signed(anomOf(cold)) + '℃</b></div>' : '') +
         '</div></div></div>';
 }
 
@@ -433,7 +473,7 @@ function cityScene(el, c, ctx) {
         '<div class="city-name"><a href="' + esc(c.url) + '" style="color:inherit;text-decoration:none;">' + esc(c.name) + '</a><small>' + esc(c.pref) + '</small></div>' +
         '<div class="steps">' + steps.join('') + '</div>' +
         '<div class="step-dots">' + steps.map(function () { return '<span></span>'; }).join('') + '</div></div>' +
-        '<div class="mini"><svg viewBox="' + MAP.viewBox + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><path class="land" d="' + MAP.d + '"/>' + others +
+        '<div class="mini"><svg viewBox="' + MAP.viewBox + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true">' + landSvg() + others +
         '<circle class="here" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="6" fill="none" stroke="#ffd36a" stroke-width="2"/>' +
         '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="5.5" fill="' + tempColor(c.temp) + '" stroke="#fff" stroke-width="1.2"/></svg></div></div>';
     var nodes = el.querySelectorAll('.step'), dots = el.querySelectorAll('.step-dots span'), k = -1;
@@ -504,7 +544,7 @@ function tourCities() {
 // 流す場面の並び: [地図] → 都市（めぐる都市を 1 つずつ、または見つめる 1 都市） → [全国のようす]
 function playlist() {
     var list = [];
-    if (settings.map) list.push({ title: 'いまの気温（全国）', sec: 9, run: mapScene });
+    if (settings.map) list.push({ title: '平年との差（全国）', sec: 9, run: mapScene });
     var cities = settings.mode === 'focus' ? [byCode(settings.focus) || tourCities()[0]] : tourCities();
     cities.forEach(function (c) {
         var reps = settings.mode === 'focus' ? 3 : 1;      // 見つめるときは 3 項目を 3 周
