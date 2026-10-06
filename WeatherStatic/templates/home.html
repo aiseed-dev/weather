@@ -93,6 +93,7 @@
     .fc-text { font-size: clamp(16px, 2.1vw, 21px); font-weight: 700; margin: 2px 0 8px; line-height: 1.4; }
     .obs { margin-top: 8px; font-size: 14px; color: #a9c2dd; }
     .umb { display: inline-block; margin-top: 10px; font-size: 18px; color: #9cd0ff; }
+    .umb.no { color: #a9c2dd; }
     .step-dots { display: flex; gap: 8px; margin-top: 6px; }
     .step-dots span { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.25); transition: background 0.3s; }
     .step-dots span.on { background: #fff; }
@@ -206,7 +207,7 @@
         <label><input type="radio" name="set-mode" value="focus"> 1 都市を見つめる</label>
         <select id="set-focus" aria-label="見つめる都市"></select>
         <h5>はさむ場面</h5>
-        <label><input type="checkbox" id="set-map"> 全国の地図（平年差）</label>
+        <label><input type="checkbox" id="set-map"> 全国の地図</label>
         <label><input type="checkbox" id="set-nation"> 全国のようす</label>
         <h5>速さ</h5>
         <select id="set-speed">
@@ -343,23 +344,28 @@ var REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: re
 var DAY = HOUR0 ? '昨日' : '今日';
 // 天気予報（気象庁の府県天気予報）の発表時刻で見せる値を変える（generate.py の build_home）。
 // 5 時発表からは今日の最高気温、17 時発表からは明日（0 時を過ぎたら今日）の朝の最低気温。
-// どちらも気象庁の予想と平年差。地図の平年差と都市の 2 段目がこれに従う
+// どちらも気象庁の予想と平年差。都市の 2 段目がこれに従う
 var FC_NIGHT = {{ fc_night | tojson }};
 var FC_LABEL = {{ fc_label | tojson }};
 var FC_ISSUED = {{ fc_issued | tojson }};
-var FC_OBS_MAX = {{ fc_obs_max | tojson }};
 function fcIcon(wcode) {
     var k = { '1': '晴れ', '2': 'くもり', '3': '雨', '4': '雪' }[String(wcode || '').charAt(0)];
     return W_ICONS[k] || W_ICONS['くもり'];
 }
-// [値, 平年値, 予想か]。予報の無い都市は、日中なら観測の今日の最高気温で代える
-function extOf(c) {
-    if (c.fval != null) return [c.fval, c.fnorm, true];
-    if (!FC_NIGHT) return [c.tmax, c.ntmax, false];
-    return [null, null, false];
+// [値, 平年値, 予報があるか]
+function extOf(c) { return c.fval != null ? [c.fval, c.fnorm, true] : [null, null, false]; }
+// 予報の対象日の呼び方（今日・明日）。天気の文の見出しに使う
+var FC_DAYWORD = FC_NIGHT ? FC_LABEL.slice(0, 2) : '今日';
+var NOW_HOUR = {{ now.hour }};
+// 傘が要るか: 今の天気（推計気象分布）か、天気予報（日中は今日、17 時発表からは明日）に
+// 雨・雪があれば要る。日中 9 時を過ぎたら「朝まで雨」のような済んだ時間帯は数えない
+function umbrella(c) {
+    if (RAINY[c.wthr]) return '今、雨や雪が降っています';
+    var text = c.fwthr || '';
+    if (!FC_NIGHT && NOW_HOUR >= 9) text = text.replace(/(所により)?(未明|明け方|朝)まで[^、。]*?(雨|雪)(で雷を伴う)?/g, '');
+    if (/雨|雪/.test(text)) return FC_DAYWORD + 'の天気予報に雨や雪があります';
+    return null;
 }
-function extLabel(e) { return FC_LABEL + (e[2] ? '（予想・' + FC_ISSUED + '）' : '（観測）'); }
-var ANOM_ANCHORS = [[-50, [40, 90, 205]], [-25, [125, 165, 235]], [0, [236, 236, 236]], [25, [245, 155, 115]], [50, [205, 45, 45]]];
 var STEP_SEC = 2.8;          // 都市の 1 項目を出しておく秒数（速さで伸び縮み）
 
 // ---- 小道具 ----
@@ -401,25 +407,6 @@ function landSvg() {
         '<rect class="inset-box" x="' + I.x + '" y="' + I.y + '" width="' + I.w + '" height="' + I.h + '" rx="3"/>' +
         '<path class="land" clip-path="url(#' + id + ')" d="' + I.d + '"/>';
 }
-function anomColor(d) {
-    if (d == null) return 'rgba(255,255,255,0.3)';
-    var a = ANOM_ANCHORS, c;
-    if (d <= a[0][0]) c = a[0][1];
-    else if (d >= a[a.length - 1][0]) c = a[a.length - 1][1];
-    else for (var i = 0; i + 1 < a.length; i++) {
-        if (d >= a[i][0] && d <= a[i + 1][0]) {
-            var f = (d - a[i][0]) / (a[i + 1][0] - a[i][0]);
-            c = [0, 1, 2].map(function (k) { return Math.round(a[i][1][k] + (a[i + 1][1][k] - a[i][1][k]) * f); });
-            break;
-        }
-    }
-    return 'rgb(' + c.join(',') + ')';
-}
-function anomOf(c) {
-    var e = extOf(c);
-    return e[0] == null || e[1] == null ? null : e[0] - e[1];
-}
-function signed(d) { return (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d / 10).toFixed(1); }
 function devHtml(v, n) {
     if (v == null || n == null) return '';
     var d = v - n;
@@ -437,34 +424,34 @@ function countUp(el, to, decimals, ms) {
 }
 
 // ---- 場面 ----
+// 地図は実測値（今の気温）。時別の平年値ができたら、今の気温の平年差にする
 function mapScene(el) {
-    var withD = CITIES.filter(function (c) { return anomOf(c) != null; });
+    var withT = CITIES.filter(function (c) { return c.temp != null; });
     var pick = {};
     tourCities().forEach(function (c) { pick[c.code] = 1; });
-    var order = withD.slice().sort(function (a, b) { return b.lat - a.lat; });
+    var order = withT.slice().sort(function (a, b) { return b.lat - a.lat; });
     var dots = order.map(function (c, i) {
-        var p = xy(c), d = anomOf(c), delay = (i * 70) + 'ms';
+        var p = xy(c), delay = (i * 70) + 'ms';
         var s = '<circle class="dot" cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="' + (pick[c.code] ? 6.5 : 4.6) +
-            '" fill="' + anomColor(d) + '" stroke="rgba(6,20,40,0.6)" stroke-width="0.8" style="animation-delay:' + delay + '"/>';
+            '" fill="' + tempColor(c.temp) + '" stroke="rgba(6,20,40,0.6)" stroke-width="0.8" style="animation-delay:' + delay + '"/>';
         if (pick[c.code]) {
             s += '<text class="lbl" x="' + (p[0] + 8.5).toFixed(1) + '" y="' + (p[1] + 3.5).toFixed(1) + '" style="animation-delay:' + delay + '">' +
-                esc(c.name) + ' <tspan class="t">' + signed(d) + '</tspan></text>';
+                esc(c.name) + ' <tspan class="t">' + num(c.temp) + '</tspan></text>';
         }
         return s;
     }).join('');
-    var hot = withD.slice().sort(function (a, b) { return anomOf(b) - anomOf(a); })[0];
-    var cold = withD.slice().sort(function (a, b) { return anomOf(a) - anomOf(b); })[0];
-    var stops = ANOM_ANCHORS.map(function (a, i) { return anomColor(a[0]) + ' ' + (i * 100 / (ANOM_ANCHORS.length - 1)) + '%'; }).join(',');
-    var what = extLabel([0, 0, CITIES.some(function (c) { return c.fval != null; })]);
+    var hot = withT.slice().sort(function (a, b) { return b.temp - a.temp; })[0];
+    var cold = withT.slice().sort(function (a, b) { return a.temp - b.temp; })[0];
+    var stops = TEMP_ANCHORS.map(function (a, i) { return tempColor(a[0]) + ' ' + (i * 100 / (TEMP_ANCHORS.length - 1)) + '%'; }).join(',');
     var end = order.length * 70;
-    el.innerHTML = '<div class="sc-map"><svg viewBox="' + MAP.viewBox + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="全国の' + what + 'の平年差">' +
+    el.innerHTML = '<div class="sc-map"><svg viewBox="' + MAP.viewBox + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="全国の今の気温">' +
         landSvg() + dots + '</svg>' +
-        '<div><div class="h-big">平年との差</div><p class="h-sub">' + what + 'と平年値の差。全国 ' + withD.length + ' 都市（官署）、北から順に</p>' +
+        '<div><div class="h-big">いまの気温</div><p class="h-sub">アメダスの観測値。全国 ' + withT.length + ' 都市（官署）、北から順に</p>' +
         '<div class="legend" style="background:linear-gradient(90deg,' + stops + ')"></div>' +
-        '<div class="legend-ticks"><span>−5℃</span><span>平年並み</span><span>+5℃</span></div>' +
+        '<div class="legend-ticks"><span>-20</span><span>0</span><span>20</span><span>40℃</span></div>' +
         '<div class="hotcold">' +
-        (hot ? '<div style="animation-delay:' + end + 'ms">平年よりいちばん高い<br/>' + esc(hot.name) + '<b>' + signed(anomOf(hot)) + '℃</b></div>' : '') +
-        (cold ? '<div style="animation-delay:' + (end + 200) + 'ms">平年よりいちばん低い<br/>' + esc(cold.name) + '<b>' + signed(anomOf(cold)) + '℃</b></div>' : '') +
+        (hot ? '<div style="animation-delay:' + end + 'ms">いちばん高い<br/>' + esc(hot.name) + '<b>' + num(hot.temp) + '℃</b></div>' : '') +
+        (cold ? '<div style="animation-delay:' + (end + 200) + 'ms">いちばん低い<br/>' + esc(cold.name) + '<b>' + num(cold.temp) + '℃</b></div>' : '') +
         '</div></div></div>';
 }
 
@@ -477,17 +464,22 @@ function cityScene(el, c, ctx) {
     }).join('');
     var ext = extOf(c);
     var steps = [
+        // 1 ページ目は実測（アメダスの観測値）
         '<div class="step">' + (W_ICONS[c.wthr] || W_ICONS['くもり']) +
-            '<div><div class="lab">いま' + (c.wthr ? '・' + esc(c.wthr) : '') + '</div>' +
-            '<div class="big"><span class="cu" data-v="' + (c.temp == null ? '' : c.temp / 10) + '">-</span><small>℃</small></div></div></div>',
-        '<div class="step">' + (FC_NIGHT ? fcIcon(c.fwcode) : '') + '<div>' +
-            '<div class="lab">' + esc(extLabel(ext)) + '</div>' +
-            (FC_NIGHT && c.fwthr ? '<div class="fc-text">' + FC_LABEL.slice(0, 2) + 'の天気　' + esc(c.fwthr) + '</div>' : '') +
-            '<div class="big">' + num(ext[0]) + '<small>℃</small></div>' + devHtml(ext[0], ext[1]) +
-            (FC_OBS_MAX && c.tmax != null ? '<div class="obs">ここまでの最高 ' + num(c.tmax) + '℃（観測）</div>' : '') +
+            '<div><div class="lab">いまの気温（観測）' + (c.wthr ? '・' + esc(c.wthr) : '') + '</div>' +
+            '<div class="big"><span class="cu" data-v="' + (c.temp == null ? '' : c.temp / 10) + '">-</span><small>℃</small></div>' +
+            (c.tmax != null || c.tmin != null ? '<div class="obs">' + DAY + 'ここまでの最高 ' + num(c.tmax) + '℃・最低 ' + num(c.tmin) + '℃</div>' : '') +
+            '</div></div>',
+        // 2 ページ目は天気予報（気象庁の発表のまま。値と天気の文は手を加えない）
+        '<div class="step">' + fcIcon(c.fwcode) + '<div>' +
+            '<div class="lab">天気予報（' + esc(FC_ISSUED) + '）</div>' +
+            (c.fwthr ? '<div class="fc-text">' + FC_DAYWORD + 'の天気　' + esc(c.fwthr) + '</div>' : '') +
+            (ext[2] ? '<div class="lab">' + esc(FC_LABEL) + '（予想）</div><div class="big">' + num(ext[0]) + '<small>℃</small></div>' + devHtml(ext[0], ext[1])
+                    : '<div class="lab">予報がありません</div>') +
             '</div></div>',
         '<div class="step"><div><div class="lab">服装の目安（いまの気温から）</div><div class="advice">' + esc(clothesStr(c.temp) || '-') + '</div>' +
-            (RAINY[c.wthr] ? '<div class="umb">☂ 傘を持って出かけましょう</div>' : '') + '</div></div>'
+            (umbrella(c) ? '<div class="umb">☂ 傘が必要です（' + esc(umbrella(c)) + '）</div>'
+                         : '<div class="umb no">傘はいらないでしょう</div>') + '</div></div>'
     ];
     el.innerHTML = '<div class="sc-city"><div>' +
         '<div class="city-name"><a href="' + esc(c.url) + '" style="color:inherit;text-decoration:none;">' + esc(c.name) + '</a><small>' + esc(c.pref) + '</small></div>' +
@@ -564,7 +556,7 @@ function tourCities() {
 // 流す場面の並び: [地図] → 都市（めぐる都市を 1 つずつ、または見つめる 1 都市） → [全国のようす]
 function playlist() {
     var list = [];
-    if (settings.map) list.push({ title: '平年との差（全国）', sec: 9, run: mapScene });
+    if (settings.map) list.push({ title: 'いまの気温（全国）', sec: 9, run: mapScene });
     var cities = settings.mode === 'focus' ? [byCode(settings.focus) || tourCities()[0]] : tourCities();
     cities.forEach(function (c) {
         var reps = settings.mode === 'focus' ? 3 : 1;      // 見つめるときは 3 項目を 3 周

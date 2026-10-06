@@ -567,7 +567,6 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         "temp_anchors": TEMP_ANCHORS, "clothes_bands": CLOTHES_BANDS,
         "now_cities": now_cities, "now_default": HOME_CITIES,
         "fc_night": fc_night, "fc_label": fc_label, "fc_issued": fc_issued,
-        "fc_obs_max": (not fc_night) and fc_target == now.date() and now.hour >= 9,
         # 地図の輪郭（make_japan_outline.py が作る。Natural Earth 10m）
         "japan_map": json.loads((BASE / "assets" / "japan_outline.json").read_text(encoding="utf-8")),
         "current_time": (datetime.fromisoformat(current["amedas_time"])
