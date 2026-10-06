@@ -8,6 +8,9 @@
 
   ページ側テンプレートが差し込めるブロック:
     head_extra / content / add_script
+
+  グローバル kaiseki（weatherlib/kaiseki.py の settings()）があれば、アクセス解析の
+  スクリプトとフッターの知らせのページへのリンクを入れる
 #}<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -29,6 +32,10 @@
     {% block head_extra %}{% endblock %}
     {# テーマ本体はページ固有スタイルの後に読み込んで上書きする #}
     <link href="/css/site.css?v={{ css_version }}" rel="stylesheet"/>
+    {# 自前のアクセス解析（weatherlib/kaiseki.py。WEATHER_KAISEKI_TO があるときだけ） #}
+    {% if kaiseki is defined and kaiseki %}
+    <script src="/kaiseki.js" data-to="{{ kaiseki.to }}" data-own="{{ kaiseki.own }}" defer></script>
+    {% endif %}
 </head>
 <body>
 <a class="skip-link" href="#main">本文へスキップ</a>
@@ -113,7 +120,10 @@
                 <h6>このサイトについて</h6>
                 <ul>
                     <li><a href="//www.time-j.net/about/">このサイトについて</a></li>
-                    <li><a href="//www.time-j.net/privacypolicy/">免責事項・プライバシーポリシー</a></li>
+                    <li><a href="/privacy/">免責事項・プライバシーポリシー</a></li>
+                    {% if kaiseki is defined and kaiseki %}
+                    <li><a href="/kaiseki/">アクセス解析と外部送信</a></li>
+                    {% endif %}
                 </ul>
             </div>
             <div class="col-xs-3">

@@ -56,6 +56,8 @@
 | `/status/records/` | 1 | 観測史上 1 位の更新状況 | generate_status | 10 分 |
 | `/status/lab/` | 1 | Python グラフ工房（ブラウザ内 Python） | generate_status | 10 分 |
 | `/about/` `/app/` | 2 | サイト説明・デスクトップ版の案内 | generate | 毎時 |
+| `/privacy/` | 1 | 免責事項・プライバシーポリシー（旧サイトは www.time-j.net の共通ページ。このサイトで実際に使っている物だけを書く） | generate（`build_privacy`） | 毎時 |
+| `/kaiseki/` `/kaiseki.js` | 1 | 自前のアクセス解析（aiai-pro の kaiseki）の知らせ（外部送信規律）とスクリプト。`WEATHER_KAISEKI_TO` があるときだけ作り、全ページの `</head>` の前にスクリプトを入れる。無ければ消す（weatherlib/kaiseki.py） | generate（`build_kaiseki`） | 毎時 |
 | `/app/develop/` | 1 | **アプリの開発マニュアル**（環境構築・構成・スキル・設計原則） | generate | 毎時 |
 | `/data/daily/` | 1 ＋ 配布ファイル | **日別の観測データ**（気温・降水・日照、1880 年〜、廃止地点を含む。年ごと・地点ごとの NetCDF） | generate（書き出しは export_dist） | ストアの更新時 |
 | `/data/amedas/` | 1 ＋ 配布ファイル | **アメダス 10 分値アーカイブ**（半月ごとの NetCDF・索引・地点一覧） | generate | 10 分 |

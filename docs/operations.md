@@ -190,6 +190,23 @@ URL との互換」）。deb2 は作って公開する側に専念し、deb2 が
    `BASE`）を `https://weather.time-j.net` に変える。`weather-dj7.pages.dev` は切り替え後も
    使えるので急がない
 
+### アクセス解析（kaiseki）を入れる・止める（運用者の作業）
+
+受け口（aiai-pro の koukoku/kaiseki/server.py）を `analytics.aiseed.dev` などに置いてから、deb2 の crontab の
+先頭に 1 行足す（cron は行の前の `名前=値` を環境に入れる）。次の生成から全ページにスクリプトが入り、
+`/kaiseki.js` と知らせのページ `/kaiseki/` が置かれ、プライバシーポリシーにも節が出る。
+
+```
+WEATHER_KAISEKI_TO=https://analytics.aiseed.dev
+```
+
+受け口の `KAISEKI_SITES` には `weather.time-j.net` を入れる。止めるときはこの行を消す（次の生成で
+スクリプトと /kaiseki/ が消える）。kaiseki.js は `WeatherStatic/assets/kaiseki.js` に写してある
+（aiai-pro 7466eee）。直すときは aiai-pro 側で直して写し直す。手元で試すときは、server.py を
+`KAISEKI_SITES=127.0.0.1:8772 KAISEKI_ORIGINS=http://127.0.0.1:8772` で 127.0.0.1:8420 に動かし、
+`WEATHER_KAISEKI_TO=http://127.0.0.1:8420 python generate.py` で作る（2026-10-07 に、受け入れる →
+ページを移る → 記録を見る → 消す → 受け入れない、を確かめた）。
+
 ### deb2 の FastAPI（つなぎ。使わなくてもよい）
 
 `server/app.py` は `public/` を Pages と同じ規則で返すだけのサーバー。ページを

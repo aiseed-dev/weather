@@ -1,0 +1,76 @@
+{#
+  免責事項とプライバシーポリシー。このサイトで実際に使っている物だけを書く
+  （広告・Google Analytics は使っていない。2026-10-07 にテンプレートと生成物で確かめた）。
+  アクセス解析の節は WEATHER_KAISEKI_TO があるときだけ（weatherlib/kaiseki.py）。
+
+  コンテキスト: kaiseki（{to, own} か None）, to_host, enacted
+#}
+{% extends "_layout.html" %}
+{% block head_extra %}
+<style>
+    .pv { margin: 0 10px 24px; max-width: 46em; }
+    .pv h2 { font-size: 22px; margin: 6px 0 14px; }
+    .pv h3 { font-size: 17px; border-left: 4px solid var(--accent);
+        padding-left: 9px; margin: 24px 0 10px; }
+    .pv p, .pv li { font-size: 14px; line-height: 1.85; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="pv">
+    <h2>免責事項・プライバシーポリシー</h2>
+
+    <h3>免責事項</h3>
+    <p>公開している情報には注意していますが、入力やプログラムの誤り、気象庁の速報値の更新などにより、
+        誤った情報を表示していることがあります。それによって損害を受けた場合でも責任を負えませんので、
+        ご自身の判断でご利用ください。<strong>警報・注意報などの防災情報は扱っていません。</strong>
+        緊急時は<a href="https://www.jma.go.jp/bosai/">気象庁</a>でご確認ください。</p>
+
+    <h3>集める情報</h3>
+    <p>このサイトには会員登録や入力のフォームはなく、氏名・メールアドレス・住所などは集めていません。
+        お問い合わせ（<a href="//www.time-j.net/contacts/">お問い合わせのページ</a>）で送られた内容は、
+        返答と、サイトの改善のためだけに使います。</p>
+
+    {% if kaiseki %}
+    <h3>アクセス解析</h3>
+    <p>サイトをよくし、合った案内を出すために、ページを見たときの記録（ページ、来る前のサイトのホスト名、
+        言語、画面の大きさ、ブラウザーの種類、見ていた時間など）を、運営者が管理する {{ to_host }} に送っています。
+        IP アドレスは記録しません。最初に「受け入れる」か「受け入れない」かを聞き、受け入れた人にだけ
+        Cookie に番号を置きます。送る情報の一覧、選び直し方、自分の記録の見方と消し方は
+        <a href="/kaiseki/">アクセス解析と外部送信</a>にあります。</p>
+    {% else %}
+    <h3>アクセス解析</h3>
+    <p>いまは、アクセス解析を使っていません。</p>
+    {% endif %}
+
+    <h3>Cookie とブラウザーに保存するもの</h3>
+    <ul>
+        <li>表示の設定（ダークモード、トップページで流す場面や都市）は、ブラウザーの中（localStorage）に保存します。
+            どこにも送りません</li>
+        {% if kaiseki %}
+        <li>アクセス解析を受け入れた人には、Cookie（<code>kaiseki_id</code>）に番号を、選んだ結果を
+            <code>kaiseki_choice</code> に置きます</li>
+        {% endif %}
+        <li>広告は出しておらず、広告や Google Analytics の Cookie は使っていません</li>
+    </ul>
+    <p>Cookie と保存した設定は、ブラウザーの設定で消せます。消しても、このサイトは使えます。</p>
+
+    <h3>ほかの会社のサービス</h3>
+    <ul>
+        <li><strong>配信</strong>: ページは Cloudflare（Cloudflare Pages）から配信しています。ページを開くと、
+            IP アドレスなどの接続の情報を Cloudflare が扱います
+            （<a href="https://www.cloudflare.com/privacypolicy/">Cloudflare のプライバシーポリシー</a>）</li>
+        <li><strong>サイト内検索</strong>: 上の検索の欄は Google のカスタム検索です。検索すると、入れた言葉が
+            Google に送られます（<a href="https://policies.google.com/privacy?hl=ja">Google のプライバシーポリシー</a>）</li>
+        <li><strong>グラフの描画</strong>: 一部のページ（実況の試験的なページ）は、グラフを描くプログラムを
+            jsDelivr（cdn.jsdelivr.net）から読み込みます</li>
+    </ul>
+
+    <h3>第三者への提供</h3>
+    <p>集めた情報は、法令に基づいて求められた場合を除き、第三者に渡しません。</p>
+
+    <h3>適用範囲と改定</h3>
+    <p>このページは、このサイト（weather.time-j.net）に適用します。リンク先のほかのサイトでの情報の扱いには
+        責任を負えません。内容を変えるときは、このページを書き換えます。</p>
+    <p>{{ enacted }}</p>
+</div>
+{% endblock %}

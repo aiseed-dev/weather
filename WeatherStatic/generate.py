@@ -25,6 +25,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from weatherlib.filters import ANOM_ANCHORS, CLOTHES_BANDS, FILTERS, TEMP_ANCHORS, bcolor
 from weatherlib.hourly_normals import HourlyNormals
+from weatherlib import kaiseki
 from weatherlib import siteurl
 from weatherlib.season import is_season, is_summer, winter_start
 from weatherlib.stations import MAIN_STATIONS
@@ -258,6 +259,8 @@ def make_env() -> Environment:
     summer_url, winter_url = month_table_urls(datetime.now())
     env.globals["summer_month_url"] = summer_url
     env.globals["winter_month_url"] = winter_url
+    # 自前のアクセス解析（WEATHER_KAISEKI_TO があるときだけ。weatherlib/kaiseki.py）
+    env.globals["kaiseki"] = kaiseki.settings()
     return env
 
 
@@ -1650,6 +1653,31 @@ def build_app(env: Environment) -> None:
         nav_active="app", build_year=datetime.now().year))
 
 
+def build_privacy(env: Environment) -> None:
+    """免責事項・プライバシーポリシー（旧サイトは www.time-j.net の共通のページ）。"""
+    k = kaiseki.settings()
+    write("privacy/index.html", env.get_template("privacy.html").render(
+        page_title="免責事項・プライバシーポリシー — 個人開発気象統計",
+        nav_active="about", build_year=datetime.now().year,
+        to_host=k["to"].split("//", 1)[-1] if k else "",
+        enacted="2026 年 10 月 7 日 制定"))
+
+
+def build_kaiseki(env: Environment) -> None:
+    """自前のアクセス解析: /kaiseki.js と知らせのページ /kaiseki/。設定が無ければ消す。"""
+    k = kaiseki.settings()
+    js, page = PUBLIC / "kaiseki.js", PUBLIC / "kaiseki"
+    if not k:
+        js.unlink(missing_ok=True)
+        shutil.rmtree(page, ignore_errors=True)
+        return
+    shutil.copy2(BASE / "assets" / "kaiseki.js", js)
+    write("kaiseki/index.html", env.get_template("kaiseki.html").render(
+        page_title="アクセス解析と外部送信 — 個人開発気象統計",
+        nav_active="about", build_year=datetime.now().year,
+        to_host=k["to"].split("//", 1)[-1]))
+
+
 def build_about(env: Environment) -> None:
     """このサイトについて。非公式であること・防災情報を扱わないことを明示する。"""
     write("About/index.html", env.get_template("about.html").render(
@@ -2044,7 +2072,8 @@ def build_seo(env: Environment, stations: dict) -> None:
             "/Temperature/HighsList/", "/Temperature/LowsList/",
             "/Summer/Ranking/", "/Winter/LowestList/", "/Climate/",
             "/Stations/", "/Monthly/", "/Monthly/Latest/",
-            "/Precipitation/", "/App/", "/App/Develop/", "/About/", f"/{AMEDAS_URL}/", f"/{DAILY_URL}/"]
+            "/Precipitation/", "/App/", "/App/Develop/", "/About/", "/privacy/",
+            f"/{AMEDAS_URL}/", f"/{DAILY_URL}/"]
     urls += [f"/Monthly/Heinenti{m:02d}{l}/" for m in range(1, 13) for l in ("", "l")]
     targets = climate_targets(stations)
     urls += [f"/Climate/Chart/{s}/" for _, _, _, s in targets]
@@ -2085,8 +2114,11 @@ def build_seo(env: Environment, stations: dict) -> None:
     # 大文字を含む URL は小文字へ（URL は小文字にそろえている。weatherlib.siteurl）。
     # 本番は Cloudflare の転送ルールが先に 301 で送るので、ここに来るのはルールの無い
     # 環境（pages.dev など）だけ
+    k = kaiseki.settings()
     write("404.html",
           '<!doctype html><meta charset="utf-8"><title>404</title>'
+          + (f'<script src="/kaiseki.js" data-to="{k["to"]}" data-own="{k["own"]}" defer></script>' if k else "")
+          +
           '<script>var p=location.pathname;if(p!==p.toLowerCase())'
           'location.replace(p.toLowerCase()+location.search+location.hash);'
           # 作らなくなった古い年の夏・冬のページ（FIRST_SEASON_YEAR より前）は今年・今季のページへ
@@ -2165,6 +2197,8 @@ def main() -> None:
         build_precipitation(env, stations)
         build_app(env)
         build_about(env)
+        build_privacy(env)
+        build_kaiseki(env)
         build_data_amedas(env)
         build_data_daily(env)
         build_seo(env, stations)

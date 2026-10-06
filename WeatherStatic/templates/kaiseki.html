@@ -1,0 +1,115 @@
+{#
+  アクセス解析（kaiseki）と外部送信の知らせ。電気通信事業法の外部送信規律で、送る情報・
+  送り先・目的を、すぐ見られる所に置く（総務省「外部送信規律 FAQ」）。
+  WEATHER_KAISEKI_TO があるときだけ作る（weatherlib/kaiseki.py。generate.py の build_kaiseki）。
+
+  コンテキスト: kaiseki（{to, own}）, to_host
+#}
+{% extends "_layout.html" %}
+{% block head_extra %}
+<style>
+    .ks { margin: 0 10px 24px; max-width: 46em; }
+    .ks h2 { font-size: 22px; margin: 6px 0 14px; }
+    .ks h3 { font-size: 17px; border-left: 4px solid var(--accent);
+        padding-left: 9px; margin: 24px 0 10px; }
+    .ks p, .ks li { font-size: 14px; line-height: 1.85; }
+    .ks table { width: 100%; border-collapse: collapse; background: var(--card);
+        border: 1px solid var(--border); }
+    .ks th, .ks td { border-bottom: 1px solid var(--border); padding: 8px 10px;
+        font-size: 13.5px; text-align: left; vertical-align: top; }
+    .ks th { background: var(--th-bg); color: var(--th-text); white-space: nowrap; }
+    .ks-now { background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+        padding: 12px 14px; }
+    .ks-now button { margin: 4px 6px 4px 0; padding: 5px 12px; font-size: 14px; }
+    .ks-out { white-space: pre-wrap; font-size: 12.5px; max-height: 24em; overflow: auto;
+        background: var(--card); border: 1px solid var(--border); padding: 8px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="ks">
+    <h2>アクセス解析と外部送信</h2>
+
+    <p>このサイトは、サイトをよくし、見る人に合った案内を出すために、ページを見たときの記録を
+        <strong>{{ to_host }}</strong> に送っています。送り先は、このサイトの運営者が管理するサーバーです。
+        記録をほかのサービスに渡すことはありません。</p>
+
+    <h3>送る情報</h3>
+    <table>
+        <tr><th>いつ</th><th>送る情報</th></tr>
+        <tr><td>ページを開いたとき</td><td>
+            ページの URL のパスと題、来る前のサイトのホスト名（ページの URL までは送りません）、
+            キャンペーンの印（URL の <code>utm_</code> で始まる値）、ブラウザーの言語、時間帯、
+            画面の大きさ、ブラウザーと機器の種類（User-Agent）</td></tr>
+        <tr><td>ページを離れたとき</td><td>そのページを見ていた時間（秒）</td></tr>
+        <tr><td>受け入れた人だけ</td><td>
+            このサイトの Cookie（<code>kaiseki_id</code>、約 400 日）に置いた番号と、
+            訪問ごとの番号（タブを閉じると消えます）。受け入れたことも記録します</td></tr>
+    </table>
+    <p>IP アドレスは記録しません。番号は乱数で、名前やメールアドレスとは結び付いていません。</p>
+
+    <h3>受け入れる・受け入れない</h3>
+    <p>最初に開いたとき、画面の下で「受け入れる」か「受け入れない」かを聞きます。</p>
+    <ul>
+        <li>受け入れた人には番号を置き、その番号で、同じ人の記録をまとめます</li>
+        <li>受け入れない人には番号を置かず、ページが見られた数だけを数えます</li>
+        <li>同じ運営者のサイト（{{ kaiseki.own | replace(" ", "・") }} のサイト）どうしのリンクをたどると、
+            番号を引き継ぎます。番号は URL の <code>#</code> の後ろに載せるので、サーバーには送られません。
+            一方のサイトで受け入れた人は、もう一方でも受け入れた扱いになります</li>
+    </ul>
+
+    <h3>選び直す・自分の記録を見る・消す</h3>
+    <div class="ks-now">
+        <p id="ks-state">読み込み中…</p>
+        <button type="button" id="ks-yes">受け入れる</button>
+        <button type="button" id="ks-no">受け入れない（番号と記録を消す）</button>
+        <button type="button" id="ks-mine">自分の記録を見る</button>
+        <button type="button" id="ks-forget">自分の記録を消す</button>
+        <pre class="ks-out" id="ks-out" hidden></pre>
+    </div>
+    <p>ブラウザーの開発者向けの画面では、<code>kaiseki.choose(true)</code>（受け入れる）・
+        <code>kaiseki.choose(false)</code>（受け入れない）・<code>kaiseki.forget()</code>（番号と記録を消す）
+        でも同じことができます。自分の記録は <code>{{ kaiseki.to }}/v1/mine?vid=番号</code> で見られます。
+        ブラウザーの Cookie を消すと、番号も消えます（送り先の記録は残るので、先に「自分の記録を消す」を押してください）。</p>
+
+    <h3>目的</h3>
+    <ul>
+        <li>サイトをよくする: よく見られるページ、使われ方、来る道筋を知り、ページを直す</li>
+        <li>合った案内を出す: よく見る地点や季節に合わせて、このサイトや同じ運営者のサービスの案内を出す</li>
+    </ul>
+
+    <p>このほかの情報の扱いは、<a href="/privacy/">プライバシーポリシー</a>にまとめています。</p>
+</div>
+{% endblock %}
+{% block add_script %}
+<script>
+(function () {
+    var k = window.kaiseki, out = document.getElementById("ks-out");
+    function state() {
+        var vid = k ? k.id() : "";
+        document.getElementById("ks-state").textContent = !k
+            ? "アクセス解析のスクリプトが読み込まれていません（ブラウザーで止めている場合など）。"
+            : vid ? "いまは「受け入れる」です。あなたの番号: " + vid
+                  : "いまは番号を置いていません（受け入れない、またはまだ選んでいません）。";
+    }
+    function show(text) { out.hidden = false; out.textContent = text; }
+    window.addEventListener("load", function () {
+        k = window.kaiseki;
+        state();
+        document.getElementById("ks-yes").onclick = function () { if (k) { k.choose(true); state(); } };
+        document.getElementById("ks-no").onclick = function () { if (k) { k.choose(false); state(); } };
+        document.getElementById("ks-forget").onclick = function () {
+            if (!k || !k.id()) { show("番号がないので、消す記録はありません。"); return; }
+            k.forget(); state(); show("番号と、その番号の記録を消すよう送りました。");
+        };
+        document.getElementById("ks-mine").onclick = function () {
+            var vid = k && k.id();
+            if (!vid) { show("番号がないので、まとまった記録はありません。"); return; }
+            fetch(k.to + "/v1/mine?vid=" + encodeURIComponent(vid))
+                .then(function (r) { return r.json(); })
+                .then(function (d) { show(JSON.stringify(d, null, 2)); })
+                .catch(function () { show("記録を読めませんでした（送り先につながらないなど）。"); });
+        };
+    });
+})();
+</script>
+{% endblock %}

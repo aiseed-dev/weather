@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from weatherlib.filters import FILTERS
-from weatherlib import pointstore, siteurl
+from weatherlib import kaiseki, pointstore, siteurl
 from weatherlib.svgchart import intraday_svg, trend_svg
 # 平年値の読み方（daily は月キー・日は月内添字）は generate.py に正しい実装がある
 from generate import normal_daily, climate_targets, station_slug
@@ -665,6 +665,7 @@ def main() -> int:
                       trim_blocks=True, lstrip_blocks=True)
     env.filters.update(FILTERS)
     env.globals["css_version"] = "status"
+    env.globals["kaiseki"] = kaiseki.settings()     # 自前のアクセス解析（weatherlib/kaiseki.py）
 
     # スロットはあるのに中身が 0 地点なら、読み込みの不具合か配信の欠け。
     # 区画ごとの「スロットが無ければ飛ばす」では拾えず、0 地点の表がそのまま
