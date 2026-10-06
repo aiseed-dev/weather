@@ -94,6 +94,7 @@
     .obs { margin-top: 8px; font-size: 14px; color: #a9c2dd; }
     .umb { display: inline-block; margin-top: 10px; font-size: 18px; color: #9cd0ff; }
     .umb.no { color: #a9c2dd; }
+    .umb small { font-size: 13px; color: #a9c2dd; }
     .step-dots { display: flex; gap: 8px; margin-top: 6px; }
     .step-dots span { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.25); transition: background 0.3s; }
     .step-dots span.on { background: #fff; }
@@ -357,14 +358,25 @@ function extOf(c) { return c.fval != null ? [c.fval, c.fnorm, true] : [null, nul
 // 予報の対象日の呼び方（今日・明日）。天気の文の見出しに使う
 var FC_DAYWORD = FC_NIGHT ? FC_LABEL.slice(0, 2) : '今日';
 var NOW_HOUR = {{ now.hour }};
-// 傘が要るか: 今の天気（推計気象分布）か、天気予報（日中は今日、17 時発表からは明日）に
-// 雨・雪があれば要る。日中 9 時を過ぎたら「朝まで雨」のような済んだ時間帯は数えない
+// 傘が要るか: 今の天気（推計気象分布）か、天気予報（日中は今日、17 時発表からは明日）の
+// 天気の文で決める。日本の予報は「所により雨」のように雨が文にしか出ないことがあり、
+// 天気のコードだけでは見落とすので文を読む。主な天気に雨・雪があれば「要る」、
+// 「所により」の後にだけあれば「折りたたみがあると安心」。日中 9 時を過ぎたら
+// 「朝まで雨」のような済んだ時間帯は数えない。[程度, 理由] または null
 function umbrella(c) {
-    if (RAINY[c.wthr]) return '今、雨や雪が降っています';
+    if (RAINY[c.wthr]) return ['need', '今、雨や雪が降っています'];
     var text = c.fwthr || '';
     if (!FC_NIGHT && NOW_HOUR >= 9) text = text.replace(/(所により)?(未明|明け方|朝)まで[^、。]*?(雨|雪)(で雷を伴う)?/g, '');
-    if (/雨|雪/.test(text)) return FC_DAYWORD + 'の天気予報に雨や雪があります';
+    var parts = text.split('所により');
+    if (/雨|雪/.test(parts[0])) return ['need', FC_DAYWORD + 'の天気予報に雨や雪があります'];
+    if (/雨|雪/.test(parts.slice(1).join(''))) return ['maybe', FC_DAYWORD + 'の天気予報に「所により」雨や雪があります'];
     return null;
+}
+function umbrellaHtml(c) {
+    var u = umbrella(c);
+    if (!u) return '<div class="umb no">傘はいらないでしょう</div>';
+    return '<div class="umb">☂ ' + (u[0] === 'need' ? '傘が必要です' : '折りたたみ傘があると安心です') +
+        '<br/><small>' + esc(u[1]) + '</small></div>';
 }
 var STEP_SEC = 2.8;          // 都市の 1 項目を出しておく秒数（速さで伸び縮み）
 
@@ -478,8 +490,7 @@ function cityScene(el, c, ctx) {
                     : '<div class="lab">予報がありません</div>') +
             '</div></div>',
         '<div class="step"><div><div class="lab">服装の目安（いまの気温から）</div><div class="advice">' + esc(clothesStr(c.temp) || '-') + '</div>' +
-            (umbrella(c) ? '<div class="umb">☂ 傘が必要です（' + esc(umbrella(c)) + '）</div>'
-                         : '<div class="umb no">傘はいらないでしょう</div>') + '</div></div>'
+            umbrellaHtml(c) + '</div></div>'
     ];
     el.innerHTML = '<div class="sc-city"><div>' +
         '<div class="city-name"><a href="' + esc(c.url) + '" style="color:inherit;text-decoration:none;">' + esc(c.name) + '</a><small>' + esc(c.pref) + '</small></div>' +
