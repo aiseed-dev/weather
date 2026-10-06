@@ -392,6 +392,46 @@ def http_fetch(url: str) -> tuple[int, bytes | None]:
         return 0, None
 
 
+ENV_FILE = Path.home() / ".config" / "cloudflare" / "pages.env"
+ETRN_PREFIX = "https://www.data.jma.go.jp/stats/etrn/view/"
+
+
+def load_worker_env() -> tuple[str, str]:
+    """Worker の URL と合言葉（環境変数か ~/.config/cloudflare/pages.env。値は表示しない）。"""
+    if ENV_FILE.is_file():
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, _, v = line.partition("=")
+                os.environ.setdefault(k.strip(), v.strip())
+    base = os.environ.get("WEATHER_WORKER_URL", "").rstrip("/")
+    token = os.environ.get("WEATHER_WORKER_TOKEN", "")
+    if not base or not token:
+        raise SystemExit(f"--via-worker には WEATHER_WORKER_URL と WEATHER_WORKER_TOKEN が要ります（環境変数か {ENV_FILE}）")
+    if not base.startswith("http"):
+        base = "https://" + base
+    return base, token
+
+
+def worker_fetch(t: "Task", base: str, token: str) -> tuple[int, bytes | None]:
+    """Cloudflare の Worker（POST /etrn）経由で取る。気象庁へは Cloudflare から行き、
+    deb2 の定常の取得（実況・予報）が気象庁に止められる心配をなくす。
+    Worker は R2 の etrn/{key} にも置く。戻り値は気象庁の HTTP ステータスと本文。"""
+    key = f"{'hourly' if t.kind == 'h' else 'normals_d'}/{t.code}/{t.path.name.removesuffix('.gz')}"
+    data = json.dumps({"page": t.url.removeprefix(ETRN_PREFIX), "key": key}).encode()
+    req = urllib.request.Request(base + "/etrn", data=data, method="POST", headers={
+        "Content-Type": "application/json", "Authorization": f"Bearer {token}",
+        "User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT + 15) as res:
+            return int(res.headers.get("X-Status", res.status)), res.read()
+    except urllib.error.HTTPError as e:
+        st = e.headers.get("X-Status") if e.headers else None
+        return (int(st) if st and st.isdigit() else e.code), None
+    except Exception:
+        return 0, None
+
+
 def atomic_write_gz(path: Path, body: bytes) -> None:
     """一時ファイルに書いて rename。kill されても半端なページが残らない。"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -438,12 +478,14 @@ def cmd_fetch(args) -> int:
         p.unlink(missing_ok=True)
 
     ledger = Ledger(cache / "_requests.log")
+    via = load_worker_env() if args.via_worker else None
     tasks = make_tasks(args)
     total = len(tasks)
     pending = [t for t in tasks if not is_done(t, args.max_attempts)]
     done0 = total - len(pending)
     log(f"開始: 全 {total:,} ページ / 取得済み {done0:,} / 残り {len(pending):,}"
-        f"（間隔 {interval} 秒、窓 {args.window or 'なし'}、累計リクエスト {ledger.n:,}）")
+        f"（間隔 {interval} 秒、窓 {args.window or 'なし'}、累計リクエスト {ledger.n:,}"
+        f"{'、Cloudflare の Worker 経由' if via else ''}）")
     if not pending:
         log("すべて取得済みです")
         return 0
@@ -512,7 +554,7 @@ def cmd_fetch(args) -> int:
                 if gap > 0:
                     time.sleep(gap)
                 last_req = time.monotonic()
-                status, body = http_fetch(t.url)
+                status, body = (worker_fetch(t, *via) if via else http_fetch(t.url))
                 ledger.add(t.kind, f"{t.code}-{t.key}", status)
                 n_req += 1
 
@@ -853,6 +895,8 @@ def main() -> int:
     ap.add_argument("--max-requests", type=int, default=0,
                     help="cache dir の累計リクエスト数の上限（0=無制限）")
     ap.add_argument("--limit", type=int, default=0, help="今回送る最大リクエスト数（0=無制限）")
+    ap.add_argument("--via-worker", action="store_true",
+                    help="fetch: 気象庁へは Cloudflare の Worker（POST /etrn）から取りに行く。R2 にも残る")
     ap.add_argument("--max-attempts", type=int, default=4, help="1 ページあたり、失敗を何回で断念するか")
     ap.add_argument("--sigma", type=float, default=DEFAULT_SIGMA, help="build: 日方向の平滑化 σ（日）")
     ap.add_argument("--min-samples", type=int, default=8,

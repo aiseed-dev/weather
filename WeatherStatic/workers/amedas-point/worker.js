@@ -55,11 +55,19 @@
  * X-Written）で返し、本文は R2 に置いたものと 1 バイトも違わない。
  * 1 地点も取れなかったとき（何も置かないとき）は本文を空にする。
  *
+ * 過去の気象データのページ（POST /etrn）
+ * ----------------------------------------
+ * 時別の平年値の材料。下の etrn() を参照。R2 では etrn/ の下に置く。
+ *
  * デプロイ（ユーザー実行。合言葉は環境変数から読まれ、表示されない）:
  *   TOKEN=... cf-publish worker deploy . --secret TOKEN --workers-dev
  */
 
 const JMA = "https://www.jma.go.jp/bosai/amedas/data/point";
+// 過去の気象データ（etrn）の表示ページ。/etrn で取るのはここだけ（下の ETRN_PAGE に合うもの）
+const ETRN = "https://www.data.jma.go.jp/stats/etrn/view/";
+const ETRN_PAGE = /^(hourly_s1|hourly_a1|daily_s1|nml_sfc_d)\.php\?[A-Za-z0-9_=&.-]{1,200}$/;
+const ETRN_KEY = /^[A-Za-z0-9_\/.-]{1,160}$/;
 const UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)";
 const CONCURRENCY = 6;      // Workers の同時接続上限に合わせる
 const MAX_STATIONS = 49;    // fetch N + put 1 ≤ 50
@@ -134,6 +142,52 @@ async function handle(env, name, stations, day, hour) {
   return { result: { name, ...tally, written: 1 }, bytes };
 }
 
+/**
+ * 過去の気象データ（etrn）のページを 1 枚取って R2 に置き、呼び手にも返す。
+ *
+ * 時別の平年値の材料（build_hourly_normals.py の --via-worker）。気象庁へは
+ * Cloudflare から取りに行くので、取得が気象庁に止められても deb2 の定常の取得
+ * （実況・予報）は巻き込まれない。間隔（1.5 秒に 1 件）は deb2 側が守る。
+ *
+ *   POST /etrn  {"page": "hourly_s1.php?prec_no=44&block_no=47662&year=2019&month=7&day=3",
+ *                "key": "hourly/47662/47662_20190703.html"}
+ *   → 本文は気象庁のページそのまま。X-Status に気象庁の HTTP ステータス。
+ *     200 のときだけ R2 の etrn/{key} に置く（X-Written: 1）
+ *
+ * サブリクエストは fetch 1 ＋ put 1。
+ */
+async function etrn(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch (_) {
+    return new Response("bad request", { status: 400 });
+  }
+  const { page, key } = body || {};
+  if (!ETRN_PAGE.test(page || "") || !ETRN_KEY.test(key || "") || key.includes("..")) {
+    return new Response("page（etrn の表示ページ）と key が要る", { status: 400 });
+  }
+  let res;
+  try {
+    res = await fetch(ETRN + page, { headers: { "User-Agent": UA } });
+  } catch (e) {
+    return new Response(String(e), { status: 502, headers: { "X-Status": "0" } });
+  }
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let written = 0;
+  if (res.status === 200 && bytes.length) {
+    await env.AMEDAS.put(`etrn/${key}`, bytes, {
+      httpMetadata: { contentType: "text/html; charset=utf-8" },
+    });
+    written = 1;
+  }
+  return new Response(bytes, {
+    status: res.status === 200 ? 200 : 502,
+    headers: { "Content-Type": "text/html; charset=utf-8",
+               "X-Status": String(res.status), "X-Written": String(written) },
+  });
+}
+
 export default {
   /**
    * deb2 からの呼び出し口。エリアと地点は**呼ぶ側が渡す** — Worker が
@@ -148,12 +202,14 @@ export default {
    *   echo あり … 本文は R2 に置いたバイト列、集計は X-* ヘッダ
    */
   async fetch(request, env) {
-    if (request.method !== "POST" || new URL(request.url).pathname !== "/fetch") {
+    const path = new URL(request.url).pathname;
+    if (request.method !== "POST" || (path !== "/fetch" && path !== "/etrn")) {
       return new Response("not found", { status: 404 });
     }
     if (!env.TOKEN || request.headers.get("Authorization") !== `Bearer ${env.TOKEN}`) {
       return new Response("forbidden", { status: 403 });
     }
+    if (path === "/etrn") return etrn(request, env);
     let body;
     try {
       body = await request.json();
