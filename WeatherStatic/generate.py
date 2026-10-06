@@ -1197,7 +1197,7 @@ def build_history(env: Environment, meta: dict, stations: dict, hist: History) -
     common = {"nav_active": "ranking", "build_year": datetime.now().year, "js_version": js_version}
     src = "出典: 気象庁ホームページ（過去の気象データ・最新の気象データ）。気象庁のデータを編集・加工しています。"
     for kind, title, info in (
-            ("day", "その日の猛暑日などの地点",
+            ("day", "その日の猛暑日・冬日などの地点",
              src + "直近の値は速報値で、後日確定値に置き換わることがあります。連続日数は 2 日以上の地点を"
                    "載せています。「]」は資料不足値（観測が一部欠けた日の値）です。南鳥島と富士山は含めていません。"),
             ("month", "月の日別の地点数",
@@ -1905,6 +1905,10 @@ def legacy_redirects(targets: list, now: datetime | None = None) -> list[str]:
         "/Temperature/SummerDay/ /Summer/Ranking/ 302",
         "/Temperature/WinterMonth /Winter/Ranking/ 302",
         "/Temperature/WinterMonth/ /Winter/Ranking/ 302",
+        "/Temperature/WinterMonth1 /Winter/Ranking/ 302",
+        "/Temperature/WinterMonth1/ /Winter/Ranking/ 302",
+        "/Temperature/WinterDay /Winter/Ranking/ 302",
+        "/Temperature/WinterDay/ /Winter/Ranking/ 302",
         "/Monthly/Monthly /Monthly/Latest/ 302",
         "/Monthly/Monthly/ /Monthly/Latest/ 302",
         "/Monthly/MonthlyL /Monthly/Latest/ 302",
@@ -1934,7 +1938,9 @@ def legacy_redirects(targets: list, now: datetime | None = None) -> list[str]:
         "/Temperature/SummerMonth/* /history/month/ 200",
         "/Monthly/Monthly/* /history/monthly/ 200",
         "/Monthly/MonthlyL/* /history/monthly/ 200",
-        "/Temperature/WinterMonth/* /Winter/Ranking/ 302",
+        "/Temperature/WinterDay/* /history/day/ 200",
+        "/Temperature/WinterMonth/* /history/month/ 200",
+        "/Temperature/WinterMonth1/* /history/month/ 200",
     ]
 
     # 小文字にそろえ、行き先が自分自身になった行（旧サイトの別名 abashiri など）と

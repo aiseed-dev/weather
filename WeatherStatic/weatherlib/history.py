@@ -1,6 +1,6 @@
 """過去の日別値から、旧サイト（WeatherCore）にあった集計ページの中身を作る。
 
-旧サイトの URL（/temperature/summerday/a20180723 など）のページは、日付の数だけ
+旧サイトの URL（/temperature/summerday/a20180723・/temperature/winterday/c20180125 など）のページは、日付の数だけ
 あり、静的に作ると組み合わせの数だけページが要る。そこでページは種類ごとに 1 枚の
 枠（/history/day/ など）にし、中身は月ごとのデータ（public/data/history/）から
 ブラウザで描く。_redirects の 200（URL はそのままで枠を返す）でつなぐ。
@@ -25,13 +25,25 @@ BASE = Path(__file__).resolve().parent.parent
 DIST = BASE / "dist" / "daily"
 PUBLIC = BASE / "public"
 
-# 旧サイトの集計の種類（URL の記号）。値は (変数, 閾値, 見出し)
+# 旧サイトの集計の種類。値は (変数, 閾値, 見出し, 閾値未満を数えるか)。
+# 夏は URL の記号そのまま（/temperature/summerday/a…）、冬は w を付ける
+# （/temperature/winterday/a… は wa）。夏は閾値以上、冬は閾値未満を数える
 KINDS = {
-    "a": ("tmax", 35.0, "猛暑日（最高気温が35℃以上）"),
-    "b": ("tmax", 30.0, "真夏日（最高気温が30℃以上）"),
-    "c": ("tavg", 30.0, "平均気温が30℃以上"),
-    "d": ("tmin", 25.0, "最低気温が25℃以上"),
+    "a": ("tmax", 35.0, "猛暑日（最高気温が35℃以上）", False),
+    "b": ("tmax", 30.0, "真夏日（最高気温が30℃以上）", False),
+    "c": ("tavg", 30.0, "平均気温が30℃以上", False),
+    "d": ("tmin", 25.0, "最低気温が25℃以上", False),
+    "wa": ("tmin", 0.0, "冬日（最低気温が0℃未満）", True),
+    "wb": ("tavg", 0.0, "平均気温が0℃未満", True),
+    "wc": ("tmax", 0.0, "真冬日（最高気温が0℃未満）", True),
 }
+
+
+def hits(vals: np.ndarray, kind: str) -> np.ndarray:
+    """条件を満たすか（欠測は満たさない）。"""
+    _, thr, _, below = KINDS[kind]
+    with np.errstate(invalid="ignore"):
+        return vals < thr if below else vals >= thr
 FIRST_YEAR = 2010            # 旧サイトの集計が始まる年（月の表の列）
 MAX_RUN = 200                # 連続日数を数える上限（遡る日数）
 # 日ごとのページ（その日の地点・月の日ごとの地点数）に入れない地点: 南鳥島（47991）と
@@ -168,9 +180,7 @@ def year_runs(yd: YearData, kind: str) -> np.ndarray:
     key = "runs_" + kind
     if key in yd._stat:
         return yd._stat[key]
-    var, thr, _ = KINDS[kind]
-    with np.errstate(invalid="ignore"):
-        hit = yd.day_vals(var) >= thr
+    hit = hits(yd.day_vals(KINDS[kind][0]), kind)
     p = DIST / "years" / f"{yd.year - 1}.nc"
     prev = _carry(yd.year - 1, kind, p.stat().st_mtime) if p.is_file() else None
     run = prev.astype(np.int32) if prev is not None else np.zeros(len(yd.codes), dtype=np.int32)
@@ -196,8 +206,8 @@ def _ranked(rows: list[dict], key: str, tie: str | None = None) -> list[dict]:
 
 
 def day_ranking(kind: str, d: date) -> dict | None:
-    """その日に条件を満たした地点を、値の高い順と連続日数の多い順に。"""
-    var, thr, title = KINDS[kind]
+    """その日に条件を満たした地点を、値の順（夏は高い順、冬は低い順）と連続日数の多い順に。"""
+    var, _, title, below = KINDS[kind]
     yd = year_data(d.year)
     if yd is None:
         return None
@@ -206,16 +216,20 @@ def day_ranking(kind: str, d: date) -> dict | None:
         return None
     info, slugs = meta()
     codes = yd.codes            # 地点の並びはどの年のファイルでも同じ（export_dist.py）
-    hit = np.nonzero(col >= thr)[0]
+    hit = np.nonzero(hits(col, kind))[0]
     short = yd.col_short(var, d)
-    by_value = [{**_station(codes[i], info, slugs), "value": round(float(col[i]), 1),
+    sign = -1 if below else 1
+    by_value = [{**_station(codes[i], info, slugs), "value": sign * round(float(col[i]), 1),
                  "short": bool(short[i])} for i in hit]
     # 連続日数: その日から遡って条件を満たし続けた日数（年をまたいで数える）
     runs = year_runs(yd, kind)[:, (d - yd.first).days]
     by_run = [{**_station(codes[i], info, slugs), "days": int(runs[i])}
               for i in hit if runs[i] >= 2]
+    by_value = _ranked(by_value, "value")
+    for r in by_value:
+        r["value"] *= sign
     return {"kind": kind, "title": title, "date": d,
-            "by_value": _ranked(by_value, "value"), "by_run": _ranked(by_run, "days")}
+            "by_value": by_value, "by_run": _ranked(by_run, "days")}
 
 
 def month_tables() -> dict[tuple[str, int], dict]:
@@ -225,7 +239,7 @@ def month_tables() -> dict[tuple[str, int], dict]:
     年のファイルは 1 回ずつ読む。"""
     years = list(range(last_year(), FIRST_YEAR - 1, -1))
     out = {}
-    for kind, (_, _, title) in KINDS.items():
+    for kind, (_, _, title, _) in KINDS.items():
         for m in range(1, 13):
             n_days = 31 if m in (1, 3, 5, 7, 8, 10, 12) else 30 if m != 2 else 29
             out[(kind, m)] = {"kind": kind, "title": title, "month": m, "years": years,
@@ -234,11 +248,10 @@ def month_tables() -> dict[tuple[str, int], dict]:
         yd = year_data(y)
         if yd is None:
             continue
-        for kind, (var, thr, _) in KINDS.items():
+        for kind, (var, _, _, _) in KINDS.items():
             vals = yd.day_vals(var)
             have = ~np.isnan(vals).all(axis=0)
-            with np.errstate(invalid="ignore"):
-                counts = (vals >= thr).sum(axis=0)
+            counts = hits(vals, kind).sum(axis=0)
             for j in np.nonzero(have)[0]:
                 d = yd.first + timedelta(days=int(j))
                 if d.year == y:
@@ -308,7 +321,8 @@ def month_ranking(high: bool, year: int, month: int) -> dict | None:
 #   {年}/{月 2 桁}.json  その月の日ごと・種類ごとの地点
 #                        {"year", "month", "days": {"23": {"a": {"v": [[地点, 値×10(, 1)]…],
 #                                                            "r": [[地点, 日数]…]}, …}, …}}
-#                        v は値の高い順、r は連続日数の多い順（2 日以上）。同じ値の中は
+#                        v は値の順（夏の種類は高い順、冬の種類 wa・wb・wc は低い順）、
+#                        r は連続日数の多い順（2 日以上）。同じ値の中は
 #                        府県番号・地点番号の順。順位はスクリプトが付ける（同じ値は同じ順位）。
 #                        3 つ目の 1 は資料不足値。データの無い日・種類は入れない
 #   {年}/monthly.json    月の平均気温のランキング
@@ -317,7 +331,7 @@ def month_ranking(high: bool, year: int, month: int) -> dict | None:
 #   table/{種類}{月}.json  月の日ごとの地点数 {"kind", "month", "years": […], "grid": [[…]…]}
 #   stations.json        {"stations": {地点: [名前, 府県, 地点ページの URL 名 or null]}}
 
-EXPORT_VERSION = 1          # 書き出す形を変えたら上げる（全部を書き直す）
+EXPORT_VERSION = 2          # 書き出す形を変えたら上げる（全部を書き直す）。2: 冬の種類
 
 
 def _order_pos(yd: YearData, info: dict) -> np.ndarray:
@@ -341,16 +355,16 @@ def export_month(year: int, month: int) -> dict | None:
         j = (d - yd.first).days
         if 0 <= j < yd.n_days:
             entry = {}
-            for kind, (var, thr, _) in KINDS.items():
+            for kind, (var, _, _, below) in KINDS.items():
                 col = yd.day_vals(var)[:, j]
                 if np.isnan(col).all():
                     continue
-                with np.errstate(invalid="ignore"):
-                    hit = np.nonzero(col >= thr)[0]
+                hit = np.nonzero(hits(col, kind))[0]
                 v10 = np.rint(col[hit] * 10).astype(int)
                 short = yd.short[var][hit, j]
                 runs = year_runs(yd, kind)[hit, j]
-                iv = sorted(range(len(hit)), key=lambda n: (-v10[n], pos[hit[n]]))
+                sign = 1 if below else -1
+                iv = sorted(range(len(hit)), key=lambda n: (sign * v10[n], pos[hit[n]]))
                 ir = sorted((n for n in range(len(hit)) if runs[n] >= 2),
                             key=lambda n: (-runs[n], pos[hit[n]]))
                 entry[kind] = {

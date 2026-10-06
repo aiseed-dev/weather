@@ -1,5 +1,5 @@
 /*
- * 過去の記録のページ（旧サイトの /temperature/summerday/… など）を描く。
+ * 過去の記録のページ（旧サイトの /temperature/summerday/…・/temperature/winterday/… など）を描く。
  *
  * ページは種類ごとに 1 枚の枠（/history/day/ など）で、_redirects の 200 で旧 URL の
  * まま返される。ここで URL を読み、月ごとのデータ（/data/history/。生成は
@@ -9,13 +9,25 @@
 (function () {
     "use strict";
 
+    // データの種類の記号（weatherlib/history.py の KINDS）。冬は URL の記号に w を付ける
     var KINDS = {
         a: "猛暑日（最高気温が35℃以上）",
         b: "真夏日（最高気温が30℃以上）",
         c: "平均気温が30℃以上",
-        d: "最低気温が25℃以上"
+        d: "最低気温が25℃以上",
+        wa: "冬日（最低気温が0℃未満）",
+        wb: "平均気温が0℃未満",
+        wc: "真冬日（最高気温が0℃未満）"
     };
     var KIND_SHORT = { a: "猛暑日", b: "真夏日", c: "平均気温が30℃以上", d: "最低気温が25℃以上" };
+    var INTRO = {
+        summer: "2010 年からの猛暑日（最高気温が35℃以上）、真夏日（最高気温が30℃以上）、平均気温が30℃以上、" +
+                "最低気温が25℃以上となった地点の数を、日ごとに集計しています。",
+        winter: "2010 年からの冬日（最低気温が0℃未満）、平均気温が0℃未満、真冬日（最高気温が0℃未満）と" +
+                "なった地点の数を、日ごとに集計しています。"
+    };
+    // 冬の月の表は 2 枚: 冬日と平均気温 0℃未満（/temperature/wintermonth/{月}）、真冬日（…/wintermonth1/{月}）
+    function winterMonthUrl(k, mo) { return "/temperature/wintermonth" + (k === "c" ? "1" : "") + "/" + mo; }
 
     function esc(s) {
         return String(s).replace(/[&<>"']/g, function (c) {
@@ -69,19 +81,23 @@
 
     // ---------------------------------------------------------------- その日の地点
     function day() {
-        var m = /^\/temperature\/summerday\/([abcd])(\d{4})(\d{2})(\d{2})\/?$/.exec(location.pathname.toLowerCase());
-        if (!m) return notFound("URL の形が正しくありません（例: /temperature/summerday/a20180723）。");
-        var kind = m[1], y = +m[2], mo = +m[3], d = +m[4];
+        var m = /^\/temperature\/(summer|winter)day\/([abcd])(\d{4})(\d{2})(\d{2})\/?$/.exec(location.pathname.toLowerCase());
+        if (!m || (m[1] === "winter" && m[2] === "d"))
+            return notFound("URL の形が正しくありません（例: /temperature/summerday/a20180723、/temperature/winterday/c20180125）。");
+        var winter = m[1] === "winter", k = m[2], kind = (winter ? "w" : "") + k;
+        var y = +m[3], mo = +m[4], d = +m[5];
         var dt = new Date(Date.UTC(y, mo - 1, d));
         if (dt.getUTCMonth() !== mo - 1) return notFound("その日付はありません。");
         var title = y + "年" + mo + "月" + d + "日の" + KINDS[kind] + "の地点";
         setTitle(title);
         function dayUrl(t) {
-            return "/temperature/summerday/" + kind + t.getUTCFullYear() + pad2(t.getUTCMonth() + 1) + pad2(t.getUTCDate());
+            return "/temperature/" + m[1] + "day/" + k + t.getUTCFullYear() + pad2(t.getUTCMonth() + 1) + pad2(t.getUTCDate());
         }
         var nav = '<p class="hist-nav"><a href="' + dayUrl(new Date(dt - 864e5)) + '">← 前の日</a>' +
                   '<a href="' + dayUrl(new Date(+dt + 864e5)) + '">次の日 →</a>' +
-                  '<a href="/temperature/summermonth/' + kind + "/" + mo + '">月別の一覧に戻る</a></p>';
+                  '<a href="' + (winter ? winterMonthUrl(k, mo) : "/temperature/summermonth/" + k + "/" + mo) +
+                  '">月別の一覧に戻る</a></p>';
+        var order = winter ? "気温の低い順" : "気温の高い順";
         Promise.all([getJSON("/data/history/" + y + "/" + pad2(mo) + ".json"),
                      getJSON("/data/history/stations.json")]).then(function (res) {
             var month = res[0], st = (res[1] || {}).stations || {};
@@ -92,13 +108,13 @@
             }
             var rv = ranks(e.v, 1), rr = ranks(e.r, 1);
             var html = "<p>" + y + "年" + mo + "月" + d + "日に" + esc(KINDS[kind]) +
-                       "となった地点を、気温の高い順と連続日数の多い順にランキングしています（" +
+                       "となった地点を、" + order + "と連続日数の多い順にランキングしています（" +
                        e.v.length + " 地点）。</p>" + nav + document.getElementById("history-note").innerHTML;
             if (!e.v.length) {
                 show(html + "<p>この日に" + esc(KINDS[kind]) + "となった地点はありません。</p>");
                 return;
             }
-            html += '<div class="rank-grid">' + table("気温の高い順", ["順位", "地点", "気温（℃）"],
+            html += '<div class="rank-grid">' + table(order, ["順位", "地点", "気温（℃）"],
                 e.v.map(function (r, i) {
                     return '<tr><td class="wright">' + rankCell(rv[i]) + "</td><td>" + stationCell(st, r[0]) +
                            '</td><td class="wright">' + fmt10(r[1]) + (r[2] ? " ]" : "") + "</td></tr>";
@@ -114,33 +130,65 @@
     }
 
     // ---------------------------------------------------------------- 月の日ごとの地点数
+    // 夏: /temperature/summermonth/{a|b|c|d}/{月}（1 枚に 1 種類）
+    // 冬: /temperature/wintermonth/{月}（冬日と平均気温 0℃未満の 2 表）、/temperature/wintermonth1/{月}（真冬日）
     function month() {
-        var m = /^\/temperature\/summermonth\/([abcd])\/(\d{1,2})\/?$/.exec(location.pathname.toLowerCase());
-        if (!m || +m[2] < 1 || +m[2] > 12) return notFound("URL の形が正しくありません（例: /temperature/summermonth/a/7）。");
-        var kind = m[1], mo = +m[2];
-        setTitle(mo + "月の" + KINDS[kind] + "の日別の地点数");
-        var kinds = Object.keys(KINDS).map(function (k) {
-            var label = KIND_SHORT[k];
-            return '<a href="/temperature/summermonth/' + k + "/" + mo + '">' + (k === kind ? "<b>" + label + "</b>" : label) + "</a>";
-        }).join("");
-        var months = [5, 6, 7, 8, 9, 10].map(function (mm) {
-            return '<a href="/temperature/summermonth/' + kind + "/" + mm + '">' + (mm === mo ? "<b>" + mm + "月</b>" : mm + "月") + "</a>";
-        }).join("");
-        getJSON("/data/history/table/" + kind + mo + ".json").then(function (t) {
-            var html = '<p class="hist-nav">' + kinds + '</p><p class="hist-nav">' + months + "</p>" +
-                       document.getElementById("history-note").innerHTML;
-            if (!t) { show(html + "<p>データがありません。</p>"); return; }
+        var path = location.pathname.toLowerCase();
+        var ms = /^\/temperature\/summermonth\/([abcd])\/(\d{1,2})\/?$/.exec(path);
+        var mw = /^\/temperature\/wintermonth(1?)\/(\d{1,2})\/?$/.exec(path);
+        var m = ms || mw;
+        if (!m || +m[2] < 1 || +m[2] > 12)
+            return notFound("URL の形が正しくありません（例: /temperature/summermonth/a/7、/temperature/wintermonth/1）。");
+        var mo = +m[2], winter = !!mw, tabs, monthsNav, kinds, title;
+        if (winter) {
+            var mafuyu = m[1] === "1";
+            kinds = mafuyu ? ["wc"] : ["wa", "wb"];
+            title = mo + "月の" + (mafuyu ? "真冬日" : "冬日・平均気温が0℃未満") + "の日別の地点数";
+            tabs = [["a", "冬日・平均気温が0℃未満"], ["c", "真冬日"]].map(function (t) {
+                var on = (t[0] === "c") === mafuyu;
+                return '<a href="' + winterMonthUrl(t[0], mo) + '">' + (on ? "<b>" + t[1] + "</b>" : t[1]) + "</a>";
+            }).join("");
+            monthsNav = [10, 11, 12, 1, 2, 3, 4, 5].map(function (mm) {
+                var u = winterMonthUrl(mafuyu ? "c" : "a", mm);
+                return '<a href="' + u + '">' + (mm === mo ? "<b>" + mm + "月</b>" : mm + "月") + "</a>";
+            }).join("");
+        } else {
+            var kind = m[1];
+            kinds = [kind];
+            title = mo + "月の" + KINDS[kind] + "の日別の地点数";
+            tabs = Object.keys(KIND_SHORT).map(function (k) {
+                var label = KIND_SHORT[k];
+                return '<a href="/temperature/summermonth/' + k + "/" + mo + '">' + (k === kind ? "<b>" + label + "</b>" : label) + "</a>";
+            }).join("");
+            monthsNav = [5, 6, 7, 8, 9, 10].map(function (mm) {
+                return '<a href="/temperature/summermonth/' + kind + "/" + mm + '">' + (mm === mo ? "<b>" + mm + "月</b>" : mm + "月") + "</a>";
+            }).join("");
+        }
+        setTitle(title);
+        function grid(kind, t) {
+            var k = kind.slice(-1), base = winter ? "/temperature/winterday/" : "/temperature/summerday/";
             var rows = ["<tr><th>日</th>" + t.years.map(function (y) { return "<th>" + y + "</th>"; }).join("") + "</tr>"];
             t.grid.forEach(function (row, di) {
                 var dd = di + 1;
                 rows.push("<tr><td>" + dd + "</td>" + row.map(function (n, yi) {
                     if (n === null) return "<td></td>";
                     if (n === 0) return '<td class="zero">0</td>';
-                    return '<td><a href="/temperature/summerday/' + kind + t.years[yi] + pad2(mo) + pad2(dd) + '">' + n + "</a></td>";
+                    return '<td><a href="' + base + k + t.years[yi] + pad2(mo) + pad2(dd) + '">' + n + "</a></td>";
                 }).join("") + "</tr>");
             });
-            show(html + '<div class="mwrap"><table class="mtable"><tbody>' + rows.join("") + "</tbody></table></div>");
-        });
+            return (kinds.length > 1 ? "<h4>" + esc(KINDS[kind]) + "</h4>" : "") +
+                   '<div class="mwrap"><table class="mtable"><tbody>' + rows.join("") + "</tbody></table></div>";
+        }
+        Promise.all(kinds.map(function (kind) { return getJSON("/data/history/table/" + kind + mo + ".json"); }))
+            .then(function (tables) {
+                var html = "<p>" + INTRO[winter ? "winter" : "summer"] + "</p>" +
+                           '<p class="hist-nav">' + tabs + '</p><p class="hist-nav">' + monthsNav + "</p>" +
+                           document.getElementById("history-note").innerHTML;
+                if (!tables.some(Boolean)) { show(html + "<p>データがありません。</p>"); return; }
+                show(html + kinds.map(function (kind, i) {
+                    return tables[i] ? grid(kind, tables[i]) : "";
+                }).join(""));
+            });
     }
 
     // ---------------------------------------------------------------- 月の平均気温のランキング

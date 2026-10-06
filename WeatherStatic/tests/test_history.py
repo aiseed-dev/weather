@@ -13,6 +13,7 @@
   5. 日ごとのページに入れない地点（DAY_EXCLUDE）は、その日の地点にも月の表の数にも入らない
   6. 月ごとのデータの書き出し: 並びと資料不足の印、変わった年（と翌年・今年）だけ書き直す
   7. 季節のページの府県のまとまりは府県名で決める（富士山は静岡県）
+  8. 冬の種類（真冬日など）は閾値未満を数え、気温の低い順に並べる
 """
 import json
 import sys
@@ -77,7 +78,8 @@ def main() -> int:
         (root / "public" / "data" / "slugs.json").write_text(
             json.dumps({"stations": {"47662": "Tokyo"}}), encoding="utf-8")
         days = {date(2025, 12, 30): [36, 30, 10], date(2025, 12, 31): [36, 36, 10],
-                date(2026, 1, 1): [36, 36, 36], date(2026, 1, 2): [20, 20, 20]}
+                date(2026, 1, 1): [36, 36, 36], date(2026, 1, 2): [20, 20, 20],
+                date(2026, 1, 10): [-1.5, 2.0, -6.0], date(2026, 1, 11): [-0.5, 3.0, -7.0]}
         march = {date(2024, 3, 1) + timedelta(days=i): [30.0, 29.0, 30.0] for i in range(31)}
         march[date(2024, 3, 1)] = [31.2, 29.0, 30.0]      # 東京の平均 30.04 → 30.0
         march[date(2024, 3, 2)] = [0.0, 29.0, 30.0]       # 東京の資料不足値。使えば平均が下がる
@@ -163,6 +165,18 @@ def main() -> int:
         r3 = history.export(out, {"47662": "Tokyo"}, state, log=lambda *_: None)
         check("変わった年と翌年（連続日数が年をまたぐ）を集計し直す", {2025, 2026} <= set(r3["years"])
               and 2024 not in r3["years"])
+
+        print("8. 冬の種類")
+        r = history.day_ranking("wc", date(2026, 1, 11))
+        check("真冬日は最高気温 0℃未満を、低い順に（稚内 −7.0 → 東京 −0.5）",
+              [(s["rank"], s["name"], s["value"]) for s in r["by_value"]] == [(1, "稚内", -7.0), (2, "東京", -0.5)])
+        check("連続日数も数える（どちらも 2 日、同じ順位は府県番号順）",
+              [(s["rank"], s["name"], s["days"]) for s in r["by_run"]] == [(1, "稚内", 2), (1, "東京", 2)])
+        m = history.export_month(2026, 1)
+        check("書き出しも低い順", m["days"]["11"]["wc"]["v"] == [[47401, -70], [47662, -5]])
+        t = history.month_table("wc", 1)
+        check("月の表は 1/10 が 2 地点", t["grid"][9][t["years"].index(2026)] == 2)
+        check("夏の種類には入らない", m["days"]["10"]["a"]["v"] == [])
 
     print("7. 季節のページの府県のまとまり")
     import generate

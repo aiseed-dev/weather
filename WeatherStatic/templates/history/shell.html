@@ -1,6 +1,7 @@
 {#
   過去の記録のページの枠（旧 /Temperature/SummerDay/{a|b|c|d}{YYYYMMDD}・
-  /Temperature/SummerMonth/{a|b|c|d}/{月}・/Monthly/Monthly(L)/{YYYYMM}）。
+  /Temperature/SummerMonth/{a|b|c|d}/{月}・/Temperature/WinterDay/{a|b|c}{YYYYMMDD}・
+  /Temperature/WinterMonth(1)/{月}・/Monthly/Monthly(L)/{YYYYMM}）。
   _redirects の 200 で旧 URL のまま返され、/js/history.js が URL を読んで
   月ごとのデータ（/data/history/）から中身を描く。
 
@@ -21,6 +22,7 @@
     .mtable th { text-align: center; }
     .mtable td.zero { color: var(--muted, #999); }
     .mwrap { overflow-x: auto; }
+    #history h4 { font-size: 16px; margin: 18px 0 6px; }
     .hist-nav a { margin-right: 14px; }
     .hist-note { background: var(--panel); border: 1px solid var(--border);
         border-left: 4px solid var(--accent); border-radius: 8px; padding: 10px 14px; margin: 14px 0; }
