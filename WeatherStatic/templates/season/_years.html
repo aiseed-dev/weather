@@ -1,0 +1,13 @@
+{#
+  夏・冬のページの年の移動（generate.py の season_year_nav）。
+  前の年・次の年のリンクと、年を選ぶ一覧（選ぶとその年の同じページへ移る）。
+#}
+<nav class="year-nav" aria-label="年を選ぶ">
+    {% if year_nav.prev %}<a href="{{ year_nav.prev[1] }}">← {{ year_nav.prev[0] }}{{ year_nav.label }}</a>{% endif %}
+    <select onchange="if(this.value)location.href=this.value" aria-label="年を選ぶ">
+        {% for y, url in year_nav.options %}
+        <option value="{{ url }}"{{ " selected" if y == year_nav.year }}>{{ y }}{{ year_nav.label }}</option>
+        {% endfor %}
+    </select>
+    {% if year_nav.next %}<a href="{{ year_nav.next[1] }}">{{ year_nav.next[0] }}{{ year_nav.label }} →</a>{% endif %}
+</nav>

@@ -877,6 +877,25 @@ def season_stations(stations: dict, past: bool) -> list[tuple[int, dict]]:
     return out
 
 
+# 夏・冬のページの最初の年。いまの平年値（1991〜2020 年）の期間の初めから（運用者の判断、
+# 2026-10-06）。日別の記録は 1880 年からあるが、古い年は地点の数も置き場所も今と違い、
+# 年どうしを並べて比べる意味が薄い。冬は寒候年（前年 8 月〜7 月）で、1991 年冬から
+FIRST_SEASON_YEAR = 1991
+
+
+def season_year_nav(base: str, year: int, current: int, label: str) -> dict:
+    """夏・冬のページの年の移動（前の年・次の年と、年を選ぶ一覧）。
+
+    今年・今季のページは年の無い URL（base/）、過去の年は base/{年}/。label は「年夏」「年冬」。"""
+    def url(y: int) -> str:
+        # 一覧の value はリンクの小文字化（write）の対象外なので、ここで小文字にする
+        return siteurl.url(f"{base}/" if y == current else f"{base}/{y}/")
+    return {"year": year, "label": label,
+            "options": [(y, url(y)) for y in range(current, FIRST_SEASON_YEAR - 1, -1)],
+            "prev": (year - 1, url(year - 1)) if year - 1 >= FIRST_SEASON_YEAR else None,
+            "next": (year + 1, url(year + 1)) if year + 1 <= current else None}
+
+
 def build_season_pages(env: Environment, meta: dict, stations: dict, hist: History, *,
                        year: int | None = None, part: str | None = None, emit=None) -> None:
     """Summer/Winter の日数・気温のランキングと一覧（計 8 ページ）を nc の履歴から生成する。
@@ -987,6 +1006,10 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
                   (f"/Summer/HottestList{sfx}", "最高気温一覧")]
         def nav(active):
             return [(u, l, l == active) for u, l in subnav]
+
+        def ynav(active):
+            base = next(u for u, l in subnav if l == active).removesuffix(sfx)
+            return season_year_nav(base, sy, now.year, "年夏")
         cnt = {"moushobi": s["counts"]("tmax", 350), "manatsubi": s["counts"]("tmax", 300),
                "tavg30": s["counts"]("tavg", 300), "nettaiya": s["counts"]("tmin", 250)}
         info_days = (f"気象庁の観測所のうち気温を測定している {s['n_stations']} カ所を対象に、"
@@ -996,7 +1019,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         emit("Summer/Ranking/index.html", env.get_template("season/ranking.html").render(
             **common, page_title=f"{sy}年夏 猛暑日、真夏日等の日数のランキング",
             page_header=f"{sy}年夏 猛暑日、真夏日等の日数のランキング",
-            subnav=nav("猛暑日日数ランキング"),
+            subnav=nav("猛暑日日数ランキング"), year_nav=ynav("猛暑日日数ランキング"),
             period_start=s["start"], period_end=s["end"], n_stations=s["n_stations"],
             info_text=info_days,
             tables=[
@@ -1013,7 +1036,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         emit("Summer/SummerDayList/index.html", env.get_template("season/daylist.html").render(
             **common, page_title=f"{sy}年夏 猛暑日等の日数一覧",
             page_header=f"{sy}年夏 猛暑日等の日数一覧",
-            subnav=nav("猛暑日の日数一覧"),
+            subnav=nav("猛暑日の日数一覧"), year_nav=ynav("猛暑日の日数一覧"),
             period_start=s["start"], period_end=s["end"], n_stations=s["n_stations"],
             info_text=info_days.replace("上位50位までをリストにしたものです", "一覧にしたものです"),
             col_headers=["猛暑日", "真夏日", "平均気温<br />30度以上", "最低気温<br />25度以上"],
@@ -1030,7 +1053,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         emit("Summer/Hottest/index.html", env.get_template("season/ranking.html").render(
             **common, page_title=f"{sy}年夏 最高気温、平均気温のランキング",
             page_header=f"{sy}年夏 最高気温、平均気温のランキング",
-            subnav=nav("最高気温ランキング"),
+            subnav=nav("最高気温ランキング"), year_nav=ynav("最高気温ランキング"),
             period_start=s["start"], period_end=s["end"], n_stations=s["n_stations"],
             info_text=info_temp,
             tables=[
@@ -1055,7 +1078,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         emit("Summer/HottestList/index.html", env.get_template("season/extremelist.html").render(
             **common, page_title=f"{sy}年夏 各地の最高気温の一覧",
             page_header=f"{sy}年夏 各地の最高気温の一覧",
-            subnav=nav("最高気温一覧"),
+            subnav=nav("最高気温一覧"), year_nav=ynav("最高気温一覧"),
             period_start=s["start"], period_end=s["end"], n_stations=s["n_stations"],
             info_text=info_temp.replace("上位50位までをリストにしました", "地点ごとに一覧にしました"),
             pair_headers=["最高気温の最高", "平均気温の最高", "最低気温の最高"],
@@ -1074,6 +1097,10 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
                   (f"/Winter/LowestList{sfx}", "最低気温一覧")]
         def wnav(active):
             return [(u, l, l == active) for u, l in subnav]
+
+        def wynav(active):
+            base = next(u for u, l in subnav if l == active).removesuffix(sfx)
+            return season_year_nav(base, wyear, winter_start(now).year + 1, "年冬")
         cnt = {"fuyubi": w["counts"]("tmin", 0, ge=False),
                "tavg0": w["counts"]("tavg", 0, ge=False),
                "mafuyubi": w["counts"]("tmax", 0, ge=False)}
@@ -1083,7 +1110,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         emit("Winter/Ranking/index.html", env.get_template("season/ranking.html").render(
             **common, page_title=f"{wyear}年冬 冬日、真冬日等の日数のランキング",
             page_header=f"{wyear}年冬 冬日、真冬日等の日数のランキング",
-            subnav=wnav("冬日日数ランキング"),
+            subnav=wnav("冬日日数ランキング"), year_nav=wynav("冬日日数ランキング"),
             period_start=w["start"], period_end=w["end"], n_stations=w["n_stations"],
             info_text=info_days,
             tables=[
@@ -1098,7 +1125,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         emit("Winter/WinterDayList/index.html", env.get_template("season/daylist.html").render(
             **common, page_title=f"{wyear}年冬 冬日等の日数一覧",
             page_header=f"{wyear}年冬 冬日等の日数一覧",
-            subnav=wnav("冬日の日数一覧"),
+            subnav=wnav("冬日の日数一覧"), year_nav=wynav("冬日の日数一覧"),
             period_start=w["start"], period_end=w["end"], n_stations=w["n_stations"],
             info_text=info_days.replace("上位50位までをリストにしました", "一覧にしました"),
             col_headers=["冬日<br />（最低気温0度未満）", "平均気温0度未満", "真冬日<br />（最高気温0度未満）"],
@@ -1114,7 +1141,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         emit("Winter/Coldest/index.html", env.get_template("season/ranking.html").render(
             **common, page_title=f"{wyear}年冬 最低気温、平均気温のランキング",
             page_header=f"{wyear}年冬 最低気温、平均気温のランキング",
-            subnav=wnav("最低気温ランキング"),
+            subnav=wnav("最低気温ランキング"), year_nav=wynav("最低気温ランキング"),
             period_start=w["start"], period_end=w["end"], n_stations=w["n_stations"],
             info_text=info_temp,
             tables=[
@@ -1139,7 +1166,7 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         emit("Winter/LowestList/index.html", env.get_template("season/extremelist.html").render(
             **common, page_title=f"{wyear}年冬 各地の最低気温の一覧",
             page_header=f"{wyear}年冬 各地の最低気温の一覧",
-            subnav=wnav("最低気温一覧"),
+            subnav=wnav("最低気温一覧"), year_nav=wynav("最低気温一覧"),
             period_start=w["start"], period_end=w["end"], n_stations=w["n_stations"],
             info_text=info_temp.replace("上位50位までをリストにしました", "地点ごとに一覧にしました"),
             pair_headers=["最低気温の最低", "平均気温の最低", "最高気温の最低"],
@@ -1173,11 +1200,24 @@ def build_past_seasons(env: Environment, meta: dict, stations: dict, hist: Histo
     full = old.get("key") != key
     changed = {int(y) for y in sig if full or old.get("years", {}).get(y) != sig[y]}
     now = datetime.fromisoformat(meta["source_time"])
-    first = min(int(y) for y in sig)
+    first = max(min(int(y) for y in sig), FIRST_SEASON_YEAR)
     summer = [y for y in range(first, now.year) if y in changed]
-    winter = [y for y in range(first + 1, winter_start(now).year + 1)
+    winter = [y for y in range(first, winter_start(now).year + 1)
               if y in changed or (y - 1) in changed]
     n = 0
+    # FIRST_SEASON_YEAR より前の年のページ（前に作ったもの）は消す
+    removed = 0
+    for part in ("summer", "winter"):
+        for kind in SEASON_KINDS[part]:
+            d = PUBLIC / part / kind.lower()
+            if not d.is_dir():
+                continue
+            for sub in d.iterdir():
+                if sub.is_dir() and sub.name.isdigit() and int(sub.name) < FIRST_SEASON_YEAR:
+                    shutil.rmtree(sub, ignore_errors=True)
+                    removed += 1
+    if removed:
+        print(f"  [html] summer|winter/*/{{年}}/  {FIRST_SEASON_YEAR} 年より前のページ {removed} 個を消した")
 
     def emit_for(y):
         def emit(path, html):
@@ -2041,7 +2081,10 @@ def build_seo(env: Environment, stations: dict) -> None:
     write("404.html",
           '<!doctype html><meta charset="utf-8"><title>404</title>'
           '<script>var p=location.pathname;if(p!==p.toLowerCase())'
-          'location.replace(p.toLowerCase()+location.search+location.hash)</script>'
+          'location.replace(p.toLowerCase()+location.search+location.hash);'
+          # 作らなくなった古い年の夏・冬のページ（FIRST_SEASON_YEAR より前）は今年・今季のページへ
+          'var m=/^\\/(summer|winter)\\/([a-z]+)\\/(\\d{4})\\/?$/.exec(p.toLowerCase());'
+          f'if(m&&+m[3]<{FIRST_SEASON_YEAR})location.replace("/"+m[1]+"/"+m[2]+"/")</script>'
           '<body style="font-family:sans-serif;text-align:center;padding:60px">'
           '<h1>ページが見つかりません</h1>'
           '<p><a href="/">個人開発気象統計 トップへ</a></p></body>')

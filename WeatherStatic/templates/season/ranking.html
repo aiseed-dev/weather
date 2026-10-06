@@ -6,11 +6,14 @@
     page_header / subnav … [(url, label, active)] / period_start / period_end
     tables … [{title, kind: 'days'|'temp', rows: [{rank, name, place, val}]}]
     n_stations / info_text
+  year_nav … 年の移動（season/_years.html、generate.py の season_year_nav）
 #}
 {% extends "_layout.html" %}
 
 {% block head_extra %}
 <style>
+    .year-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 4px 0 10px; font-size: 14px; }
+    .year-nav select { padding: 3px 6px; font-size: 14px; }
     .item h5 { margin: 0 0 8px; font-size: 15px; text-align: center; }
     .wtable { border-collapse: collapse; empty-cells: show; width: 100%; }
     .wtable th { padding: 4px; text-align: center; font-size: 90%; }
@@ -29,6 +32,7 @@
 </div>
 
 <h2>{{ page_header }} <a href="#info"><span class="glyphicon glyphicon-info-sign"></span></a></h2>
+{% include "season/_years.html" %}
 <p>※集計期間、{{ period_start.year }}年{{ period_start.month }}月{{ period_start.day }}日～{{ period_end.year }}年{{ period_end.month }}月{{ period_end.day }}日</p>
 
 <div class="rank-grid">

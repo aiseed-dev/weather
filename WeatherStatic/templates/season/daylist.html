@@ -5,11 +5,14 @@
     col_headers … 日数列の見出しリスト（HTML 可）
     groups … [{prec_no, pref, region, stations: [{name, place, counts: [..]}]}]
     region_filters
+  year_nav … 年の移動（season/_years.html、generate.py の season_year_nav）
 #}
 {% extends "_layout.html" %}
 
 {% block head_extra %}
 <style>
+    .year-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 4px 0 10px; font-size: 14px; }
+    .year-nav select { padding: 3px 6px; font-size: 14px; }
     .weathertable { border-collapse: collapse; border: solid #aaa 1px; empty-cells: show; padding: 5px; margin: 10px; }
     .weathertable th { border: solid #aaa 1px; padding: 5px; text-align: center; font-size: 90%; }
     .weathertable td { border: solid #aaa 1px; padding: 2px 6px; font-size: 90%; white-space: nowrap; }
@@ -29,6 +32,7 @@
 </div>
 
 <h2>{{ page_header }} <a href="#info"><span class="glyphicon glyphicon-info-sign"></span></a></h2>
+{% include "season/_years.html" %}
 <p>※集計期間、{{ period_start.year }}年{{ period_start.month }}月{{ period_start.day }}日～{{ period_end.year }}年{{ period_end.month }}月{{ period_end.day }}日</p>
 
 {% include "partials/_region_filter.html" %}
