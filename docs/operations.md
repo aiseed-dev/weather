@@ -202,7 +202,7 @@ WEATHER_KAISEKI_TO=https://analytics.aiseed.dev
 
 受け口の `KAISEKI_SITES` には `weather.time-j.net` を入れる。止めるときはこの行を消す（次の生成で
 スクリプトと /kaiseki/ が消える）。kaiseki.js は `WeatherStatic/assets/kaiseki.js` に写してある
-（aiai-pro 7466eee）。直すときは aiai-pro 側で直して写し直す。手元で試すときは、server.py を
+（aiai-pro 9557e06）。直すときは aiai-pro 側で直して写し直す。手元で試すときは、server.py を
 `KAISEKI_SITES=127.0.0.1:8772 KAISEKI_ORIGINS=http://127.0.0.1:8772` で 127.0.0.1:8420 に動かし、
 `WEATHER_KAISEKI_TO=http://127.0.0.1:8420 python generate.py` で作る（2026-10-07 に、受け入れる →
 ページを移る → 記録を見る → 消す → 受け入れない、を確かめた）。

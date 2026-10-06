@@ -148,14 +148,23 @@
     if (vid) send("/v1/forget", { vid: vid });
     setCookie(NAME, "", 0);
   }
+  // Fixed to the bottom of the screen, so it is seen on long pages. :where() gives
+  // these rules no weight, so any rule of the site for #kaiseki-bar wins.
+  function style() {
+    if (document.getElementById("kaiseki-style")) return;
+    const st = document.createElement("style");
+    st.id = "kaiseki-style";
+    st.textContent =
+      ":where(#kaiseki-bar){position:fixed;left:0;right:0;bottom:0;z-index:2147483647;padding:12px 16px;" +
+      "background:#fff;color:#111;border-top:1px solid #ccc;box-shadow:0 -2px 8px rgba(0,0,0,.15);" +
+      "font:14px/1.6 system-ui,sans-serif}" +
+      "@media (prefers-color-scheme: dark){:where(#kaiseki-bar){background:#1e1e1e;color:#eee;border-top-color:#444}}";
+    document.head.appendChild(st);
+  }
   function ask() {
     const bar = document.createElement("div");
     bar.id = "kaiseki-bar";
-    // Fixed to the bottom of the screen, so it is seen on long pages; a site may restyle #kaiseki-bar
-    bar.style.cssText =
-      "position:fixed;left:0;right:0;bottom:0;z-index:2147483647;padding:12px 16px;" +
-      "background:#fff;color:#111;border-top:1px solid #ccc;box-shadow:0 -2px 8px rgba(0,0,0,.15);" +
-      "font:14px/1.6 system-ui,sans-serif";
+    style();
     bar.innerHTML =
       "<p>このサイトをよくし、あなたに合った案内を出すために、見たページの記録を残してよいですか。" +
       "受け入れると、このサイトの Cookie に番号を置き、その番号で記録をまとめます。" +

@@ -4,7 +4,7 @@
 全ページの </head> の前にスクリプトを入れ、/kaiseki.js と知らせのページ /kaiseki/ を置く。
 無ければ何も入れず、前に置いたものは消す。入れるか（公開するか）は運用者が決める。
 
-kaiseki.js は aiai-pro の koukoku/kaiseki/kaiseki.js の写し（assets/kaiseki.js、aiai-pro 7466eee）。
+kaiseki.js は aiai-pro の koukoku/kaiseki/kaiseki.js の写し（assets/kaiseki.js、aiai-pro 9557e06）。
 直すときは aiai-pro 側で直して写し直す。ページを見た人の記録を受け口へ送るので、電気通信事業法の
 外部送信規律の対象。送る情報・送り先・目的は /kaiseki/（templates/kaiseki.html）に書く。
 """
