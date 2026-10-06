@@ -3,6 +3,7 @@
   気象庁の同名ページは毎時 50 分頃の更新なので、更新頻度が差になる。
   map JSON に日最大瞬間風速は無いため、最大値は 10 分値ベースであることを明記する。
   smaps … 地図（status/_map.html、generate_status.py の make_map）
+  mine_js_v … 自分の地点のスクリプトの版（status/_mine.html）
 #}
 {% extends "_layout.html" %}
 
@@ -42,6 +43,7 @@
         {{ n_stations }} 地点</span>
 </div>
 
+{% include "status/_mine.html" %}
 {% include "status/_map.html" %}
 
 <div class="st-sec">
@@ -52,7 +54,7 @@
                 <table class="weathertable">
                     <tr><th>順位</th><th>地点</th><th>都道府県</th><th>風向</th><th>風速</th></tr>
                     {% for r in now_top %}
-                    <tr>
+                    <tr data-a="{{ r.amedas }}">
                         <td class="wcenter">{{ loop.index }}</td>
                         <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>
@@ -73,7 +75,7 @@
                 <table class="weathertable">
                     <tr><th>順位</th><th>地点</th><th>都道府県</th><th>風向</th><th>最大風速</th><th>時刻</th></tr>
                     {% for r in peak_top %}
-                    <tr>
+                    <tr data-a="{{ r.amedas }}">
                         <td class="wcenter">{{ loop.index }}</td>
                         <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>
@@ -122,7 +124,7 @@
         <table class="weathertable" id="all-table">
             <tr><th>順位</th><th>地点</th><th>都道府県</th><th>風向</th><th>風速</th><th>本日最大</th></tr>
             {% for r in rows %}
-            <tr data-region="{{ r.region }}">
+            <tr data-region="{{ r.region }}" data-a="{{ r.amedas }}">
                 <td class="wcenter">{{ loop.index }}</td>
                 <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                 <td>{{ r.pref }}</td>

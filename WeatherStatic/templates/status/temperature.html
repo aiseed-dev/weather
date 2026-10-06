@@ -4,6 +4,7 @@
   コンテキスト: obs_time / n_stations / highs / lows / rows / region_filters /
                 chart(SVG 文字列) / graph_cities / graph_colors / slot_count
   smaps … 地図（status/_map.html、generate_status.py の make_map）
+  mine_js_v … 自分の地点のスクリプトの版（status/_mine.html）
 #}
 {% extends "_layout.html" %}
 
@@ -40,6 +41,7 @@
         {{ n_stations }} 地点</span>
 </div>
 
+{% include "status/_mine.html" %}
 {% include "status/_map.html" %}
 
 <div class="st-sec">
@@ -66,7 +68,7 @@
                 <table class="weathertable">
                     <tr><th>順位</th><th>地点</th><th>都道府県</th><th>気温</th><th>平年差</th></tr>
                     {% for r in highs %}
-                    <tr>
+                    <tr data-a="{{ r.amedas }}">
                         <td class="wcenter">{{ loop.index }}</td>
                         <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>
@@ -83,7 +85,7 @@
                 <table class="weathertable">
                     <tr><th>順位</th><th>地点</th><th>都道府県</th><th>気温</th><th>平年差</th></tr>
                     {% for r in lows %}
-                    <tr>
+                    <tr data-a="{{ r.amedas }}">
                         <td class="wcenter">{{ loop.index }}</td>
                         <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>
@@ -113,7 +115,7 @@
         <table class="weathertable" id="all-table">
             <tr><th>順位</th><th>地点</th><th>都道府県</th><th>気温</th><th>平年差</th></tr>
             {% for r in rows %}
-            <tr data-region="{{ r.region }}">
+            <tr data-region="{{ r.region }}" data-a="{{ r.amedas }}">
                 <td class="wcenter">{{ loop.index }}</td>
                 <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                 <td>{{ r.pref }}</td>

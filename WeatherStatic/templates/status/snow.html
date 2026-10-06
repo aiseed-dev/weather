@@ -2,6 +2,7 @@
   降水の状況（10 分ごと更新）。generate_status.py の _rank_page が描画する。
   コンテキスト: ranks(要素別ランキング) / rows(全地点) / cols / obs_time
   smaps … 地図（status/_map.html、generate_status.py の make_map）
+  mine_js_v … 自分の地点のスクリプトの版（status/_mine.html）
 #}
 {% extends "_layout.html" %}
 {% block head_extra %}
@@ -30,6 +31,7 @@
         {{ obs_time.hour }}時{{ "%02d" | format(obs_time.minute) }}分現在 ／ {{ n_stations }} 地点</span>
 </div>
 
+{% include "status/_mine.html" %}
 {% include "status/_map.html" %}
 
 <div class="st-sec">
@@ -42,7 +44,7 @@
                 <table class="weathertable">
                     <tr><th>順位</th><th>地点</th><th>都道府県</th><th>{{ rk.label }}</th></tr>
                     {% for r in rk.rows %}
-                    <tr>
+                    <tr data-a="{{ r.amedas }}">
                         <td class="wcenter">{{ loop.index }}</td>
                         <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>

@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from datetime import date, datetime, timedelta
@@ -34,7 +35,7 @@ from weatherlib.filters import FILTERS
 from weatherlib import kaiseki, pointstore, siteurl, stationmap
 from weatherlib.svgchart import intraday_svg, trend_svg
 # 平年値の読み方（daily は月キー・日は月内添字）は generate.py に正しい実装がある
-from generate import normal_daily, climate_targets, station_slug
+from generate import normal_daily, climate_targets, station_slug, load_today
 
 BASE = Path(__file__).resolve().parent
 # 10 分値は地点別（エリア束）で入る。pointstore が map JSON と同じ形に直す
@@ -138,6 +139,7 @@ def make_map(map_id: str, label: str, rows: list[dict], value, colour, legend: d
                     key=lambda r: value(r)):
         v = value(r)
         pts.append({"lat": r["lat"], "lon": r["lon"], "name": r["name"], "url": r["url"],
+                    "amedas": r.get("amedas"),
                     "colour": colour(v), "small": small(v), "title": title(r, v),
                     "deg": r.get("deg") if wind else None, "speed": v if wind else 0})
     m = stationmap.map_svg(pts, label)
@@ -267,7 +269,7 @@ def build_wind(env: Environment, stations: dict) -> None:
         dv = d[0] if isinstance(d, list) and d[0] is not None else 0
         pk = peak.get(amedas)
         rows.append({
-            "name": rec["name"], "pref": rec.get("pref") or "",
+            "name": rec["name"], "pref": rec.get("pref") or "", "amedas": amedas,
             "region": region_of((rec.get("etrn") or {}).get("prec_no")),
             "url": station_url(stations, rec, amedas),
             "wind": int(round(float(e[0]) * 10)),
@@ -365,7 +367,7 @@ def _rank_page(env, stations, kind: str) -> None:
         rec = st.get(str(code)) if code else None
         if rec is None:
             continue
-        rows.append({"name": rec["name"], "pref": rec.get("pref") or "",
+        rows.append({"name": rec["name"], "pref": rec.get("pref") or "", "amedas": amedas,
                      "region": region_of((rec.get("etrn") or {}).get("prec_no")),
                      "url": station_url(stations, rec, amedas),
                      "lat": rec.get("lat"), "lon": rec.get("lon"), **vals})
@@ -706,6 +708,65 @@ def build_today_json(stations: dict) -> None:
                      for i in index))
 
 
+def build_latest_json(stations: dict) -> None:
+    """全地点の最新の値を 1 本の小さな JSON に（「自分の地点」のカード用。assets/js/mystations.js）。
+
+    当日分の要素別 JSON（気温だけで 230KB）を何本も読ませないよう、最新の 1 スロットの値と、
+    今日の最高・最低（今日の最高気温のページと同じ data/today.csv）だけを出す。
+    積雪は毎正時のスロットにしか入らないので、積雪を持つ直近のスロットから取る。
+    """
+    now = datetime.now(JST).replace(tzinfo=None)
+    slots = load_slots(now.date()) or load_slots(now.date() - timedelta(days=1))
+    if not slots:
+        skip_no_slots("最新値 JSON")
+        return
+    latest = slots[-1]
+    snap = pointstore.slot_view(latest)
+    snow_snap = {}
+    for name in reversed(slots[-7:]):
+        d = pointstore.slot_view(name)
+        if any("snow" in e for e in d.values()):
+            snow_snap = d
+            break
+    today: dict[str, dict] = {}
+    try:
+        for rec in load_today()[0].values():
+            today[str(rec.get("amedas"))] = rec
+    except (OSError, ValueError):
+        pass
+
+    def val(entry, key, mul):
+        e = (entry or {}).get(key)
+        if isinstance(e, list) and len(e) >= 2 and e[0] is not None and e[1] == 0:
+            return int(round(float(e[0]) * mul))
+        return None
+
+    out = {}
+    for code, rec in stations["stations"].items():
+        amedas = str(rec.get("amedas") or "")
+        if not amedas:
+            continue
+        e, t = snap.get(amedas), today.get(amedas, {})
+        wd = val(e, "windDirection", 1)
+        out[amedas] = [rec["name"], rec.get("pref") or "", station_url(stations, rec, amedas),
+                       val(e, "temp", 10), t.get("tmax"), t.get("tmax_at") or "",
+                       t.get("tmin"), t.get("tmin_at") or "",
+                       wd, val(e, "wind", 10), val(e, "precipitation1h", 10),
+                       val(e, "precipitation24h", 10), val(snow_snap.get(amedas), "snow", 1)]
+    body = {"time": f"{latest[:4]}-{latest[4:6]}-{latest[6:8]}T{latest[8:10]}:{latest[10:12]}",
+            "fields": ["name", "pref", "url", "temp", "tmax", "tmax_at", "tmin", "tmin_at",
+                       "wdir", "wind", "precip1h", "precip24h", "snow"],
+            "units": "気温・風速・降水量は 10 倍の整数、積雪は cm。風向は 0=静穏、1=北北東 … 16=北",
+            "attribution": "出典: 気象庁ホームページ（編集・加工: AIseed）",
+            "stations": out}
+    dst = PUBLIC / "data" / "amedas-latest.json"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(body, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp.replace(dst)
+    log(f"data/amedas-latest.json: {len(out)} 地点 / {dst.stat().st_size // 1024}KB / {body['time']}")
+
+
 def main() -> int:
     only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
     stations = json.loads((MASTER / "stations.json").read_text(encoding="utf-8"))
@@ -715,6 +776,8 @@ def main() -> int:
     env.filters.update(FILTERS)
     env.globals["css_version"] = "status"
     env.globals["kaiseki"] = kaiseki.settings()     # 自前のアクセス解析（weatherlib/kaiseki.py）
+    # 自分の地点のスクリプトの版（中身のハッシュ。キャッシュよけ）
+    env.globals["mine_js_v"] = hashlib.sha256((BASE / "assets" / "js" / "mystations.js").read_bytes()).hexdigest()[:10]
 
     # スロットはあるのに中身が 0 地点なら、読み込みの不具合か配信の欠け。
     # 区画ごとの「スロットが無ければ飛ばす」では拾えず、0 地点の表がそのまま
@@ -738,6 +801,8 @@ def main() -> int:
         build_snow(env, stations)
     if only in (None, "records"):
         build_records(env, stations)
+    if only in (None, "latest"):
+        build_latest_json(stations)
     if only in (None, "lab"):
         build_today_json(stations)
         build_lab(env)

@@ -85,7 +85,7 @@ def project(lat: float, lon: float) -> tuple[float, float] | None:
 def map_svg(points: list[dict], label: str) -> dict:
     """地点を色で塗った地図。
 
-    points は {lat, lon, colour, title, url, (small), (deg, speed)} の並び。後ろほど上に描く
+    points は {lat, lon, colour, title, url, (amedas), (small), (deg, speed)} の並び。後ろほど上に描く
     （強い所・多い所を上にしたいなら、弱い順に並べて渡す）。small は値の無い地点・0 の地点を
     小さく灰色で描く。deg（風が吹いてくる方位、北 0・時計回り）があれば、風下へ向かう線を描く。
     戻り値は {"svg": 文字列, "outside": [地図の外の地点の名前]}。
@@ -115,6 +115,7 @@ def map_svg(points: list[dict], label: str) -> dict:
                      f'x2="{x + math.sin(a) * n:.1f}" y2="{y - math.cos(a) * n:.1f}"/>')
         title = f'<title>{escape(p["title"])}</title>'
         body = arrow + dot + title + "</circle>"
-        parts.append(f'<a href="{escape(p["url"])}">{body}</a>' if p.get("url") else body)
+        mark = f' data-a="{escape(str(p["amedas"]))}"' if p.get("amedas") else ""   # 自分の地点の目印
+        parts.append(f'<a href="{escape(p["url"])}"{mark}>{body}</a>' if p.get("url") else body)
     parts.append("</svg>")
     return {"svg": "".join(parts), "outside": outside}

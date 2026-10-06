@@ -1,0 +1,48 @@
+{#
+  自分の地点（assets/js/mystations.js が描く）。選んだ地点はこのブラウザーにだけ保存する。
+  地図の点と表の行（data-a）は、自分の地点なら目立たせる。
+  コンテキスト: mine_js_v（スクリプトの版。キャッシュよけ）
+#}
+<style>
+    .mine { margin: 8px 10px 14px; }
+    .mine-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+    .mine-top h3 { margin: 0; font-size: 16px; }
+    .mine-time, .mine-msg, .mine-help { font-size: 12px; color: var(--muted); }
+    .mine-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; margin: 8px 0; }
+    .mine-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+    .mine-card.dragging { opacity: .5; }
+    .mine-head { display: flex; align-items: center; gap: 4px; }
+    .mine-head a { flex: 1; text-decoration: none; color: inherit; }
+    .mine-head small { margin-left: 5px; color: var(--muted); font-size: 11px; }
+    .mine-head button { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0 3px; }
+    .mine-t { font-size: 26px; font-weight: 700; line-height: 1.2; margin: 2px 0; }
+    .mine-t small { font-size: 13px; margin-left: 2px; }
+    .mine-none { font-size: 13px; font-weight: 400; color: var(--muted); }
+    .mine-sub { font-size: 12.5px; line-height: 1.6; }
+    .mine-add { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+    .mine-add input { padding: 4px 8px; font-size: 14px; min-width: 14em; border: 1px solid var(--border);
+        border-radius: 6px; background: var(--card); color: inherit; }
+    .mine-add button { padding: 4px 12px; font-size: 14px; }
+    .mine-empty .mine-cards { display: none; }
+    /* 自分の地点を地図と表で目立たせる */
+    .smap-svg a.mine circle { r: 3.4px; stroke: #111; stroke-width: 0.9; }
+    :root[data-theme="dark"] .smap-svg a.mine circle { stroke: #fff; }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .smap-svg a.mine circle { stroke: #fff; } }
+    tr.mine td { font-weight: 700; }
+    tr.mine td:first-child { box-shadow: inset 4px 0 0 var(--accent); }
+</style>
+<section class="mine mine-empty" id="mine" aria-label="自分の地点">
+    <div class="mine-top">
+        <h3>自分の地点</h3>
+        <span class="mine-time"></span>
+    </div>
+    <div class="mine-cards"></div>
+    <form class="mine-add">
+        <input class="mine-input" list="mine-list" placeholder="地点名を入れて足す（例: 札幌）" aria-label="自分の地点に足す地点名" autocomplete="off">
+        <datalist id="mine-list"></datalist>
+        <button type="submit">足す</button>
+        <span class="mine-msg" aria-live="polite"></span>
+    </form>
+    <p class="mine-help">10 地点まで。選んだ地点はこのブラウザーにだけ保存し、どこにも送りません。地図と表でも目立たせます。</p>
+</section>
+<script src="/js/mystations.js?v={{ mine_js_v }}" defer></script>

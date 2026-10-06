@@ -51,10 +51,11 @@
 | `/stations/jp/{地点}` | 896 | 地点別の気候値・30 日推移・平年値 | generate | 毎時 |
 | `/monthly/…` | 26 | 月別気温（観測値・平年値） | generate | 毎時 |
 | `/precipitation/` | 1 | 降水量ランキング | generate | 毎時 |
-| `/status/temperature/` `/wind/` `/precipitation/` `/snow/` | 4 | 実況（10 分値）。上に全地点の地図（気温、風速と風下の線、前 1 時間・前 24 時間の降水量、積雪深。配色はアプリのアメダスの地図と同じ。点から地点のページへ。weatherlib/stationmap.py・templates/status/_map.html） | generate_status | 10 分 |
+| `/status/temperature/` `/wind/` `/precipitation/` `/snow/` | 4 | 実況（10 分値）。上に全地点の地図（気温、風速と風下の線、前 1 時間・前 24 時間の降水量、積雪深。配色はアプリのアメダスの地図と同じ。点から地点のページへ。weatherlib/stationmap.py・templates/status/_map.html）。地図の上に「自分の地点」のカード（最大 10 地点。localStorage の my-stations-v1 にアメダス番号を保存し、どこにも送らない。値は /data/amedas-latest.json、開いたままでも 10 分ごとに読み直す。地図の点と表の行も目立たせる。assets/js/mystations.js・templates/status/_mine.html。地点のページ /status/station/・/stations/jp/ に「自分の地点に入れる」ボタン） | generate_status | 10 分 |
 | `/status/station/{地点}` | 1,287 | 地点別の 10 分値 | generate_status | 10 分 |
 | `/status/records/` | 1 | 観測史上 1 位の更新状況 | generate_status | 10 分 |
 | `/status/lab/` | 1 | Python グラフ工房（ブラウザ内 Python） | generate_status | 10 分 |
+| `/data/amedas-latest.json` | 1 | 全地点の最新の値（気温・今日の最高最低と時刻・風向風速・前 1/24 時間降水量・積雪）。自分の地点のカード用（`build_latest_json`、約 130KB） | generate_status | 10 分 |
 | `/about/` `/app/` | 2 | サイト説明・デスクトップ版の案内 | generate | 毎時 |
 | `/privacy/` | 1 | 免責事項・プライバシーポリシー（旧サイトは www.time-j.net の共通ページ。このサイトで実際に使っている物だけを書く） | generate（`build_privacy`） | 毎時 |
 | `/kaiseki/` `/kaiseki.js` | 1 | 自前のアクセス解析（aiai-pro の kaiseki）の知らせ（外部送信規律）とスクリプト。`WEATHER_KAISEKI_TO` があるときだけ作り、全ページの `</head>` の前にスクリプトを入れる。無ければ消す（weatherlib/kaiseki.py） | generate（`build_kaiseki`） | 毎時 |

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import re
 import shutil
@@ -261,6 +262,8 @@ def make_env() -> Environment:
     env.globals["winter_month_url"] = winter_url
     # 自前のアクセス解析（WEATHER_KAISEKI_TO があるときだけ。weatherlib/kaiseki.py）
     env.globals["kaiseki"] = kaiseki.settings()
+    # 自分の地点のスクリプトの版（中身のハッシュ。キャッシュよけ）
+    env.globals["mine_js_v"] = hashlib.sha256((BASE / "assets" / "js" / "mystations.js").read_bytes()).hexdigest()[:10]
     return env
 
 

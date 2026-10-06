@@ -35,6 +35,9 @@
 {% block content %}
 <div class="st-head">
     <h2 style="margin:6px 0">{{ st.pref }} {{ st.name }}の気温、降水量、観測所情報</h2>
+    <style>.mine-toggle { margin: 4px 0 8px; padding: 4px 12px; font-size: 13.5px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: inherit; cursor: pointer; } .mine-toggle[aria-pressed="true"] { border-color: var(--accent); }</style>
+    <button type="button" class="mine-toggle" data-mine-toggle="{{ st.amedas }}">☆ 自分の地点に入れる</button>
+    <script src="/js/mystations.js?v={{ mine_js_v }}" defer></script>
 </div>
 <div class="st-head">
     {% if st.kana %}<span class="kana">{{ st.kana }} / {{ st.en }}</span>{% endif %}

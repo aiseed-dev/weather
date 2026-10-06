@@ -32,6 +32,9 @@
 
 <div class="sp-head">
     <h2>{{ st.name }}（{{ st.pref }}）の10分値観測</h2>
+    <style>.mine-toggle { margin: 4px 0 8px; padding: 4px 12px; font-size: 13.5px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); color: inherit; cursor: pointer; } .mine-toggle[aria-pressed="true"] { border-color: var(--accent); }</style>
+    <button type="button" class="mine-toggle" data-mine-toggle="{{ amedas }}">☆ 自分の地点に入れる</button>
+    <script src="/js/mystations.js?v={{ mine_js_v }}" defer></script>
     <p class="sp-meta">
         <span>アメダス番号 {{ amedas }}</span>
         {% if st.intl %}<span>国際地点番号 {{ st.intl }}</span>{% endif %}
