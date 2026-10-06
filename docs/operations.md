@@ -167,7 +167,7 @@ setsid nohup ../.venv/bin/python build_hourly_normals.py fetch --via-worker --wi
 ../.venv/bin/python build_hourly_normals.py build                # 取り終えたら（途中でも可）
 ```
 
-取り終えたら、トップの地図を「今の気温の平年差」にする（templates/home.html の mapScene）。
+2026-10-07 03:30 に取り終えた（10,799 ページ、失敗 0）。build して master/normals_hourly/ に 10 都市 × 366 日を置き、トップに平年差の地図が出た。
 
 ## 公開先（Cloudflare Pages）と切り替え
 
