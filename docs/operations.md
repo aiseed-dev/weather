@@ -151,6 +151,23 @@ backfill_etrn が自前で使う。**cron に flock を書く必要はない。*
 - accumulate は 40 分待って取れなければその回を見送る（7 日窓なので次回が拾う）
 - バックフィルは既定 1 時間待つ。その間 accumulate は見送られる
 
+### 時別の平年値の取得（cron ではない 1 本の処理。2026-10-06 開始）
+
+主要 10 都市の時別値（1991〜2020 の全日、約 11 万ページ）を、23:00〜06:00 だけ 1.5 秒に 1 件
+取っている（docs/data-acquisition.md §6）。取り終えたら自分で止まる。7 晩ほどの見込み。
+
+```bash
+cd ~/dev/weather/WeatherStatic
+tail data/etrn_hourly.log                                        # 進み具合（100 件ごと）
+ps -eo pid,args | grep "[b]uild_hourly_normals.py fetch"         # 動いているか
+# deb2 を再起動したら同じコマンドで続きから
+setsid nohup ../.venv/bin/python build_hourly_normals.py fetch --plan full --window 23:00-06:00 \
+    >> data/etrn_hourly.log 2>&1 < /dev/null &
+../.venv/bin/python build_hourly_normals.py build --plan full     # 取り終えたら（途中でも可）
+```
+
+取り終えたら、トップの地図を「今の気温の平年差」にする（templates/home.html の mapScene）。
+
 ## 公開先（Cloudflare Pages）と切り替え
 
 **サイトは静的ファイル（`public/`）だけでできていて、本番は Cloudflare Pages。**
