@@ -51,7 +51,7 @@
 | `/stations/jp/{地点}` | 896 | 地点別の気候値・30 日推移・平年値 | generate | 毎時 |
 | `/monthly/…` | 26 | 月別気温（観測値・平年値） | generate | 毎時 |
 | `/precipitation/` | 1 | 降水量ランキング | generate | 毎時 |
-| `/status/temperature/` `/wind/` `/precipitation/` `/snow/` | 4 | 実況（10 分値） | generate_status | 10 分 |
+| `/status/temperature/` `/wind/` `/precipitation/` `/snow/` | 4 | 実況（10 分値）。上に全地点の地図（気温、風速と風下の線、前 1 時間・前 24 時間の降水量、積雪深。配色はアプリのアメダスの地図と同じ。点から地点のページへ。weatherlib/stationmap.py・templates/status/_map.html） | generate_status | 10 分 |
 | `/status/station/{地点}` | 1,287 | 地点別の 10 分値 | generate_status | 10 分 |
 | `/status/records/` | 1 | 観測史上 1 位の更新状況 | generate_status | 10 分 |
 | `/status/lab/` | 1 | Python グラフ工房（ブラウザ内 Python） | generate_status | 10 分 |
