@@ -2,6 +2,7 @@
   風の状況（10 分ごと更新）。generate_status.py が描画する。
   気象庁の同名ページは毎時 50 分頃の更新なので、更新頻度が差になる。
   map JSON に日最大瞬間風速は無いため、最大値は 10 分値ベースであることを明記する。
+  smaps … 地図（status/_map.html、generate_status.py の make_map）
 #}
 {% extends "_layout.html" %}
 
@@ -40,6 +41,8 @@
         {{ obs_time.hour }}時{{ "%02d" | format(obs_time.minute) }}分現在 ／
         {{ n_stations }} 地点</span>
 </div>
+
+{% include "status/_map.html" %}
 
 <div class="st-sec">
     <div class="st-two">

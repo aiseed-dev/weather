@@ -1,6 +1,7 @@
 {#
   降水の状況（10 分ごと更新）。generate_status.py の _rank_page が描画する。
   コンテキスト: ranks(要素別ランキング) / rows(全地点) / cols / obs_time
+  smaps … 地図（status/_map.html、generate_status.py の make_map）
 #}
 {% extends "_layout.html" %}
 {% block head_extra %}
@@ -28,6 +29,8 @@
     <span class="st-time">{{ obs_time.month }}月{{ obs_time.day }}日
         {{ obs_time.hour }}時{{ "%02d" | format(obs_time.minute) }}分現在 ／ {{ n_stations }} 地点</span>
 </div>
+
+{% include "status/_map.html" %}
 
 <div class="st-sec">
     <div class="st-three">

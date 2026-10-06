@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from weatherlib.filters import FILTERS
-from weatherlib import kaiseki, pointstore, siteurl
+from weatherlib import kaiseki, pointstore, siteurl, stationmap
 from weatherlib.svgchart import intraday_svg, trend_svg
 # 平年値の読み方（daily は月キー・日は月内添字）は generate.py に正しい実装がある
 from generate import normal_daily, climate_targets, station_slug
@@ -127,6 +127,24 @@ def station_url(stations: dict, rec: dict, amedas: str) -> str:
     return siteurl.url(f"/Status/Station/{_SLUG_CACHE.get(amedas) or amedas}/")
 
 
+def make_map(map_id: str, label: str, rows: list[dict], value, colour, legend: dict, title,
+             *, small=lambda v: False, wind: bool = False, note: str = "") -> dict:
+    """実況のページの地図 1 枚（templates/status/_map.html に渡す形）。
+
+    value(row) は値（無ければ None で描かない）、colour(v) は色、title(row, v) は点に出す文。
+    small(v) が真の地点（0 mm・積雪なしなど）は小さく灰色で描く。弱い順に描いて、強い所を上にする。"""
+    pts = []
+    for r in sorted((r for r in rows if value(r) is not None and r.get("lat") is not None),
+                    key=lambda r: value(r)):
+        v = value(r)
+        pts.append({"lat": r["lat"], "lon": r["lon"], "name": r["name"], "url": r["url"],
+                    "colour": colour(v), "small": small(v), "title": title(r, v),
+                    "deg": r.get("deg") if wind else None, "speed": v if wind else 0})
+    m = stationmap.map_svg(pts, label)
+    return {"id": map_id, "label": label, "svg": m["svg"], "outside": m["outside"],
+            "legend": legend, "note": note}
+
+
 def normal_tmax_tmin(code: int, d: date) -> tuple[int | None, int | None]:
     """その日の最高・最低の平年値。daily は月ごとのキーで日は月内の添字。"""
     return normal_daily(code, "tmax", d), normal_daily(code, "tmin", d)
@@ -165,8 +183,13 @@ def build_temperature(env: Environment, stations: dict) -> None:
             "temp": t, "normal_mid": mid,
             "diff": (t - mid) if mid is not None else None,
             "url": station_url(stations, rec, amedas),
+            "lat": rec.get("lat"), "lon": rec.get("lon"),
         })
     rows.sort(key=lambda r: r["temp"], reverse=True)
+    smaps = [make_map("temp", "今の気温", rows, lambda r: r["temp"] / 10,
+                      lambda v: stationmap.ramp(stationmap.TEMP, v),
+                      stationmap.ramp_legend(stationmap.TEMP, [-20, -10, 0, 10, 20, 30, 40], "℃"),
+                      lambda r, v: f"{r['name']}（{r['pref']}） {v:.1f}℃")]
 
     # 当日の 10 分値推移（主要都市）。気象庁の同名ページには無い粒度
     series, minutes = [], [slot_minutes(s) for s in slots]
@@ -189,7 +212,7 @@ def build_temperature(env: Environment, stations: dict) -> None:
         highs=rows[:RANK_N], lows=list(reversed(rows[-RANK_N:])), rows=rows,
         region_filters=[(k, n) for k, n, _, _ in REGIONS],
         chart=chart, graph_cities=[c[0] for c in GRAPH_CITIES],
-        graph_colors=GRAPH_COLORS, slot_count=len(slots))
+        graph_colors=GRAPH_COLORS, slot_count=len(slots), smaps=smaps)
     out = PUBLIC / "Status" / "Temperature" / "index.html"
     put(out, html)
     log(f"Status/Temperature/index.html ({len(html):,} bytes) "
@@ -252,8 +275,15 @@ def build_wind(env: Environment, stations: dict) -> None:
             "peak": pk[0] if pk else None,
             "peak_dir": WDIR[pk[1]] if pk else "",
             "peak_at": pk[2] if pk else "",
+            "lat": rec.get("lat"), "lon": rec.get("lon"),
         })
     rows.sort(key=lambda r: r["wind"], reverse=True)
+    smaps = [make_map("wind", "今の風", rows, lambda r: r["wind"] / 10,
+                      lambda v: stationmap.ramp(stationmap.WIND, v),
+                      stationmap.ramp_legend(stationmap.WIND, [0, 5, 10, 15, 20, 25, 30, 40], "m/s"),
+                      lambda r, v: f"{r['name']}（{r['pref']}） {r['dir_name']} {v:.1f} m/s",
+                      wind=True,
+                      note="点の色は 10 分間の平均風速、線は風が吹いていく向き（風下）。静穏は線なし")]
     by_peak = sorted((r for r in rows if r["peak"] is not None),
                      key=lambda r: r["peak"], reverse=True)
 
@@ -269,7 +299,7 @@ def build_wind(env: Environment, stations: dict) -> None:
         region_filters=[(k, n) for k, n, _, _ in REGIONS],
         dist=[(WDIR[i], dist[i]) for i in range(1, 17)],
         calm=dist[0], slot_count=len(slots),
-        dist_max=max(dist[1:]) or 1)
+        dist_max=max(dist[1:]) or 1, smaps=smaps)
     out = PUBLIC / "Status" / "Wind" / "index.html"
     put(out, html)
     log(f"Status/Wind/index.html ({len(html):,} bytes) / {len(rows)} 地点 / "
@@ -337,7 +367,8 @@ def _rank_page(env, stations, kind: str) -> None:
             continue
         rows.append({"name": rec["name"], "pref": rec.get("pref") or "",
                      "region": region_of((rec.get("etrn") or {}).get("prec_no")),
-                     "url": station_url(stations, rec, amedas), **vals})
+                     "url": station_url(stations, rec, amedas),
+                     "lat": rec.get("lat"), "lon": rec.get("lon"), **vals})
 
     ranks = []
     for key, lab, mul, unit in cols:
@@ -345,10 +376,27 @@ def _rank_page(env, stations, kind: str) -> None:
         ranks.append({"key": key, "label": lab, "unit": unit, "scale": mul,
                       "rows": top[:RANK_N], "n_active": len(top)})
 
+    if kind == "precip":
+        def pmap(key, label):
+            return make_map(key, label, rows, lambda r: r[key] / 10 if key in r else None,
+                            stationmap.precip_colour, stationmap.precip_legend(),
+                            lambda r, v: f"{r['name']}（{r['pref']}） {label} {v:.1f} mm",
+                            small=lambda v: v == 0, note="降水の無い地点（0 mm）は小さな灰色の点")
+        smaps = [pmap("precipitation1h", "前 1 時間"), pmap("precipitation24h", "前 24 時間")]
+    else:
+        any_snow = any(r.get("snow") for r in rows)
+        smaps = [make_map("snow", "積雪深", rows, lambda r: r.get("snow"),
+                          lambda v: stationmap.ramp(stationmap.SNOW, v),
+                          stationmap.ramp_legend(stationmap.SNOW, [0, 50, 100, 150, 200, 300], "cm"),
+                          lambda r, v: f"{r['name']}（{r['pref']}） 積雪 {v} cm",
+                          small=lambda v: v == 0,
+                          note=("積雪の無い地点（0 cm）は小さな灰色の点" if any_snow
+                                else "いま積雪のある地点はありません（積雪を測る地点を灰色の点で示しています）"))]
+
     html = env.get_template(tmpl).render(
         page_title=f"{title}（10 分ごと更新）", nav_active="status",
         build_year=now.year, obs_time=obs_time, n_stations=len(rows),
-        ranks=ranks, rows=rows, cols=cols, suspended=suspended,
+        ranks=ranks, rows=rows, cols=cols, suspended=suspended, smaps=smaps,
         region_filters=[(k, n) for k, n, _, _ in REGIONS])
     out = PUBLIC / "Status" / out_name / "index.html"
     put(out, html)

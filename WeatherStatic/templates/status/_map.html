@@ -1,0 +1,73 @@
+{#
+  実況のページの地図（weatherlib/stationmap.py が作った SVG）。
+  smaps: [{id, label, svg, outside: [地点名], legend, note}]。2 枚以上あれば切り替えのボタンを出す
+  （スクリプトが無ければ 1 枚目だけ見える）。地点を押すと地点のページへ移る。
+#}
+<style>
+    .smap { margin: 8px 10px 18px; max-width: 660px; }
+    .smap-tabs { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+    .smap-tabs button { padding: 4px 12px; font-size: 13.5px; border: 1px solid var(--border);
+        background: var(--card); color: inherit; border-radius: 999px; cursor: pointer; }
+    .smap-tabs button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .smap-svg { width: 100%; height: auto; display: block; background: var(--panel);
+        border: 1px solid var(--border); border-radius: 10px; }
+    .smap-land { fill: #d9dee5; stroke: #b8c0cb; stroke-width: 0.3; }
+    .smap-inset { fill: none; stroke: #9aa5b3; stroke-width: 0.5; stroke-dasharray: 2 1.5; }
+    .smap-svg circle { stroke: rgba(30, 40, 55, 0.55); stroke-width: 0.25; }
+    .smap-svg circle.smap-zero { fill: #a7b0bc; stroke: none; }
+    .smap-svg a:hover circle { stroke: #000; stroke-width: 0.6; }
+    .smap-wind { stroke: #2b3442; stroke-width: 0.45; stroke-linecap: round; }
+    :root[data-theme="dark"] .smap-land { fill: #2d3644; stroke: #475263; }
+    :root[data-theme="dark"] .smap-wind { stroke: #dfe6ee; }
+    @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) .smap-land { fill: #2d3644; stroke: #475263; }
+        :root:not([data-theme="light"]) .smap-wind { stroke: #dfe6ee; }
+    }
+    .smap-legend { margin-top: 6px; font-size: 12px; color: var(--muted); }
+    .smap-ramp { height: 10px; border-radius: 5px; }
+    .smap-ticks { position: relative; height: 16px; }
+    .smap-ticks span { position: absolute; transform: translateX(-50%); }
+    .smap-bins { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: center; }
+    .smap-bins i { display: inline-block; width: 14px; height: 10px; border-radius: 2px;
+        border: 1px solid rgba(0,0,0,.2); margin-right: 3px; vertical-align: middle; }
+    .smap-note { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+</style>
+<figure class="smap">
+    {% if smaps | length > 1 %}
+    <div class="smap-tabs" role="group" aria-label="地図の切り替え">
+        {% for m in smaps %}
+        <button type="button" data-smap="{{ m.id }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ m.label }}</button>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% for m in smaps %}
+    <div class="smap-one" id="smap-{{ m.id }}"{{ " hidden" if not loop.first }}>
+        {{ m.svg | safe }}
+        <div class="smap-legend">
+            {% if m.legend.kind == "ramp" %}
+            <div class="smap-ramp" style="background: {{ m.legend.gradient }}"></div>
+            <div class="smap-ticks">{% for pos, t in m.legend.ticks %}<span style="left: {{ '%.1f' | format(pos) }}%">{{ t }}</span>{% endfor %}</div>
+            <div>単位: {{ m.legend.unit }}</div>
+            {% else %}
+            <div class="smap-bins">{% for c, t in m.legend.bins %}<span><i style="background: {{ c }}"></i>{{ t }}</span>{% endfor %}<span>（{{ m.legend.unit }}）</span></div>
+            {% endif %}
+        </div>
+        {% if m.note %}<p class="smap-note">{{ m.note }}</p>{% endif %}
+        {% if m.outside %}<p class="smap-note">地図の外: {{ m.outside | join("・") }}（表にはあります）</p>{% endif %}
+    </div>
+    {% endfor %}
+    <p class="smap-note">点を押すと、その地点のページを開きます。沖縄・奄美は右下の枠に置いています。</p>
+</figure>
+{% if smaps | length > 1 %}
+<script>
+document.querySelectorAll(".smap-tabs button").forEach(function (b) {
+    b.addEventListener("click", function () {
+        document.querySelectorAll(".smap-tabs button").forEach(function (o) {
+            var on = o === b;
+            o.setAttribute("aria-pressed", on ? "true" : "false");
+            document.getElementById("smap-" + o.dataset.smap).hidden = !on;
+        });
+    });
+});
+</script>
+{% endif %}
