@@ -509,6 +509,24 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
 
     # トップの「現在の天気と気温」に出せる都市（官署 57 地点、北から）。表示する都市は
     # 閲覧者が選んでブラウザに保存する。初期値は HOME_CITIES
+    # 天気予報（気象庁の府県天気予報。5 時・11 時・17 時発表）で見せる値を切り替える。
+    # 5 時・11 時発表のあいだは今日の予想最高気温、17 時発表からは明日（0 時を過ぎたら今日）の
+    # 朝の予想最低気温。どちらの時間帯かは取り込んだ予報の発表時刻で決めるので、取り込みが
+    # 遅れても値と見出しが食い違わない
+    fc_reported = datetime.fromisoformat(fc["reported"]) if fc.get("reported") else None
+    fc_night = fc_reported is not None and fc_reported.hour >= 17
+    fc_elem = "tmin" if fc_night else "tmax"
+    fc_target = None
+    if fc_reported is not None:
+        fc_target = fc_reported.date() + timedelta(days=1) if fc_night else fc_reported.date()
+        if fc_target < now.date():
+            fc_target = None                     # 古い予報は使わない
+    if fc_night:
+        fc_label = ("今日" if fc_target == now.date() else "明日") + "の朝の最低気温"
+    else:
+        fc_label = "今日の最高気温"
+    fc_issued = (f"気象庁 {'前日' if fc_reported.date() < now.date() else ''}{fc_reported.hour}時発表"
+                 if fc_reported is not None else "")
     now_cities = []
     for code, rec in main_city_order(stations):
         t = today.get(code)
@@ -523,6 +541,12 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
             "tmax": t.get("tmax"), "tmin": t.get("tmin"),
             "ntmax": normal_daily(code, "tmax", now.date()),
             "ntmin": normal_daily(code, "tmin", now.date()),
+        })
+        f = fc["stations"].get(str(code), {}).get(fc_target.isoformat(), {}) if fc_target else {}
+        now_cities[-1].update({
+            "fval": f[fc_elem] * 10 if f.get(fc_elem) is not None else None,
+            "fnorm": normal_daily(code, fc_elem, fc_target) if fc_target else None,
+            "fwthr": (f.get("weather") or "").replace(" ", ""), "fwcode": f.get("wcode"),
         })
 
     from weatherlib.svgchart import timeseries_svg
@@ -542,6 +566,8 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         "graph": graph, "graph_svg": graph_svg,
         "temp_anchors": TEMP_ANCHORS, "clothes_bands": CLOTHES_BANDS,
         "now_cities": now_cities, "now_default": HOME_CITIES,
+        "fc_night": fc_night, "fc_label": fc_label, "fc_issued": fc_issued,
+        "fc_obs_max": (not fc_night) and fc_target == now.date() and now.hour >= 9,
         # 地図の輪郭（make_japan_outline.py が作る。Natural Earth 10m）
         "japan_map": json.loads((BASE / "assets" / "japan_outline.json").read_text(encoding="utf-8")),
         "current_time": (datetime.fromisoformat(current["amedas_time"])

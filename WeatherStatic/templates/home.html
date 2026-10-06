@@ -90,6 +90,8 @@
         background: rgba(255,255,255,0.1); }
     .dev.up { color: #ffb0a6; } .dev.down { color: #a6ceff; }
     .advice { font-size: clamp(30px, 4.6vw, 48px); font-weight: 800; line-height: 1.25; }
+    .fc-text { font-size: clamp(16px, 2.1vw, 21px); font-weight: 700; margin: 2px 0 8px; line-height: 1.4; }
+    .obs { margin-top: 8px; font-size: 14px; color: #a9c2dd; }
     .umb { display: inline-block; margin-top: 10px; font-size: 18px; color: #9cd0ff; }
     .step-dots { display: flex; gap: 8px; margin-top: 6px; }
     .step-dots span { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.25); transition: background 0.3s; }
@@ -221,7 +223,7 @@
         </div>
     </div>
     <p class="stage-note">気温はアメダスの 10 分ごとの観測値、天気は気象庁「推計気象分布」{% if wthr_time %}（{{ wthr_time.hour }}時現在）{% endif %}による推計値。
-        服装の目安は気温から算出。設定はこのブラウザに保存されます。出典: 気象庁ホームページ</p>
+        服装の目安は気温から算出。{{ fc_label }}の予想は気象庁の府県天気予報（{{ fc_issued | replace("気象庁 ", "") }}）。設定はこのブラウザに保存されます。出典: 気象庁ホームページ</p>
 </section>
 
 <section class="guide">
@@ -339,9 +341,24 @@ var RAINY = { '雨': 1, '雨または雪': 1, '雪': 1 };
 var STORE_KEY = 'stage-settings-v2';
 var REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 var DAY = HOUR0 ? '昨日' : '今日';
-// 地図の平年差: 午前は今朝の最低気温、正午からは今日の最高気温（0 時台は昨日の最高）。
-// 時別の平年値は気象庁にも無いので、日の最高・最低で比べる
-var ANOM_MIN = !HOUR0 && {{ now.hour }} < 12;
+// 天気予報（気象庁の府県天気予報）の発表時刻で見せる値を変える（generate.py の build_home）。
+// 5 時発表からは今日の最高気温、17 時発表からは明日（0 時を過ぎたら今日）の朝の最低気温。
+// どちらも気象庁の予想と平年差。地図の平年差と都市の 2 段目がこれに従う
+var FC_NIGHT = {{ fc_night | tojson }};
+var FC_LABEL = {{ fc_label | tojson }};
+var FC_ISSUED = {{ fc_issued | tojson }};
+var FC_OBS_MAX = {{ fc_obs_max | tojson }};
+function fcIcon(wcode) {
+    var k = { '1': '晴れ', '2': 'くもり', '3': '雨', '4': '雪' }[String(wcode || '').charAt(0)];
+    return W_ICONS[k] || W_ICONS['くもり'];
+}
+// [値, 平年値, 予想か]。予報の無い都市は、日中なら観測の今日の最高気温で代える
+function extOf(c) {
+    if (c.fval != null) return [c.fval, c.fnorm, true];
+    if (!FC_NIGHT) return [c.tmax, c.ntmax, false];
+    return [null, null, false];
+}
+function extLabel(e) { return FC_LABEL + (e[2] ? '（予想・' + FC_ISSUED + '）' : '（観測）'); }
 var ANOM_ANCHORS = [[-50, [40, 90, 205]], [-25, [125, 165, 235]], [0, [236, 236, 236]], [25, [245, 155, 115]], [50, [205, 45, 45]]];
 var STEP_SEC = 2.8;          // 都市の 1 項目を出しておく秒数（速さで伸び縮み）
 
@@ -399,8 +416,8 @@ function anomColor(d) {
     return 'rgb(' + c.join(',') + ')';
 }
 function anomOf(c) {
-    var v = ANOM_MIN ? c.tmin : c.tmax, n = ANOM_MIN ? c.ntmin : c.ntmax;
-    return v == null || n == null ? null : v - n;
+    var e = extOf(c);
+    return e[0] == null || e[1] == null ? null : e[0] - e[1];
 }
 function signed(d) { return (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d / 10).toFixed(1); }
 function devHtml(v, n) {
@@ -438,7 +455,7 @@ function mapScene(el) {
     var hot = withD.slice().sort(function (a, b) { return anomOf(b) - anomOf(a); })[0];
     var cold = withD.slice().sort(function (a, b) { return anomOf(a) - anomOf(b); })[0];
     var stops = ANOM_ANCHORS.map(function (a, i) { return anomColor(a[0]) + ' ' + (i * 100 / (ANOM_ANCHORS.length - 1)) + '%'; }).join(',');
-    var what = ANOM_MIN ? '今朝の最低気温' : DAY + 'の最高気温';
+    var what = extLabel([0, 0, CITIES.some(function (c) { return c.fval != null; })]);
     var end = order.length * 70;
     el.innerHTML = '<div class="sc-map"><svg viewBox="' + MAP.viewBox + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="全国の' + what + 'の平年差">' +
         landSvg() + dots + '</svg>' +
@@ -458,13 +475,16 @@ function cityScene(el, c, ctx) {
         var q = xy(o);
         return '<circle class="other" cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="2.4"/>';
     }).join('');
+    var ext = extOf(c);
     var steps = [
         '<div class="step">' + (W_ICONS[c.wthr] || W_ICONS['くもり']) +
             '<div><div class="lab">いま' + (c.wthr ? '・' + esc(c.wthr) : '') + '</div>' +
             '<div class="big"><span class="cu" data-v="' + (c.temp == null ? '' : c.temp / 10) + '">-</span><small>℃</small></div></div></div>',
-        '<div class="step"><div class="pair">' +
-            '<div><div class="lab">' + DAY + 'の最高</div><div class="big">' + num(c.tmax) + '<small>℃</small></div>' + devHtml(c.tmax, c.ntmax) + '</div>' +
-            '<div><div class="lab">' + DAY + 'の最低</div><div class="big">' + num(c.tmin) + '<small>℃</small></div>' + devHtml(c.tmin, c.ntmin) + '</div>' +
+        '<div class="step">' + (FC_NIGHT ? fcIcon(c.fwcode) : '') + '<div>' +
+            '<div class="lab">' + esc(extLabel(ext)) + '</div>' +
+            (FC_NIGHT && c.fwthr ? '<div class="fc-text">' + FC_LABEL.slice(0, 2) + 'の天気　' + esc(c.fwthr) + '</div>' : '') +
+            '<div class="big">' + num(ext[0]) + '<small>℃</small></div>' + devHtml(ext[0], ext[1]) +
+            (FC_OBS_MAX && c.tmax != null ? '<div class="obs">ここまでの最高 ' + num(c.tmax) + '℃（観測）</div>' : '') +
             '</div></div>',
         '<div class="step"><div><div class="lab">服装の目安（いまの気温から）</div><div class="advice">' + esc(clothesStr(c.temp) || '-') + '</div>' +
             (RAINY[c.wthr] ? '<div class="umb">☂ 傘を持って出かけましょう</div>' : '') + '</div></div>'
