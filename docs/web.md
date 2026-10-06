@@ -147,7 +147,7 @@
   ルールの無い環境（`*.pages.dev` など）では `404.html` のスクリプトが小文字へ送る
   （404 のあとの転送なので、検索エンジン向けには転送ルールが要る）
 
-転送ルール（Rules → Redirect Rules → Single Redirects。設定は運用者が行う。
+転送ルール（Rules → Overview →「Create rule」→「Redirect Rule」。2026-10-06 に設定済み。設定は運用者が行う。
 無料プランでは正規表現の `matches` が使えないので、大文字は `contains` を並べて見る）:
 
 ```

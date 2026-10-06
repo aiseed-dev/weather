@@ -3,7 +3,7 @@
 気象庁の観測データだけを扱う静的サイトと、その裏で動く収集・蓄積・配布の仕組み。
 旧 WeatherCore（ASP.NET Core）を、Python の定期生成と Cloudflare Pages に移したもの。
 
-- サイト: https://weather-dj7.pages.dev/（約 3,100 ページ。実況と今日の最高・最低は 10 分ごと）
+- サイト: https://weather.time-j.net/（約 3,100 ページ。実況と今日の最高・最低は 10 分ごと。Pages の https://weather-dj7.pages.dev/ でも同じ物が見える）
 - 観測データの配布: `/data/daily/`（日別、1880 年〜）・`/data/amedas/`（10 分値・1 時間値）
 - 予報は扱わない（予報業務には気象業務法の許可が要る）。防災情報も扱わない
 

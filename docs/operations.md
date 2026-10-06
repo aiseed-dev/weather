@@ -177,12 +177,14 @@ setsid nohup ../.venv/bin/python build_hourly_normals.py fetch --via-worker --wi
 URL との互換」）。deb2 は作って公開する側に専念し、deb2 が止まっても最後に公開した
 内容が見え続ける。
 
-旧システムから `weather.time-j.net` を切り替える手順（運用者の作業）:
+旧システムから `weather.time-j.net` を切り替える手順（運用者の作業）。**2026-10-06 に 1〜5 まで済んだ**:
 
 1. 公開前の点検: deb2 で `python check_legacy_urls.py`（旧 URL 4,154 件がすべて着くこと）
 2. Pages のプロジェクト `weather` にカスタムドメイン `weather.time-j.net` を足す
    （Workers & Pages → weather → カスタムドメイン。DNS は Cloudflare が案内する）
-3. time-j.net のゾーンに「URL を小文字へ」の転送ルールを足す（`docs/web.md` に式がある）
+3. time-j.net のゾーンに「URL を小文字へ」の転送ルールを足す（`docs/web.md` に式がある）。
+   今の画面では Rules → Overview →「Create rule」→「Redirect Rule」→「Custom filter expression」。
+   左のメニューの「Page Rules」は小文字にする関数が無いので使わない
 4. 切り替え後に、旧 URL をいくつか大文字のまま開いて、小文字の URL に 301 で着くことを確かめる
 5. デスクトップアプリの観測データの取り先（`src/aiseed_weather/services/observation_endpoints.py` の
    `BASE`）を `https://weather.time-j.net` に変える。`weather-dj7.pages.dev` は切り替え後も

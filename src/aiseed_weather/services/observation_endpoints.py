@@ -14,15 +14,14 @@ Like the JMA endpoints, this is not in ``config.toml``: there is one
 source, it needs no credentials, and opening the view and pressing
 取得 is the act of choosing it.
 
-The site moves from the Pages address to weather.time-j.net when the
-old WeatherCore system is retired (docs/operations.md). The Pages
-address keeps working after that, so changing BASE is a courtesy, not
-a fix.
+The site's address is weather.time-j.net (moved from the Pages address
+on 2026-10-06 when the old WeatherCore system was retired). The Pages
+address weather-dj7.pages.dev still serves the same files.
 """
 
 from __future__ import annotations
 
-BASE = "https://weather-dj7.pages.dev"
+BASE = "https://weather.time-j.net"
 
 DAILY_MANIFEST = f"{BASE}/data/daily/manifest.json"
 DAILY_FILE = f"{BASE}/data/daily/{{path}}"     # path from the manifest (years/2018.nc …)

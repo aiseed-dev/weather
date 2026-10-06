@@ -309,9 +309,9 @@ The companion web site publishes JMA observations as NetCDF (source: Japan
 Meteorological Agency website; edited and processed from JMA data). The app's
 Observations tab reads the daily records from here:
 
-- [Daily observations](https://weather-dj7.pages.dev/data/daily/) —
+- [Daily observations](https://weather.time-j.net/data/daily/) —
   temperature, precipitation, sunshine; 1880 onward; 1,342 stations
   including closed ones
-- [AMeDAS 10-minute archive](https://weather-dj7.pages.dev/data/amedas/) —
+- [AMeDAS 10-minute archive](https://weather.time-j.net/data/amedas/) —
   10-minute and hourly values that JMA keeps for only about 9 days, plus
   daily maximum gusts

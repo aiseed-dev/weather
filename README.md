@@ -307,7 +307,7 @@ Web サイト「個人開発気象統計」で、気象庁の観測を NetCDF �
 (出典: 気象庁ホームページ。気象庁のデータを編集・加工したもの)。アプリの「観測」タブは
 日別の観測データをここから読みます。
 
-- [日別の観測データ](https://weather-dj7.pages.dev/data/daily/) ― 気温・降水量・日照、
+- [日別の観測データ](https://weather.time-j.net/data/daily/) ― 気温・降水量・日照、
   1880 年〜、廃止された地点を含む 1,342 地点
-- [アメダス 10 分値アーカイブ](https://weather-dj7.pages.dev/data/amedas/) ― 気象庁では
+- [アメダス 10 分値アーカイブ](https://weather.time-j.net/data/amedas/) ― 気象庁では
   約 9 日で消える 10 分値・1 時間値、最大瞬間風速などの日別値
