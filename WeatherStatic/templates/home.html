@@ -506,10 +506,12 @@ function countUp(el, to, decimals, ms) {
 }
 
 // ---- 場面 ----
-// 地図は今の気温の平年差（時別の平年値。generate.py の build_home）。平年が無いときは今の気温
-function mapScene(el) {
+// 地図は 2 場面: 今の気温、続けて今の気温の平年差（時別の平年値。generate.py の build_home）。
+// wantAnom で平年差の場面。平年が無いときは今の気温を描く
+function hasAnom() { return CITIES.some(function (c) { return anomNow(c) != null; }); }
+function mapScene(el, wantAnom) {
     var withT = CITIES.filter(function (c) { return c.temp != null; });
-    var anom = withT.some(function (c) { return anomNow(c) != null; });
+    var anom = !!wantAnom && hasAnom();
     var val = anom ? anomNow : function (c) { return c.temp; };
     var color = anom ? anomColor : tempColor;
     var fmt = anom ? function (c) { return signed(anomNow(c)); } : function (c) { return num(c.temp); };
@@ -649,10 +651,13 @@ function tourCities() {
     var list = CITIES.filter(function (c) { return pick[c.code]; });
     return list.length ? list : CITIES.filter(function (c) { return DEFAULT_CITIES.indexOf(c.code) >= 0; });
 }
-// 流す場面の並び: [地図] → 都市（めぐる都市を 1 つずつ、または見つめる 1 都市） → [全国のようす]
+// 流す場面の並び: [今の気温の地図 → 平年差の地図] → 都市（めぐる都市を 1 つずつ、または見つめる 1 都市） → [全国のようす]
 function playlist() {
     var list = [];
-    if (settings.map) list.push({ title: 'いまの気温（全国）', sec: 9, run: mapScene });
+    if (settings.map) {
+        list.push({ title: 'いまの気温（全国）', sec: 9, run: function (el) { mapScene(el, false); } });
+        if (hasAnom()) list.push({ title: 'いまの気温の平年差（全国）', sec: 9, run: function (el) { mapScene(el, true); } });
+    }
     var cities = settings.mode === 'focus' ? [byCode(settings.focus) || tourCities()[0]] : tourCities();
     cities.forEach(function (c) {
         var reps = settings.mode === 'focus' ? 3 : 1;      // 見つめるときは 3 項目を 3 周
