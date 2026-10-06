@@ -364,12 +364,13 @@ var NOW_HOUR = {{ now.hour }};
 // 「所により」の後にだけあれば「折りたたみがあると安心」。日中 9 時を過ぎたら
 // 「朝まで雨」のような済んだ時間帯は数えない。[程度, 理由] または null
 function umbrella(c) {
-    if (RAINY[c.wthr]) return ['need', '今、雨や雪が降っています'];
-    var text = c.fwthr || '';
+    if (RAINY[c.wthr]) return ['need', '今の天気: ' + c.wthr + '（推計気象分布）'];
+    var quote = FC_DAYWORD + 'の天気予報: 「' + (c.fwthr || '') + '」';
+    var text = (c.fwthr || '').replace(/　/g, '');
     if (!FC_NIGHT && NOW_HOUR >= 9) text = text.replace(/(所により)?(未明|明け方|朝)まで[^、。]*?(雨|雪)(で雷を伴う)?/g, '');
     var parts = text.split('所により');
-    if (/雨|雪/.test(parts[0])) return ['need', FC_DAYWORD + 'の天気予報に雨や雪があります'];
-    if (/雨|雪/.test(parts.slice(1).join(''))) return ['maybe', FC_DAYWORD + 'の天気予報に「所により」雨や雪があります'];
+    if (/雨|雪/.test(parts[0])) return ['need', quote];
+    if (/雨|雪/.test(parts.slice(1).join(''))) return ['maybe', quote];
     return null;
 }
 function umbrellaHtml(c) {
@@ -485,7 +486,7 @@ function cityScene(el, c, ctx) {
         // 2 ページ目は天気予報（気象庁の発表のまま。値と天気の文は手を加えない）
         '<div class="step">' + fcIcon(c.fwcode) + '<div>' +
             '<div class="lab">天気予報（' + esc(FC_ISSUED) + '）</div>' +
-            (c.fwthr ? '<div class="fc-text">' + FC_DAYWORD + 'の天気　' + esc(c.fwthr) + '</div>' : '') +
+            (c.fwthr ? '<div class="lab">' + FC_DAYWORD + 'の天気</div><div class="fc-text">' + esc(c.fwthr) + '</div>' : '') +
             (ext[2] ? '<div class="lab">' + esc(FC_LABEL) + '（予想）</div><div class="big">' + num(ext[0]) + '<small>℃</small></div>' + devHtml(ext[0], ext[1])
                     : '<div class="lab">予報がありません</div>') +
             '</div></div>',

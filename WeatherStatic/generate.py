@@ -546,7 +546,8 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         now_cities[-1].update({
             "fval": f[fc_elem] * 10 if f.get(fc_elem) is not None else None,
             "fnorm": normal_daily(code, fc_elem, fc_target) if fc_target else None,
-            "fwthr": (f.get("weather") or "").replace(" ", ""), "fwcode": f.get("wcode"),
+            # 天気の文は気象庁の発表のまま（取り込みで半角にした空白を全角に戻す。weatherlib/jma.py）
+            "fwthr": (f.get("weather") or "").replace(" ", "　"), "fwcode": f.get("wcode"),
         })
 
     from weatherlib.svgchart import timeseries_svg
