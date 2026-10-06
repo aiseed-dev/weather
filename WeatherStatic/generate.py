@@ -1990,7 +1990,7 @@ def legacy_redirects(targets: list, now: datetime | None = None) -> list[str]:
 def build_seo(env: Environment, stations: dict) -> None:
     """sitemap.xml・_redirects（旧URL誘導）・404.html。Pages 移行のサイトインフラ。"""
     import os
-    # 公開先は weather.time-j.net（いま旧システムが動いている。置き換えたらここ）
+    # 公開先は weather.time-j.net（2026-10-06 に旧システムから切り替えた）
     origin = os.environ.get("WEATHER_SITE_ORIGIN", "https://weather.time-j.net")
 
     urls = ["/", "/Temperature/HighsMain/", "/Temperature/LowsMain/",
