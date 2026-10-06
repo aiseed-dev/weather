@@ -30,6 +30,8 @@ URL_MNTEM_DAY = "https://www.data.jma.go.jp/stats/data/mdrr/tem_rct/alltable/mnt
 # アメダス map JSON（全地点の観測値。10 分毎ファイル、過去 7 日分保持）
 URL_AMEDAS_MAP = "https://www.jma.go.jp/bosai/amedas/data/map/{ts}.json"
 URL_FORECAST = "https://www.jma.go.jp/bosai/forecast/data/forecast/{office}.json"
+# 防災情報 XML の高頻度フィード（定時）。府県天気予報の発表・変更が数分で載る
+URL_FEED_REGULAR = "https://www.data.jma.go.jp/developer/xml/feed/regular.xml"
 URL_NORMALS = ("https://www.data.jma.go.jp/stats/etrn/view/nml_sfc_d.php"
                "?prec_no={prec_no}&block_no={block_no}&year=&month={month}&day=&view=")
 
@@ -228,6 +230,27 @@ class OfficeForecast:
 def fetch_forecast(office: str) -> OfficeForecast:
     payload = json.loads(http_get(URL_FORECAST.format(office=office)))
     return OfficeForecast(payload)
+
+
+def forecast_updates() -> dict[str, datetime]:
+    """府県天気予報の office ごとの最新の発表時刻（フィードに載った時刻。aware）。
+
+    5 時・11 時・17 時の定時のほか、予報を変更したときにも載る。フィードには直近の
+    数時間分しか無いので、10 分ごとに読めば取りこぼさない。office コードは予報 JSON
+    （URL_FORECAST）と同じ体系（電文名の末尾 VPFD51_016000 の 6 桁）。"""
+    xml = http_get(URL_FEED_REGULAR).decode("utf-8", errors="replace")
+    out: dict[str, datetime] = {}
+    for e in re.findall(r"<entry>(.*?)</entry>", xml, re.S):
+        if "府県天気予報" not in e:
+            continue
+        m = re.search(r"VPFD5\d_(\d{6})\.xml", e)
+        u = re.search(r"<updated>([^<]+)</updated>", e)
+        if not (m and u):
+            continue
+        t = datetime.fromisoformat(u.group(1).replace("Z", "+00:00"))
+        if m.group(1) not in out or t > out[m.group(1)]:
+            out[m.group(1)] = t
+    return out
 
 
 # ---------------------------------------------------------------- 日別平年値

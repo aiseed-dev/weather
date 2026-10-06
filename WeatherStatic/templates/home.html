@@ -74,7 +74,7 @@
     .city-name { font-size: clamp(30px, 4.6vw, 48px); font-weight: 800; letter-spacing: 0.04em; line-height: 1.1;
         animation: fadeUp 0.6s ease both; }
     .city-name small { font-size: 15px; color: #a9c2dd; margin-left: 12px; font-weight: 500; letter-spacing: 0; }
-    .steps { position: relative; height: 270px; margin-top: 10px; }
+    .steps { position: relative; height: 300px; margin-top: 10px; }
     .step { position: absolute; inset: 0; display: flex; align-items: center; gap: 30px;
         opacity: 0; transform: translateY(26px); transition: opacity 0.6s ease, transform 0.6s cubic-bezier(.2,.8,.2,1); }
     .step.on { opacity: 1; transform: none; }
@@ -90,10 +90,13 @@
         background: rgba(255,255,255,0.1); }
     .dev.up { color: #ffb0a6; } .dev.down { color: #a6ceff; }
     .advice { font-size: clamp(30px, 4.6vw, 48px); font-weight: 800; line-height: 1.25; }
-    .fc-text { font-size: clamp(16px, 2.1vw, 21px); font-weight: 700; margin: 2px 0 8px; line-height: 1.4; }
+    .fc-text { font-size: clamp(20px, 2.8vw, 28px); font-weight: 800; margin: 2px 0 12px; line-height: 1.4; }
+    .mid { font-size: clamp(40px, 6vw, 64px); font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
+    .mid small { font-size: 0.35em; margin-left: 3px; color: #c8dbf0; }
     .obs { margin-top: 8px; font-size: 14px; color: #a9c2dd; }
     .umb { display: inline-block; margin-top: 10px; font-size: 18px; color: #9cd0ff; }
     .umb.no { color: #a9c2dd; }
+    .cloth svg { width: clamp(96px, 13vw, 150px); height: auto; flex: none; filter: drop-shadow(0 6px 14px rgba(0,0,0,0.3)); }
     .umb small { font-size: 13px; color: #a9c2dd; }
     .step-dots { display: flex; gap: 8px; margin-top: 6px; }
     .step-dots span { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.25); transition: background 0.3s; }
@@ -156,16 +159,17 @@
     .disclaimer { font-size: 12px; color: var(--muted); margin-top: 26px; line-height: 1.7; }
 
     @media (max-width: 860px) {
-        .stage-screen { height: 520px; }
+        .stage-screen { height: 580px; }
         .scene { padding: 6px 16px 12px; }
         .sc-map { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; gap: 6px; }
         .sc-map svg { max-height: 380px; }
         .hotcold { grid-template-columns: 1fr 1fr; margin-top: 6px; }
         .sc-city { grid-template-columns: 1fr; grid-template-rows: auto auto; align-content: center; gap: 4px; }
         .mini { position: absolute; right: 10px; top: 4px; width: 92px; opacity: 0.9; }
-        .steps { height: 270px; }
+        .steps { height: 350px; }
         .step { flex-direction: column; align-items: flex-start; justify-content: center; gap: 12px; }
         .step .wi { width: 96px; }
+        .cloth svg { width: 84px; }
         .pc-only { display: none !important; }
         .guide-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
         .gcard { padding: 9px 10px; gap: 8px; align-items: center; }
@@ -225,7 +229,7 @@
         </div>
     </div>
     <p class="stage-note">気温はアメダスの 10 分ごとの観測値、天気は気象庁「推計気象分布」{% if wthr_time %}（{{ wthr_time.hour }}時現在）{% endif %}による推計値。
-        服装の目安は気温から算出。{{ fc_label }}の予想は気象庁の府県天気予報（{{ fc_issued | replace("気象庁 ", "") }}）。設定はこのブラウザに保存されます。出典: 気象庁ホームページ</p>
+        天気予報は気象庁の府県天気予報（発表や変更から 10 分ほどで反映）。服装の目安はその日の予想最高気温から算出。設定はこのブラウザに保存されます。出典: 気象庁ホームページ</p>
 </section>
 
 <section class="guide">
@@ -348,13 +352,10 @@ var DAY = HOUR0 ? '昨日' : '今日';
 // どちらも気象庁の予想と平年差。都市の 2 段目がこれに従う
 var FC_NIGHT = {{ fc_night | tojson }};
 var FC_LABEL = {{ fc_label | tojson }};
-var FC_ISSUED = {{ fc_issued | tojson }};
 function fcIcon(wcode) {
     var k = { '1': '晴れ', '2': 'くもり', '3': '雨', '4': '雪' }[String(wcode || '').charAt(0)];
     return W_ICONS[k] || W_ICONS['くもり'];
 }
-// [値, 平年値, 予報があるか]
-function extOf(c) { return c.fval != null ? [c.fval, c.fnorm, true] : [null, null, false]; }
 // 予報の対象日の呼び方（今日・明日）。天気の文の見出しに使う
 var FC_DAYWORD = FC_NIGHT ? FC_LABEL.slice(0, 2) : '今日';
 var NOW_HOUR = {{ now.hour }};
@@ -372,6 +373,48 @@ function umbrella(c) {
     if (/雨|雪/.test(parts[0])) return ['need', quote];
     if (/雨|雪/.test(parts.slice(1).join(''))) return ['maybe', quote];
     return null;
+}
+// 服装の絵（BANDS と同じ並び: 熱中症 → 半袖 → 長袖or半袖 → 上着 → 重ね着 → コート → 防寒）
+var BODY_T = 'M20 10L11 14L3 25L11 31L16 28V56H48V28L53 31L61 25L53 14L44 10Q40 17 32 17Q24 17 20 10Z';
+var BODY_L = 'M20 10L10 14L4 50L12 52L16 31V56H48V31L52 52L60 50L54 14L44 10Q40 17 32 17Q24 17 20 10Z';
+var BODY_C = 'M21 9L10 13L4 52L12 54L16 32V61H48V32L52 54L60 52L54 13L43 9L32 20Z';
+var CLOTHES_ICONS = [
+    '<svg viewBox="0 0 64 64"><path d="' + BODY_T + '" fill="#ff8a65"/><path d="M50 4c3 5 5 7 5 10a5 5 0 0 1-10 0c0-3 2-5 5-10z" fill="#6ec6ff"/><circle cx="14" cy="8" r="5" fill="#ffd54f"/></svg>',
+    '<svg viewBox="0 0 64 64"><path d="' + BODY_T + '" fill="#ffb74d"/></svg>',
+    '<svg viewBox="0 0 64 64"><path d="' + BODY_L + '" fill="#81c7f0"/><path d="M27 17L32 24L37 17" fill="none" stroke="#fff" stroke-width="2"/></svg>',
+    '<svg viewBox="0 0 64 64"><path d="' + BODY_L + '" fill="#8bc48a"/><path d="M26 16L32 30L38 16Z" fill="#f2f2f2"/><path d="M32 30V56" stroke="#2f6b3a" stroke-width="1.6"/><g fill="#2f6b3a"><circle cx="34.5" cy="36" r="1.3"/><circle cx="34.5" cy="43" r="1.3"/><circle cx="34.5" cy="50" r="1.3"/></g></svg>',
+    '<svg viewBox="0 0 64 64"><path d="' + BODY_L + '" fill="#b98ad6"/><path d="M24 11Q32 19 40 11" fill="none" stroke="#8a5fa8" stroke-width="4" stroke-linecap="round"/><g stroke="#8a5fa8" stroke-width="2"><path d="M17 40H47M17 47H47"/><path d="M5 46L12 48M59 46L52 48"/></g></svg>',
+    '<svg viewBox="0 0 64 64"><path d="' + BODY_C + '" fill="#a0785a"/><path d="M21 9L28 26L32 20L36 26L43 9" fill="none" stroke="#6d4c36" stroke-width="2"/><path d="M16 42H48" stroke="#6d4c36" stroke-width="3"/><g fill="#6d4c36"><circle cx="28" cy="32" r="1.5"/><circle cx="36" cy="32" r="1.5"/><circle cx="28" cy="50" r="1.5"/><circle cx="36" cy="50" r="1.5"/></g></svg>',
+    '<svg viewBox="0 0 64 64"><path d="' + BODY_C + '" fill="#4f74b3"/><path d="M20 10Q32 22 44 10L45 15Q32 27 19 15Z" fill="#e2574c"/><path d="M38 18L42 36L36 36Z" fill="#e2574c"/><g fill="#fff"><circle cx="30" cy="34" r="1.5"/><circle cx="30" cy="44" r="1.5"/><circle cx="30" cy="54" r="1.5"/></g><g stroke="#cfe6ff" stroke-width="1.6" stroke-linecap="round"><path d="M56 2V12M51 4.5L61 9.5M51 9.5L61 4.5"/></g></svg>'
+];
+function bandIndex(t) {
+    for (var i = 0; i < BANDS.length; i++) if (t >= BANDS[i][0]) return i;
+    return BANDS.length - 1;
+}
+// その日の服装: 予想最高気温で決め、朝の最低との差が大きければ羽織るものを勧める。
+// 日中は今日（朝は観測の最低）、17 時発表からは明日（予想の最高・最低）。予報が無ければ今の気温
+function dayClothes(c) {
+    var hi = c.fmax != null ? c.fmax : null;
+    var lo = FC_NIGHT ? c.fmin : (c.tmin != null ? c.tmin : null);
+    var base = hi != null ? hi : c.temp;
+    if (base == null) return null;
+    return { i: bandIndex(base), text: clothesStr(base), hi: hi, lo: lo,
+             layer: hi != null && lo != null && hi - lo >= 80 };
+}
+function clothesHtml(c) {
+    var d = dayClothes(c);
+    if (!d) return '<div><div class="lab">服装の目安</div><div class="advice">-</div></div>';
+    var basis = d.hi != null
+        ? '予想最高 ' + num(d.hi) + '℃' + (d.lo != null ? '・朝 ' + num(d.lo) + '℃' : '')
+        : 'いまの気温 ' + num(c.temp) + '℃';
+    return '<span class="cloth">' + CLOTHES_ICONS[d.i] + '</span><div>' +
+        '<div class="lab">' + (FC_NIGHT ? FC_DAYWORD : '今日') + 'の服装（' + basis + '）</div>' +
+        '<div class="advice">' + esc(d.text) + '</div>' +
+        (d.layer ? '<div class="obs">朝晩との差が大きいので、羽織るものがあると安心です</div>' : '') +
+        umbrellaHtml(c) + '</div>';
+}
+function tempCell(lab, v, n) {
+    return '<div><div class="lab">' + lab + '</div><div class="mid">' + num(v) + '<small>℃</small></div>' + devHtml(v, n) + '</div>';
 }
 function umbrellaHtml(c) {
     var u = umbrella(c);
@@ -475,7 +518,6 @@ function cityScene(el, c, ctx) {
         var q = xy(o);
         return '<circle class="other" cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="2.4"/>';
     }).join('');
-    var ext = extOf(c);
     var steps = [
         // 1 ページ目は実測（アメダスの観測値）
         '<div class="step">' + (W_ICONS[c.wthr] || W_ICONS['くもり']) +
@@ -483,15 +525,16 @@ function cityScene(el, c, ctx) {
             '<div class="big"><span class="cu" data-v="' + (c.temp == null ? '' : c.temp / 10) + '">-</span><small>℃</small></div>' +
             (c.tmax != null || c.tmin != null ? '<div class="obs">' + DAY + 'ここまでの最高 ' + num(c.tmax) + '℃・最低 ' + num(c.tmin) + '℃</div>' : '') +
             '</div></div>',
-        // 2 ページ目は天気予報（気象庁の発表のまま。値と天気の文は手を加えない）
+        // 2 ページ目は天気予報（気象庁の発表のまま。値と天気の文は手を加えない）。
+        // 天気と、最高・最低の両方。日中の「今日の最低」は予報に無いので今朝の観測を出す
         '<div class="step">' + fcIcon(c.fwcode) + '<div>' +
-            '<div class="lab">天気予報（' + esc(FC_ISSUED) + '）</div>' +
-            (c.fwthr ? '<div class="lab">' + FC_DAYWORD + 'の天気</div><div class="fc-text">' + esc(c.fwthr) + '</div>' : '') +
-            (ext[2] ? '<div class="lab">' + esc(FC_LABEL) + '（予想）</div><div class="big">' + num(ext[0]) + '<small>℃</small></div>' + devHtml(ext[0], ext[1])
-                    : '<div class="lab">予報がありません</div>') +
-            '</div></div>',
-        '<div class="step"><div><div class="lab">服装の目安（いまの気温から）</div><div class="advice">' + esc(clothesStr(c.temp) || '-') + '</div>' +
-            umbrellaHtml(c) + '</div></div>'
+            '<div class="lab">' + FC_DAYWORD + 'の天気予報（' + esc(c.fissued || '気象庁') + '）</div>' +
+            '<div class="fc-text">' + esc(c.fwthr || '予報がありません') + '</div>' +
+            '<div class="pair">' + (FC_NIGHT
+                ? tempCell('朝の最低（予想）', c.fmin, c.fnmin) + tempCell('最高（予想）', c.fmax, c.fnmax)
+                : tempCell('最高（予想）', c.fmax, c.fnmax) + tempCell('朝の最低（観測）', c.tmin, c.ntmin)) +
+            '</div></div></div>',
+        '<div class="step">' + clothesHtml(c) + '</div>'
     ];
     el.innerHTML = '<div class="sc-city"><div>' +
         '<div class="city-name"><a href="' + esc(c.url) + '" style="color:inherit;text-decoration:none;">' + esc(c.name) + '</a><small>' + esc(c.pref) + '</small></div>' +

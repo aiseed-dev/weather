@@ -221,50 +221,37 @@ def expected_issuance(now: datetime) -> datetime:
     return y.replace(hour=17, minute=0, second=0, microsecond=0)
 
 
-def forecast_is_fresh(now: datetime) -> bool:
-    """既存の forecast.json が最新の発表分なら True（再取得を省略して負荷を抑える）。"""
-    p = DATA / "forecast.json"
-    if not p.exists():
-        return False
-    try:
-        fc = json.loads(p.read_text(encoding="utf-8"))
-        reported = datetime.fromisoformat(fc["reported"])
-    except Exception:
-        return False
-    return reported >= expected_issuance(now)
+def build_forecast(stations: dict, offices: list[str] | None = None,
+                   previous: dict | None = None) -> dict:
+    """主要都市の予報。offices を渡すとその office だけ取り直し、ほかは previous のまま。
 
-
-def build_forecast(stations: dict) -> dict:
+    office ごとの発表時刻を office_reported に持つ（予報の変更は office ごとに起きる）。
+    reported はその最新（JST）。"""
     mains = {int(code): rec for code, rec in stations["stations"].items()
              if rec.get("main")}
-    offices = sorted({rec["office"] for rec in mains.values()})
-    log(f"予報 JSON を取得中... ({len(offices)} offices)")
+    all_offices = sorted({rec["office"] for rec in mains.values()})
+    todo = all_offices if offices is None else [o for o in all_offices if o in offices]
+    log(f"予報 JSON を取得中... ({len(todo)} offices)")
     fcs: dict[str, jma.OfficeForecast] = {}
-    for office in offices:
+    for office in todo:
         try:
             fcs[office] = jma.fetch_forecast(office)
         except Exception as e:
             log(f"  警告: office {office} の予報取得に失敗: {e}")
         time.sleep(FETCH_INTERVAL)
-    if not fcs:
+    if not fcs and previous is None:
         raise RuntimeError("予報がひとつも取得できませんでした")
 
-    # 対象日の決定: 「今日の最高気温予報」がまだ提供されていれば今日、
-    # 17 時発表以降で今日分が消えていれば明日（旧サイトの CurrentPath "0"/"17" 相当）
-    sample = next(iter(fcs.values()))
     today = datetime.now().date()
-    has_today_max = any((today, 9) in d for d in sample.temps.values())
-    target_label = "today" if has_today_max else "tomorrow"
-    target = today if target_label == "today" else today + timedelta(days=1)
-
-    out = {}
-    reported = None
     tomorrow = today + timedelta(days=1)
+    out = dict((previous or {}).get("stations", {}))
+    office_reported = dict((previous or {}).get("office_reported", {}))
+    for office, fc in fcs.items():
+        office_reported[office] = fc.report.isoformat(timespec="minutes")
     for code, rec in mains.items():
         fc = fcs.get(rec["office"])
         if fc is None:
             continue
-        reported = reported or fc.report
         days = {}
         for day in (today, tomorrow):
             weather, wcode = fc.weather_on(rec["area"], day)
@@ -275,12 +262,74 @@ def build_forecast(stations: dict) -> dict:
                 "tmin": fc.min_temp_on(rec["amedas"], day),
             }
         out[str(code)] = days
+
+    # 対象日の決定: 「今日の最高気温予報」がまだ提供されていれば今日、
+    # 17 時発表以降で今日分が消えていれば明日（旧サイトの CurrentPath "0"/"17" 相当）
+    sample = next(iter(fcs.values()), None)
+    if sample is not None:
+        has_today_max = any((today, 9) in d for d in sample.temps.values())
+        target_label = "today" if has_today_max else "tomorrow"
+    else:
+        target_label = (previous or {}).get("target_label", "today")
+    target = today if target_label == "today" else tomorrow
+    latest = max(datetime.fromisoformat(v) for v in office_reported.values())
     return {
-        "reported": reported.replace(tzinfo=None).isoformat(timespec="minutes"),
+        "reported": latest.replace(tzinfo=None).isoformat(timespec="minutes"),
+        "office_reported": office_reported,  # office → 発表時刻（変更も含む。+09:00 つき）
+        "office_feed": dict((previous or {}).get("office_feed", {})),
         "target_date": target.isoformat(),   # 参考情報（取得時点の最高気温予報の対象日）
         "target_label": target_label,
         "stations": out,                     # code → {"YYYY-MM-DD": {...}} ← 実日付キー
     }
+
+
+def update_forecast(stations: dict, *, allow_full: bool) -> None:
+    """予報を新しくする。
+
+    気象庁の防災情報 XML のフィード（1 回の取得）を見て、発表や変更があった office だけ
+    取り直す（予報の変更を数分〜10 分で反映するため。10 分ごとの実行でも回す）。
+    allow_full なら、前回の予報が最新の定時発表より古いときは全 office を取り直す
+    （フィードを取り逃したときの保険。毎時の実行だけ）。"""
+    p = DATA / "forecast.json"
+    try:
+        prev = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        prev = None
+    stale = (prev is None or "office_reported" not in prev
+             or datetime.fromisoformat(prev["reported"]) < expected_issuance(datetime.now()))
+    if stale and allow_full:
+        fc = build_forecast(stations)
+    else:
+        if prev is None or "office_reported" not in prev:
+            return
+        try:
+            feed = jma.forecast_updates()
+        except Exception as e:
+            log(f"警告: 予報の更新情報（フィード）の取得に失敗: {e}")
+            return
+        acted = prev.get("office_feed", {})
+        # 予報 JSON はフィードより少し遅れて変わる。載って 3 分たった分だけ扱う
+        settled = datetime.now().astimezone() - timedelta(minutes=3)
+        todo = []
+        for office, rep in prev["office_reported"].items():
+            t = feed.get(office)
+            if t is None or t > settled:
+                continue
+            seen = [datetime.fromisoformat(rep)] + ([datetime.fromisoformat(acted[office])]
+                                                    if office in acted else [])
+            if t > max(seen):
+                todo.append(office)
+        if not todo:
+            log("予報の発表・変更なし（フィード）")
+            return
+        fc = build_forecast(stations, offices=todo, previous=prev)
+        # 予報 JSON の発表時刻は変更でも丸めた時刻（7:00 など）のことがあるので、比べずに
+        # 「このフィードの載り分は取った」と記録する（同じ変更を取り直し続けない）
+        for office in todo:
+            fc["office_feed"][office] = feed[office].isoformat(timespec="seconds")
+        log(f"予報の発表・変更を反映: {', '.join(todo)}")
+    write_atomic(DATA / "forecast.json", json.dumps(fc, ensure_ascii=False, indent=1))
+    log(f"data/forecast.json を出力（{len(fc['stations'])} 都市, 最新の発表 {fc['reported']}）")
 
 
 # ---------------------------------------------------------------- current（現在の天気・気温）
@@ -354,7 +403,7 @@ def main() -> int:
         return 0
 
     # 現在値だけを更新する軽量モード（10 分ごとの cron 用）。
-    # 確定値 CSV と予報 JSON（55 office）は毎時で十分なので回さない。
+    # 確定値 CSV は毎時で十分なので回さない。予報は発表・変更があった office だけ取る。
     if "--current-only" in sys.argv:
         try:
             cur = build_current(stations)
@@ -364,6 +413,8 @@ def main() -> int:
         publish_current(cur)
         log(f"data/current.json を更新（{len(cur['stations'])} 都市, "
             f"{time.monotonic() - started:.1f} 秒）")
+        # 天気予報の発表・変更だけはここでも拾う（フィード 1 回 ＋ 変わった office だけ）
+        update_forecast(stations, allow_full=False)
         return 0
 
     a2c = stations["index"]["amedas_to_code"]
@@ -374,12 +425,7 @@ def main() -> int:
         f" (counts: {meta['counts']})")
     apply_points(rows, meta)
 
-    if forecast_is_fresh(datetime.now()):
-        log("forecast.json は最新の発表分のため再取得を省略")
-    else:
-        fc = build_forecast(stations)
-        write_atomic(DATA / "forecast.json", json.dumps(fc, ensure_ascii=False, indent=1))
-        log(f"data/forecast.json を出力（{len(fc['stations'])} 都市, target={fc['target_label']}）")
+    update_forecast(stations, allow_full=True)
 
     try:
         cur = build_current(stations)

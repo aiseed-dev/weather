@@ -513,20 +513,34 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
     # 5 時・11 時発表のあいだは今日の予想最高気温、17 時発表からは明日（0 時を過ぎたら今日）の
     # 朝の予想最低気温。どちらの時間帯かは取り込んだ予報の発表時刻で決めるので、取り込みが
     # 遅れても値と見出しが食い違わない
+    # 予報の変更（定時の後の出し直し）があっても、時間帯は最新の発表が属する定時（5・11・17 時）で
+    # 決める。夜中に変更があっても朝の扱いにならないように
     fc_reported = datetime.fromisoformat(fc["reported"]) if fc.get("reported") else None
-    fc_night = fc_reported is not None and fc_reported.hour >= 17
-    fc_elem = "tmin" if fc_night else "tmax"
-    fc_target = None
+    fc_slot = None
     if fc_reported is not None:
-        fc_target = fc_reported.date() + timedelta(days=1) if fc_night else fc_reported.date()
+        fc_slot = next((fc_reported.replace(hour=h, minute=0, second=0, microsecond=0)
+                        for h in (17, 11, 5) if fc_reported.hour >= h), None) \
+            or (fc_reported - timedelta(days=1)).replace(hour=17, minute=0, second=0, microsecond=0)
+    fc_night = fc_slot is not None and fc_slot.hour == 17
+    fc_target = None
+    if fc_slot is not None:
+        fc_target = fc_slot.date() + timedelta(days=1) if fc_night else fc_slot.date()
         if fc_target < now.date():
             fc_target = None                     # 古い予報は使わない
     if fc_night:
         fc_label = ("今日" if fc_target == now.date() else "明日") + "の朝の最低気温"
     else:
         fc_label = "今日の最高気温"
-    fc_issued = (f"気象庁 {'前日' if fc_reported.date() < now.date() else ''}{fc_reported.hour}時発表"
-                 if fc_reported is not None else "")
+    office_reported = fc.get("office_reported", {})
+
+    def issued(office: str | None) -> str:
+        """「気象庁 5時発表」「気象庁 7時7分発表」（予報の変更は分まで）。"""
+        rep = office_reported.get(office) if office else None
+        t = (datetime.fromisoformat(rep).replace(tzinfo=None) if rep else fc_reported)
+        if t is None:
+            return ""
+        hm = f"{t.hour}時" + (f"{t.minute}分" if t.minute else "")
+        return f"気象庁 {'前日' if t.date() < now.date() else ''}{hm}発表"
     now_cities = []
     for code, rec in main_city_order(stations):
         t = today.get(code)
@@ -543,9 +557,14 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
             "ntmin": normal_daily(code, "tmin", now.date()),
         })
         f = fc["stations"].get(str(code), {}).get(fc_target.isoformat(), {}) if fc_target else {}
+        def x10(v):
+            return v * 10 if v is not None else None
         now_cities[-1].update({
-            "fval": f[fc_elem] * 10 if f.get(fc_elem) is not None else None,
-            "fnorm": normal_daily(code, fc_elem, fc_target) if fc_target else None,
+            # 服装はその日の予想最高・最低で決める（日中の「今日の最低」は予報に無い）
+            "fmax": x10(f.get("tmax")), "fmin": x10(f.get("tmin")) if fc_night else None,
+            "fnmax": normal_daily(code, "tmax", fc_target) if fc_target else None,
+            "fnmin": normal_daily(code, "tmin", fc_target) if fc_target else None,
+            "fissued": issued(rec.get("office")),
             # 天気の文は気象庁の発表のまま（取り込みで半角にした空白を全角に戻す。weatherlib/jma.py）
             "fwthr": (f.get("weather") or "").replace(" ", "　"), "fwcode": f.get("wcode"),
         })
@@ -567,7 +586,7 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         "graph": graph, "graph_svg": graph_svg,
         "temp_anchors": TEMP_ANCHORS, "clothes_bands": CLOTHES_BANDS,
         "now_cities": now_cities, "now_default": HOME_CITIES,
-        "fc_night": fc_night, "fc_label": fc_label, "fc_issued": fc_issued,
+        "fc_night": fc_night, "fc_label": fc_label,
         # 地図の輪郭（make_japan_outline.py が作る。Natural Earth 10m）
         "japan_map": json.loads((BASE / "assets" / "japan_outline.json").read_text(encoding="utf-8")),
         "current_time": (datetime.fromisoformat(current["amedas_time"])
