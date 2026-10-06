@@ -442,6 +442,7 @@ secret にする。
 | 「生成できなかった区画が N 件」 | 同上 | 10 分値が無い。復旧するまで公開しない（`build_site.py` が止まる） |
 | 10 分値に穴 | `public_amedas/map/` の最新 | 10 日以内なら `fetch_amedas_mirror.py` を繰り返す（1 回 60 スロットまで） |
 | 統計に穴 | `logs/accumulate.log` | 7 日以内なら次回の実行で埋まる。それ以上なら `backfill_etrn.py` |
+| 月の中の数日だけ丸ごと無い | `dist/daily/years/` | `backfill_etrn.py` は欠けが月 2 日以下の地点×月を「充足」として飛ばすので、`--from 月 --to 月 --force --via-worker` で月ごと取り直す（約 920 ページ/月。Worker 経由なら気象庁へは Cloudflare から。旧ダンプに無かった 11 日は 2026-10-07 にこれで埋めた。logs/etrn_gap.log） |
 | `うち気象庁へ退避` が恒常的に出る | `logs/amedas_mirror.log` | Worker が動いていない合図 |
 | backfill_etrn が途中で止まった | — | 同じコマンド再実行（ingest_log で続きから） |
 | 予報 office が 404 | `weatherlib/jma.py` | `OFFICE_REMAP` 参照（014030→014100 等の統合例外） |
