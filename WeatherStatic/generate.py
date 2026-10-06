@@ -254,7 +254,21 @@ def make_env() -> Environment:
         if p.exists():
             h.update(p.read_bytes())
     env.globals["css_version"] = h.hexdigest()[:10]
+    # 「日毎の真夏日等の地点数」「日毎の真冬日等の地点数」のリンク先（今の月の表）
+    summer_url, winter_url = month_table_urls(datetime.now())
+    env.globals["summer_month_url"] = summer_url
+    env.globals["winter_month_url"] = winter_url
     return env
+
+
+def month_table_urls(now: datetime) -> tuple[str, str]:
+    """月の日ごとの地点数の表の、今の月のページ（夏は猛暑日、冬は冬日・平均気温 0℃未満）。
+
+    夏の表は 5〜10 月、冬の表は 10〜5 月。季節の外は、夏は 8 月、冬は 1 月の表にする。"""
+    m = now.month
+    summer = m if 5 <= m <= 10 else 8
+    winter = m if (m >= 10 or m <= 5) else 1
+    return f"/temperature/summermonth/a/{summer}", f"/temperature/wintermonth/{winter}"
 
 
 def copy_assets() -> None:
@@ -1897,16 +1911,18 @@ def legacy_redirects(targets: list, now: datetime | None = None) -> list[str]:
             cl_to = f"/Climate/Chart/{slug}/" if slug in have_cl else "/Climate/"
             lines.append(f"/Stations/JP/{alias} {st_to} 301")
             lines.append(f"/Climate/Chart/{alias} {cl_to} 301")
-    # 月の表・日のページの入口（区画だけの URL）
+    # 月の表・日のページの入口（区画だけの URL）。月の表は今の月へ
+    summer_month, winter_month = month_table_urls(now)
+    winter_month1 = winter_month.replace("/wintermonth/", "/wintermonth1/")
     lines += [
-        "/Temperature/SummerMonth /Summer/Ranking/ 302",
-        "/Temperature/SummerMonth/ /Summer/Ranking/ 302",
+        f"/Temperature/SummerMonth {summer_month} 302",
+        f"/Temperature/SummerMonth/ {summer_month} 302",
         "/Temperature/SummerDay /Summer/Ranking/ 302",
         "/Temperature/SummerDay/ /Summer/Ranking/ 302",
-        "/Temperature/WinterMonth /Winter/Ranking/ 302",
-        "/Temperature/WinterMonth/ /Winter/Ranking/ 302",
-        "/Temperature/WinterMonth1 /Winter/Ranking/ 302",
-        "/Temperature/WinterMonth1/ /Winter/Ranking/ 302",
+        f"/Temperature/WinterMonth {winter_month} 302",
+        f"/Temperature/WinterMonth/ {winter_month} 302",
+        f"/Temperature/WinterMonth1 {winter_month1} 302",
+        f"/Temperature/WinterMonth1/ {winter_month1} 302",
         "/Temperature/WinterDay /Winter/Ranking/ 302",
         "/Temperature/WinterDay/ /Winter/Ranking/ 302",
         "/Monthly/Monthly /Monthly/Latest/ 302",

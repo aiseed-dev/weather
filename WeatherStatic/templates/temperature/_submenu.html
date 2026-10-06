@@ -6,14 +6,14 @@
         <li><a href="/Temperature/HighsList"{{ hl('highslist') }}>各地</a></li>
         <li><a href="/Temperature/TodayHighsDec"{{ hl('highsdec') }}>高い順</a></li>
         <li><a href="/Temperature/TodayHighsAsc"{{ hl('highsasc') }}>低い順</a></li>
-        <li><a href="/Temperature/SummerMonth/">日毎の真夏日等の地点数</a></li>
+        <li><a href="{{ summer_month_url }}">日毎の真夏日等の地点数</a></li>
     </ul>
     <ul class="pager">
         <li>今朝の最低気温: <a href="/Temperature/LowsMain"{{ hl('lowsmain') }}>主要都市</a></li>
         <li><a href="/Temperature/LowsList"{{ hl('lowslist') }}>各地</a></li>
         <li><a href="/Temperature/TodayLowsDec"{{ hl('lowsdec') }}>高い順</a></li>
         <li><a href="/Temperature/TodayLowsAsc"{{ hl('lowsasc') }}>低い順</a></li>
-        <li><a href="/Temperature/WinterMonth/">日毎の真冬日等の地点数</a></li>
+        <li><a href="{{ winter_month_url }}">日毎の真冬日等の地点数</a></li>
     </ul>
 </div>
 
@@ -30,8 +30,8 @@
                 <option value="/Temperature/LowsList"{% if submenu_active == 'lowslist' %} selected{% endif %}>今朝の最低気温 - 各地</option>
                 <option value="/Temperature/TodayLowsDec"{% if submenu_active == 'lowsdec' %} selected{% endif %}>今朝の最低気温 - 高い順</option>
                 <option value="/Temperature/TodayLowsAsc"{% if submenu_active == 'lowsasc' %} selected{% endif %}>今朝の最低気温 - 低い順</option>
-                <option value="/Temperature/SummerMonth/">日毎の真夏日等の地点数</option>
-                <option value="/Temperature/WinterMonth/">日毎の真冬日等の地点数</option>
+                <option value="{{ summer_month_url }}">日毎の真夏日等の地点数</option>
+                <option value="{{ winter_month_url }}">日毎の真冬日等の地点数</option>
             </select>
         </div>
     </form>
