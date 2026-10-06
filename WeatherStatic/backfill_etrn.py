@@ -15,11 +15,17 @@
   - **再開可能**: 取得済みの地点×月は ingest_log（etrn_daily）に記録し、次回はスキップ
   - **分割実行**: --limit N で 1 回あたりのページ数を制限（cron で夜間に少しずつ）
   - アクセスは 1 ページ/秒（気象庁への負荷抑制）
+  - **ロックは短く**: 取る地点×月を決める間と、取ったページを書き込む間だけストアの
+    ロックを持つ。ページを取っている間（数十分になる）はほかのジョブを止めない
+  - **--via-worker**: 気象庁へは Cloudflare の Worker（amedas-point の POST /etrn）から
+    取りに行く。まとまった数を取っても、deb2 の定常の取得が気象庁に止められない。
+    Worker は取ったページを R2 の etrn/daily/{地点}/{年月}.html にも置く
 
 使い方:
     python backfill_etrn.py --from 2025-01 --to 2026-06            # 全気温観測地点
     python backfill_etrn.py --from 2025-01 --to 2026-06 --main-only
     python backfill_etrn.py --from 2025-01 --to 2026-06 --limit 500   # 夜間バッチ向け
+    python backfill_etrn.py --from 2021-01 --to 2021-01 --force --via-worker
 """
 from __future__ import annotations
 
@@ -37,7 +43,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import numpy as np
 
-from weatherlib import jma
+from weatherlib import etrn_worker, jma
 from weatherlib.ncstore import FILL, FILL_B, NcStore, date_index
 from weatherlib.store import open_store
 from weatherlib.storelock import store_lock
@@ -128,7 +134,10 @@ def main() -> int:
     ap.add_argument("--current", action="store_true",
                     help="進行中の月も取得する。値は速報値なので、"
                          "確定後に --force で取り直すこと")
+    ap.add_argument("--via-worker", action="store_true",
+                    help="気象庁へは Cloudflare の Worker 経由で取りに行く（weatherlib/etrn_worker.py）")
     args = ap.parse_args()
+    via = etrn_worker.load_env() if args.via_worker else None
 
     stations = json.loads((MASTER / "stations.json").read_text(encoding="utf-8"))["stations"]
     targets = [(int(c), r) for c, r in stations.items()
@@ -136,101 +145,113 @@ def main() -> int:
                and (not args.main_only or r.get("main"))]
     targets.sort(key=lambda x: x[0])
     months = list(month_range(args.from_, args.to))
-    log(f"対象: {len(targets)} 地点 × {len(months)} か月")
+    log(f"対象: {len(targets)} 地点 × {len(months)} か月" + ("（Cloudflare の Worker 経由）" if via else ""))
 
     conn = open_store(SQLITE)
     done = {k for (k,) in conn.execute(
         "SELECT key FROM ingest_log WHERE kind = 'etrn_daily'")}
     rowmap = dict(conn.execute("SELECT code, row FROM stations WHERE code IS NOT NULL"))
-
-    # ここから rename までがストアの更新区間。取得ループが長いので copy を先に
-    # 取ってしまうと、その間に他ジョブが書いた分を最後の rename で消してしまう。
-    # 呼び出し側の flock 任せにせず、スクリプト自身がロックを持つ。
-    lock = store_lock(log=log)
-    lock.__enter__()
-    work = NC.with_suffix(".nc.work")
-    shutil.copy2(NC, work)
-    ncs = NcStore(work, conn)
-    ds = ncs.ds
-    n_dates = ds.dimensions["date"].size
-
-    def coverage(row: int, j0: int, nd: int) -> int:
-        if j0 >= n_dates:
-            return 0
-        arr = ds["tmax"][row, j0:min(j0 + nd, n_dates)]
-        return int((arr != FILL).sum())
-
-    n_pages = n_cells = n_skip_cov = 0
-    new_marks: list[str] = []
     today = datetime.now().date()
-    stop = False
+
+    # 1. 取る地点×月を決める（ロックの中でストアの写しを読む。写しを開くと実寸を揃える）
+    todo: list[tuple[int, int, int, dict, int, str]] = []    # (年, 月, 地点, 地点の情報, 行, key)
+    new_marks: list[str] = []
+    n_skip_cov = 0
+    with store_lock(log=log):
+        plan = NC.with_suffix(".nc.plan")
+        shutil.copy2(NC, plan)
+        ncs = NcStore(plan, conn)
+        ds = ncs.ds
+        n_dates = ds.dimensions["date"].size
+        try:
+            for y, m in months:
+                if (y, m) >= (today.year, today.month) and not args.current:
+                    continue   # 進行中の月は既定で対象外（確定後に月次で取る）
+                j0, nd = date_index(date(y, m, 1)), days_in_month(y, m)
+                for code, rec in targets:
+                    key = f"{code}-{y:04d}{m:02d}"
+                    # --force は取得済みマークも無視する。ここを素通しにしないと、
+                    # 一度取った月は二度と取り直せず、速報値が確定値へ更新されない。
+                    if key in done and not args.force:
+                        continue
+                    row = rowmap.get(code)
+                    if row is None:
+                        continue
+                    if not args.force and j0 < n_dates:
+                        arr = ds["tmax"][row, j0:min(j0 + nd, n_dates)]   # 1 行読み
+                        if int((arr != FILL).sum()) >= nd - 2:
+                            new_marks.append(key)   # 既に充足 → 取得不要として記録
+                            n_skip_cov += 1
+                            continue
+                    todo.append((y, m, code, rec, row, key))
+        finally:
+            ncs.ds.close()
+            plan.unlink(missing_ok=True)
+    if args.limit and len(todo) > args.limit:
+        log(f"--limit {args.limit}: {len(todo)} ページのうち先頭だけ取る。次回実行で続きから再開します")
+        todo = todo[:args.limit]
+    log(f"取るページ: {len(todo)}（充足スキップ {n_skip_cov}）")
+
+    # 2. ページを取る（ロックを持たない。ほかのジョブは止めない）
+    got: list[tuple[int, int, int, str, dict]] = []      # (年, 月, 行, key, {日: 値})
     try:
-        for y, m in months:
-            if stop:
-                break
-            if (y, m) >= (today.year, today.month) and not args.current:
-                continue   # 進行中の月は既定で対象外（確定後に月次で取る）
-            j0 = date_index(date(y, m, 1))
-            nd = days_in_month(y, m)
-            for code, rec in targets:
-                key = f"{code}-{y:04d}{m:02d}"
-                # --force は取得済みマークも無視する。ここを素通しにしないと、
-                # 一度取った月は二度と取り直せず、速報値が確定値へ更新されない。
-                if key in done and not args.force:
-                    continue
-                row = rowmap.get(code)
-                if row is None:
-                    continue
-                if not args.force and coverage(row, j0, nd) >= nd - 2:
-                    new_marks.append(key)   # 既に充足 → 取得不要として記録
-                    n_skip_cov += 1
-                    continue
-                e = rec["etrn"]
-                url = URL.format(typ=e["type"], prec=e["prec_no"],
-                                 block=e["block_no"], y=y, m=m)
-                try:
-                    html = jma.http_get(url).decode("utf-8", errors="replace")
-                except Exception as ex:
-                    log(f"  警告: {rec['name']} {y}-{m:02d} 取得失敗: {ex}")
-                    continue
-                days = parse_page(html, e["type"])
-                if not days:
-                    log(f"  警告: {rec['name']} {y}-{m:02d} 解析結果が空（列ずれ?）")
+        for i, (y, m, code, rec, row, key) in enumerate(todo, 1):
+            e = rec["etrn"]
+            url = URL.format(typ=e["type"], prec=e["prec_no"], block=e["block_no"], y=y, m=m)
+            try:
+                if via:
+                    status, body = etrn_worker.fetch(url, f"daily/{code}/{y:04d}{m:02d}.html", *via)
+                    if status != 200 or body is None:
+                        raise RuntimeError(f"HTTP {status}")
                 else:
-                    for day, fields in days.items():
-                        dj = j0 + day - 1
-                        for field, (v, q, none) in fields.items():
-                            if v is None:
-                                continue
-                            ds[field][row, dj] = v                       # 確定値で上書き
-                            ds[f"{field}_q"][row, dj] = q if q else FILL_B
-                            if field == "precip" and none:
-                                ds["precip_none"][row, dj] = 1
-                            n_cells += 1
+                    body = jma.http_get(url)
+                html = body.decode("utf-8", errors="replace")
+            except Exception as ex:
+                log(f"  警告: {rec['name']} {y}-{m:02d} 取得失敗: {ex}")
+                continue
+            days = parse_page(html, e["type"])
+            if not days:
+                log(f"  警告: {rec['name']} {y}-{m:02d} 解析結果が空（列ずれ?）")
+            got.append((y, m, row, key, days))
+            if i % 50 == 0:
+                log(f"  進捗: {i} / {len(todo)} ページ")
+            time.sleep(INTERVAL)
+    except KeyboardInterrupt:
+        log("中断。ここまでに取った分を書き込みます（次回は続きから）")
+
+    # 3. 書き込む（ロックの中で 写し → 更新 → rename）
+    n_cells = 0
+    with store_lock(log=log):
+        work = NC.with_suffix(".nc.work")
+        shutil.copy2(NC, work)
+        ncs = NcStore(work, conn)
+        ds = ncs.ds
+        try:
+            for y, m, row, key, days in got:
+                j0, nd = date_index(date(y, m, 1)), days_in_month(y, m)
+                for day, fields in days.items():
+                    dj = j0 + day - 1
+                    for field, (v, q, none) in fields.items():
+                        if v is None:
+                            continue
+                        ds[field][row, dj] = v                       # 確定値で上書き
+                        ds[f"{field}_q"][row, dj] = q if q else FILL_B
+                        if field == "precip" and none:
+                            ds["precip_none"][row, dj] = 1
+                        n_cells += 1
+                if days:
                     ds["date"][j0:j0 + nd] = np.arange(j0, j0 + nd, dtype=np.int32)
                 new_marks.append(key)
-                n_pages += 1
-                if n_pages % 50 == 0:
-                    log(f"  進捗: {n_pages} ページ / {n_cells:,} セル")
-                if args.limit and n_pages >= args.limit:
-                    log(f"--limit {args.limit} に到達。次回実行で続きから再開します")
-                    stop = True
-                    break
-                time.sleep(INTERVAL)
-    except KeyboardInterrupt:
-        log("中断。ここまでの取得分を保存します（次回は続きから）")
-    finally:
-        ncs.close()
-
-    work.replace(NC)
-    # nc の保存が成功してから取得済みマークを記録（クラッシュしても取り直せる）
-    now = datetime.now().isoformat(timespec="seconds")
-    conn.executemany("INSERT OR REPLACE INTO ingest_log VALUES ('etrn_daily', ?, ?)",
-                     [(k, now) for k in new_marks])
-    conn.commit()
+        finally:
+            ncs.close()
+        work.replace(NC)
+        # nc の保存が成功してから取得済みマークを記録（クラッシュしても取り直せる）
+        now = datetime.now().isoformat(timespec="seconds")
+        conn.executemany("INSERT OR REPLACE INTO ingest_log VALUES ('etrn_daily', ?, ?)",
+                         [(k, now) for k in new_marks])
+        conn.commit()
     conn.close()
-    lock.__exit__(None, None, None)
-    log(f"完了: {n_pages} ページ取得 / {n_cells:,} セル書込 / 充足スキップ {n_skip_cov}")
+    log(f"完了: {len(got)} ページ取得 / {n_cells:,} セル書込 / 充足スキップ {n_skip_cov}")
     return 0
 
 

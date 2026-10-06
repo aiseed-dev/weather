@@ -84,7 +84,7 @@ from pathlib import Path
 
 import numpy as np
 
-from weatherlib import jma
+from weatherlib import etrn_worker, jma
 from weatherlib.hourly_normals import normal_at  # noqa: F401  利用側の参照実装
 from weatherlib.stations import BY_CODE, MAIN_STATIONS
 
@@ -393,25 +393,11 @@ def http_fetch(url: str) -> tuple[int, bytes | None]:
         return 0, None
 
 
-ENV_FILE = Path.home() / ".config" / "cloudflare" / "pages.env"
-ETRN_PREFIX = "https://www.data.jma.go.jp/stats/etrn/view/"
 
 
 def load_worker_env() -> tuple[str, str]:
-    """Worker の URL と合言葉（環境変数か ~/.config/cloudflare/pages.env。値は表示しない）。"""
-    if ENV_FILE.is_file():
-        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, _, v = line.partition("=")
-                os.environ.setdefault(k.strip(), v.strip())
-    base = os.environ.get("WEATHER_WORKER_URL", "").rstrip("/")
-    token = os.environ.get("WEATHER_WORKER_TOKEN", "")
-    if not base or not token:
-        raise SystemExit(f"--via-worker には WEATHER_WORKER_URL と WEATHER_WORKER_TOKEN が要ります（環境変数か {ENV_FILE}）")
-    if not base.startswith("http"):
-        base = "https://" + base
-    return base, token
+    """Worker の URL と合言葉（weatherlib/etrn_worker.py。値は表示しない）。"""
+    return etrn_worker.load_env()
 
 
 def worker_fetch(t: "Task", base: str, token: str) -> tuple[int, bytes | None]:
@@ -419,18 +405,7 @@ def worker_fetch(t: "Task", base: str, token: str) -> tuple[int, bytes | None]:
     deb2 の定常の取得（実況・予報）が気象庁に止められる心配をなくす。
     Worker は R2 の etrn/{key} にも置く。戻り値は気象庁の HTTP ステータスと本文。"""
     key = f"{'hourly' if t.kind == 'h' else 'normals_d'}/{t.code}/{t.path.name.removesuffix('.gz')}"
-    data = json.dumps({"page": t.url.removeprefix(ETRN_PREFIX), "key": key}).encode()
-    req = urllib.request.Request(base + "/etrn", data=data, method="POST", headers={
-        "Content-Type": "application/json", "Authorization": f"Bearer {token}",
-        "User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT + 15) as res:
-            return int(res.headers.get("X-Status", res.status)), res.read()
-    except urllib.error.HTTPError as e:
-        st = e.headers.get("X-Status") if e.headers else None
-        return (int(st) if st and st.isdigit() else e.code), None
-    except Exception:
-        return 0, None
+    return etrn_worker.fetch(t.url, key, base, token, user_agent=USER_AGENT, timeout=TIMEOUT + 15)
 
 
 def atomic_write_gz(path: Path, body: bytes) -> None:

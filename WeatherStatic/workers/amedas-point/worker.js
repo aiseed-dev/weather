@@ -66,7 +66,7 @@
 const JMA = "https://www.jma.go.jp/bosai/amedas/data/point";
 // 過去の気象データ（etrn）の表示ページ。/etrn で取るのはここだけ（下の ETRN_PAGE に合うもの）
 const ETRN = "https://www.data.jma.go.jp/stats/etrn/view/";
-const ETRN_PAGE = /^(hourly_s1|hourly_a1|daily_s1|nml_sfc_d)\.php\?[A-Za-z0-9_=&.-]{1,200}$/;
+const ETRN_PAGE = /^(hourly_s1|hourly_a1|daily_s1|daily_a1|nml_sfc_d)\.php\?[A-Za-z0-9_=&.-]{1,200}$/;
 const ETRN_KEY = /^[A-Za-z0-9_\/.-]{1,160}$/;
 const UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)";
 const CONCURRENCY = 6;      // Workers の同時接続上限に合わせる
