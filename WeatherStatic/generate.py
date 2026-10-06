@@ -927,17 +927,24 @@ def build_season_pages(env: Environment, meta: dict, stations: dict, hist: Histo
         if m["tmax"].shape[0] <= rows_idx.max():
             return None
         sel = {v: arr[rows_idx] for v, arr in m.items()}
-        # 資料不足値（品質 4 以下）は日数にも極値にも使わない（気象庁の統計と旧サイトと同じ）。
+        # 資料不足値（品質 4 以下）は極値には使わない（気象庁の統計と旧サイトと同じ）。
         # 品質の無い値（-1。毎時値から求めた直近の日平均など）は使う
-        ok = {}
+        ok, short = {}, {}
         for v, a in sel.items():
             q = hist.matrix(f"{v}_q", start.date(), end.date())
             good = (q[rows_idx] >= 5) | (q[rows_idx] < 0) if q is not None else True
             ok[v] = (a != FILL) & good
+            short[v] = (a != FILL) & ~good
         qual = ok["tmax"].sum(axis=1) >= period_days / 2   # 充足地点のみ集計
 
         def counts(v, th, ge=True):
-            c = (((sel[v] >= th) if ge else (sel[v] < th)) & ok[v]).sum(axis=1)
+            # 日数は気象庁の数え方: 資料不足値でも条件を満たすことが確かな日は数える。
+            # 欠けた時間があっても、最高気温の本当の値は記録より高く、最低気温は記録より
+            # 低いので、最高気温が th 以上（猛暑日・真夏日）と最低気温が th 未満（冬日）は
+            # 確か。平均気温と、最高気温の未満・最低気温の以上は決まらないので数えない。
+            # 気象庁の月別の日数と 2026-10-06 に突き合わせて一致（docs/operations.md）
+            use = ok[v] | short[v] if (v == "tmax" and ge) or (v == "tmin" and not ge) else ok[v]
+            c = (((sel[v] >= th) if ge else (sel[v] < th)) & use).sum(axis=1)
             return np.where(qual, c, -1)
 
         def extreme(v, highest=True):
