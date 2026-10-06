@@ -525,14 +525,14 @@ function cityScene(el, c, ctx) {
             '<div class="big"><span class="cu" data-v="' + (c.temp == null ? '' : c.temp / 10) + '">-</span><small>℃</small></div>' +
             (c.tmax != null || c.tmin != null ? '<div class="obs">' + DAY + 'ここまでの最高 ' + num(c.tmax) + '℃・最低 ' + num(c.tmin) + '℃</div>' : '') +
             '</div></div>',
-        // 2 ページ目は天気予報（気象庁の発表のまま。値と天気の文は手を加えない）。
-        // 天気と、最高・最低の両方。日中の「今日の最低」は予報に無いので今朝の観測を出す
+        // 2 ページ目は天気予報だけ（気象庁の発表のまま。値と天気の文は手を加えない）。
+        // 日中は今日の予想最高（今日の最低は予報に無い）、17 時発表からは朝の予想最低と予想最高
         '<div class="step">' + fcIcon(c.fwcode) + '<div>' +
             '<div class="lab">' + FC_DAYWORD + 'の天気予報（' + esc(c.fissued || '気象庁') + '）</div>' +
             '<div class="fc-text">' + esc(c.fwthr || '予報がありません') + '</div>' +
             '<div class="pair">' + (FC_NIGHT
-                ? tempCell('朝の最低（予想）', c.fmin, c.fnmin) + tempCell('最高（予想）', c.fmax, c.fnmax)
-                : tempCell('最高（予想）', c.fmax, c.fnmax) + tempCell('朝の最低（観測）', c.tmin, c.ntmin)) +
+                ? tempCell('朝の予想最低気温', c.fmin, c.fnmin) + tempCell('予想最高気温', c.fmax, c.fnmax)
+                : tempCell('予想最高気温', c.fmax, c.fnmax)) +
             '</div></div></div>',
         '<div class="step">' + clothesHtml(c) + '</div>'
     ];
