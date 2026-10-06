@@ -44,6 +44,8 @@
 | `/summer/…/{年}` `/winter/…/{年}` | 8 × 年 | 過去の年の同じページ（1881 年〜。冬は寒候年） | generate（`build_past_seasons`） | 年のデータが変わったとき |
 | `/temperature/summerday/{a〜d}{年月日}` | 枠 1 | その日の猛暑日などの地点（任意の日） | generate（枠）＋ ブラウザ | データは毎時 |
 | `/temperature/summermonth/{a〜d}/{月}` | 枠 1 | 月の日ごとの地点数（2010 年〜） | 同上 | 同上 |
+| `/temperature/winterday/{a〜c}{年月日}` | 枠 1（日と共用） | その日の冬日（a）・平均気温 0℃未満（b）・真冬日（c）の地点。気温の低い順 | 同上 | 同上 |
+| `/temperature/wintermonth/{月}`・`/temperature/wintermonth1/{月}` | 枠 1（月と共用） | 月の日ごとの地点数。wintermonth は冬日と平均気温 0℃未満の 2 表、wintermonth1 は真冬日（旧サイトと同じ分け方） | 同上 | 同上 |
 | `/monthly/monthly(l)/{年月}` | 枠 1 | 月の平均気温のランキング（任意の月） | 同上 | 同上 |
 | `/climate/chart/{地点}` | 896 | 雨温図（平年値の気温と降水量） | generate | 毎時 |
 | `/stations/jp/{地点}` | 896 | 地点別の気候値・30 日推移・平年値 | generate | 毎時 |
