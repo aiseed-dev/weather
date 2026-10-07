@@ -6,10 +6,9 @@
      「1 都市を見つめる」にすると、選んだ都市の情報を順に繰り返す。場面・都市・速さは
      閲覧者が選んでブラウザに保存できる。気温と天気は /data/current.json で 10 分ごとに更新
   2. このサイトでわかること（案内のカード）
-  3. 主要都市の今日の記録と東京の 30 日（広い画面だけ。スマホでは出さない）
 
   コンテキスト: now_cities（官署 57 地点。北から）/ now_default / counts / summer / hour0 /
-                cities（主要 10 都市の最高・最低と記録）/ graph_svg / japan_map / temp_anchors /
+                japan_map / temp_anchors /
                 clothes_bands / current_time / wthr_time / anom_anchors / normals_date
                 （now_cities の ncurve: 時別の平年。地図を今の気温の平年差にする）
 #}
@@ -139,7 +138,7 @@
     .stage noscript p { padding: 20px; }
 
     /* ---------- このサイトでわかること ---------- */
-    .guide h3, .detail h3 { font-size: 18px; margin: 0 0 12px; }
+    .guide h3 { font-size: 18px; margin: 0 0 12px; }
     .guide h3.guide-sub { font-size: 15px; margin: 22px 0 10px; }
     .guide-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
     .gcard { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--border);
@@ -151,14 +150,6 @@
     .gcard b { display: block; font-size: 15px; color: var(--accent-dark); margin-bottom: 3px; }
     .gcard span.d { font-size: 13px; color: var(--muted); line-height: 1.55; }
 
-    /* ---------- 主要都市の今日の記録（広い画面だけ） ---------- */
-    .detail { margin-top: 30px; }
-    .detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 460px); gap: 26px; align-items: start; }
-    .ranktable { border-collapse: collapse; border: solid #aaa 1px; empty-cells: show; margin-top: 8px; }
-    .ranktable th { border: solid #aaa 1px; padding: 5px; text-align: center; font-size: 90%; }
-    .ranktable td { border: solid #aaa 1px; padding: 2px 6px; font-size: 90%; white-space: nowrap; }
-    .wright { text-align: right; }
-    .wdate { font-size: 80%; font-weight: normal; }
     .disclaimer { font-size: 12px; color: var(--muted); margin-top: 26px; line-height: 1.7; }
 
     @media (max-width: 860px) {
@@ -179,7 +170,6 @@
         .gcard .ic { width: 30px; height: 30px; font-size: 17px; }
         .gcard b { font-size: 13px; margin: 0; line-height: 1.35; }
         .gcard span.d { display: none; }
-        .detail-grid { grid-template-columns: 1fr; }
     }
     @media (prefers-reduced-motion: reduce) {
         .scene, .scene.leaving, .sc-map .dot, .sc-map .lbl, .hotcold div, .num, .city-name,
@@ -254,84 +244,6 @@
     <h3 class="guide-sub">同じ作者のプロジェクト</h3>
     <div class="guide-grid">
         <a class="gcard" href="https://aiai.aiseed.dev/"><span class="ic">🌱</span><span><b>aiai — AI 時代の学び方</b><span class="d">自分の AI に手引きを読ませて、長所を知り、学ぶことを決め、小さなアプリを作って仕事を始める。写真や映像を読む AI で、畑や店の現場の判断も助ける。</span></span></a>
-    </div>
-</section>
-
-<section class="detail pc-only">
-    <h3>主要都市の今日の記録 <span class="wdate">({{ now | jikan }}現在)</span></h3>
-    {% if hour0 %}<p style="color: #d9534f;">0 時台は、昨日のデータを表示しています。</p>{% endif %}
-    <div class="detail-grid">
-        <div>
-            <div class="table-responsive">
-                <table class="ranktable">
-                    {% if summer %}
-                    <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日" if hour0 else "今日" }}の<br/>最高気温</th><th rowspan="2">最高気温<br/>の平年値</th><th colspan="4">{{ "一昨日" if days_diff >= 2 else "昨日" }}までの記録</th></tr>
-                    <tr><th>最高気温</th><th>起日</th><th>猛暑日<br/>の日数</th><th>真夏日<br/>の日数</th></tr>
-                    {% for c in cities %}
-                    <tr>
-                        <td><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>
-                        <td class="wright" style="background-color: {{ c.tmax_bg }}; color: #222;">{{ c.tmax | ondo }}</td>
-                        <td class="wright">{{ c.normal_tmax | ondo }}</td>
-                        <td class="wright">{{ c.hs_val | ondo }}</td>
-                        <td class="wright">{{ c.hs_date | jdate }}</td>
-                        <td class="wright">{{ c.counts.moushobi }}日</td>
-                        <td class="wright">{{ c.counts.manatsubi }}日</td>
-                    </tr>
-                    {% endfor %}
-                    {% else %}
-                    <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日" if hour0 else "今日" }}の<br/>最高気温</th><th rowspan="2">最高気温<br/>の平年値</th><th colspan="3">今季の{{ "一昨日" if days_diff >= 2 else "昨日" }}までの記録</th></tr>
-                    <tr><th>日最高気温<br/>の最低</th><th>起日</th><th>真冬日<br/>の日数</th></tr>
-                    {% for c in cities %}
-                    <tr>
-                        <td><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>
-                        <td class="wright" style="background-color: {{ c.tmax_bg }}; color: #222;">{{ c.tmax | ondo }}</td>
-                        <td class="wright">{{ c.normal_tmax | ondo }}</td>
-                        <td class="wright">{{ c.hs_val | ondo }}</td>
-                        <td class="wright">{{ c.hs_date | jdate }}</td>
-                        <td class="wright">{{ c.counts.mafuyubi }}日</td>
-                    </tr>
-                    {% endfor %}
-                    {% endif %}
-                </table>
-            </div>
-            <div class="table-responsive">
-                <table class="ranktable" style="margin-top: 16px;">
-                    {% if summer %}
-                    <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日" if hour0 else "今朝" }}の<br/>最低気温</th><th rowspan="2">最低気温の<br/>平年値</th><th colspan="3">{{ "一昨日" if days_diff >= 2 else "昨日" }}までの記録</th></tr>
-                    <tr><th>日最低気<br/>温の最高</th><th>起日</th><th>最低気温<br/>25℃以上<br/>の日数</th></tr>
-                    {% for c in cities %}
-                    <tr>
-                        <td><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>
-                        <td class="wright" style="background-color: {{ c.tmin_bg }}; color: #222;">{{ c.tmin | ondo }}</td>
-                        <td class="wright">{{ c.normal_tmin | ondo }}</td>
-                        <td class="wright">{{ c.ls_val | ondo }}</td>
-                        <td class="wright">{{ c.ls_date | jdate }}</td>
-                        <td class="wright">{{ c.counts.nettaiya }}日</td>
-                    </tr>
-                    {% endfor %}
-                    {% else %}
-                    <tr><th rowspan="2">都市名</th><th rowspan="2">{{ "昨日" if hour0 else "今朝" }}の<br/>最低気温</th><th rowspan="2">最低気温の<br/>平年値</th><th colspan="3">今季の{{ "一昨日" if days_diff >= 2 else "昨日" }}までの記録</th></tr>
-                    <tr><th>最低気温</th><th>起日</th><th>冬日<br/>の日数</th></tr>
-                    {% for c in cities %}
-                    <tr>
-                        <td><a href="/Stations/JP/{{ c.place }}">{{ c.name }}</a></td>
-                        <td class="wright" style="background-color: {{ c.tmin_bg }}; color: #222;">{{ c.tmin | ondo }}</td>
-                        <td class="wright">{{ c.normal_tmin | ondo }}</td>
-                        <td class="wright">{{ c.ls_val | ondo }}</td>
-                        <td class="wright">{{ c.ls_date | jdate }}</td>
-                        <td class="wright">{{ c.counts.fuyubi }}日</td>
-                    </tr>
-                    {% endfor %}
-                    {% endif %}
-                </table>
-            </div>
-        </div>
-        <div>
-            <h4 style="margin: 0 0 6px;">東京の過去 30 日間の気温</h4>
-            {{ graph_svg | safe }}
-            <p style="font-size:80%; color: var(--muted); margin:2px 0 0;">
-                <span style="color:#F92500;">━ 最高気温</span>　<span style="color:#0C00CC;">━ 最低気温</span>　細線は平年値</p>
-        </div>
     </div>
 </section>
 

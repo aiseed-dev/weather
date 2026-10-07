@@ -472,61 +472,7 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
                stations: dict, hist: History) -> None:
     now = datetime.fromisoformat(meta["source_time"])
     summer = is_summer(now)
-    start, end = season_period(now)
-    st = stations["stations"]
     current = load_current() or {"stations": {}}
-
-    cities = []
-    for code in HOME_CITIES:
-        rec = st.get(str(code))
-        t = today.get(code)
-        if rec is None or t is None:
-            continue
-        nml_tmax = normal_daily(code, "tmax", now.date())
-        nml_tmin = normal_daily(code, "tmin", now.date())
-        c = hist.day_counts(rec["row"], start.date(), end.date())
-        if summer:
-            hs_val, hs_date = t.get("year_tmax"), t.get("year_tmax_date")
-            ls_val, ls_date = hist.extreme("tmin", rec["row"], start.date(), end.date(), True)
-        else:
-            hs_val, hs_date = hist.extreme("tmax", rec["row"], start.date(), end.date(), False)
-            ls_val, ls_date = t.get("year_tmin"), t.get("year_tmin_date")
-        cur = current["stations"].get(str(code), {})
-        cities.append({
-            "code": code, "amedas": rec["amedas"],
-            "lat": rec["lat"], "lon": rec["lon"],
-            "name": rec["name"], "place": station_slug(rec),
-            "cur_temp": cur.get("temp"),
-            "cur_wthr": cur.get("wthr"),
-            "cur_wcode": cur.get("wcode"),
-            "tmax": t.get("tmax"),
-            "tmax_bg": bcolor(t["tmax"] - nml_tmax)
-                       if (t.get("tmax") is not None and nml_tmax is not None) else "#FFFFFF",
-            "tmin": t.get("tmin"),
-            "tmin_bg": bcolor(t["tmin"] - nml_tmin)
-                       if (t.get("tmin") is not None and nml_tmin is not None) else "#FFFFFF",
-            "normal_tmax": nml_tmax, "normal_tmin": nml_tmin,
-            "hs_val": hs_val, "hs_date": hs_date,
-            "ls_val": ls_val, "ls_date": ls_date,
-            "counts": c,
-        })
-
-    # 東京の直近 31 日グラフ（Highcharts 用。値は ×10、欠測 null）
-    tokyo = st.get("47662")
-    g_end = (now - timedelta(days=1, hours=3)).date()
-    g_start = g_end - timedelta(days=31)
-    graph = {"start": g_start, "ht": [], "lt": [], "n_ht": [], "n_lt": []}
-    if tokyo:
-        graph["ht"] = hist.series("tmax", tokyo["row"], g_start, g_end)
-        graph["lt"] = hist.series("tmin", tokyo["row"], g_start, g_end)
-        nml = load_normals(47662) or {"daily": {}}
-        d = g_start
-        while d <= g_end:
-            mo = nml["daily"].get(str(d.month), {})
-            for key, elem in (("n_ht", "tmax"), ("n_lt", "tmin")):
-                arr = mo.get(elem, [])
-                graph[key].append(arr[d.day - 1] if d.day - 1 < len(arr) else None)
-            d += timedelta(days=1)
 
     # トップの「現在の天気と気温」に出せる都市（官署 57 地点、北から）。表示する都市は
     # 閲覧者が選んでブラウザに保存する。初期値は HOME_CITIES
@@ -611,21 +557,10 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
             "fwthr": (f.get("weather") or "").replace(" ", "　"), "fwcode": f.get("wcode"),
         })
 
-    from weatherlib.svgchart import timeseries_svg
-    graph_svg = timeseries_svg(
-        "東京の過去30日間の気温の推移", g_start,
-        [{"label": "最高気温", "color": "#F92500", "values": graph["ht"], "width": 1.6, "r": 2.2},
-         {"label": "最低気温", "color": "#0C00CC", "values": graph["lt"], "width": 1.6, "r": 2.2},
-         {"label": "最高気温平年値", "color": "#f5a898", "values": graph["n_ht"], "width": 1.2},
-         {"label": "最低気温平年値", "color": "#9fa8e8", "values": graph["n_lt"], "width": 1.2}])
-
     context = {
         "now": now, "hour0": now.hour == 0,
         "summer": summer, "season": is_season(now),
         "counts": meta["counts"],
-        "period_end": end, "days_diff": (now - end).days,
-        "cities": cities,
-        "graph": graph, "graph_svg": graph_svg,
         "temp_anchors": TEMP_ANCHORS, "anom_anchors": ANOM_ANCHORS, "clothes_bands": CLOTHES_BANDS,
         "now_cities": now_cities, "now_default": HOME_CITIES,
         "normals_date": amedas_time.date().isoformat() if amedas_time else None,
