@@ -1140,6 +1140,8 @@ def build_past_seasons(env: Environment, meta: dict, stations: dict, hist: Histo
         h.update(f.read_bytes())
     for fn in (build_season_pages, season_stations, closed_stations):
         h.update(inspect.getsource(fn).encode())
+    # 全ページに入る物（アクセス解析を入れたか）が変われば、過去の年のページも作り直す
+    h.update(json.dumps(env.globals.get("kaiseki"), sort_keys=True).encode())
     key = h.hexdigest()
     try:
         old = json.loads(state_p.read_text(encoding="utf-8"))
