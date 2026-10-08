@@ -192,7 +192,9 @@ URL との互換」）。deb2 は作って公開する側に専念し、deb2 が
 
 ### アクセス解析（kaiseki）を入れる・止める
 
-受け口（aiai-pro の koukoku/kaiseki/server.py）は `analytics.aiseed.dev` で動いている（2026-10-07 確認、aiai 側の管理）。
+受け口は deb2 の公開サーバーの `analytics.aiseed.dev`（2026-10-07 確認。天気のサイトの解析はここで処理し、
+aiai の分は Google Cloud で別に処理する、と 2026-10-08 に発注者が決めた）。受け口とスクリプトの開発は
+aiai-tools（旧 aiai-pro。`kaiseki/`）で行う。
 deb2 の `~/.config/weather-site/kaiseki.env` に次の 1 行があると、次の生成から全ページにスクリプトが入り、
 `/kaiseki.js` と知らせのページ `/kaiseki/` が置かれ、プライバシーポリシーにも節が出る（環境変数
 `WEATHER_KAISEKI_TO` でもよく、そちらが先）。2026-10-07 に置いた。
