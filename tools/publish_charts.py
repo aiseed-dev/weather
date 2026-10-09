@@ -6,7 +6,8 @@
 設計: docs/forecast-charts.md。ECMWF(既定)/GFS の決定論チャート + ECMWF ENS の
 降水アンサンブル 3 製品を PNG で書き出す。描画はアプリの figures/ を再利用。
 
-  ECMWF: bulk GRIB（publish_forecast.py と grib-cache を共用可能）
+  ECMWF: bulk GRIB（{out}/grib-cache-charts/ にラン別で置き、描き終えたら消す。
+         publish_forecast.py の grib-cache とは別物で共用していない）
   GFS  : AWS noaa-gfs-bdp-pds の .idx から必要フィールドだけ Range 取得し、
          変数名を ECMWF 流に正規化した NetCDF に変換 → 同じ描画経路
   ENS  : GCS ミラー enfo の .index から tp×全メンバーを Range 取得
@@ -30,6 +31,7 @@ import argparse
 import io
 import json
 import logging
+import shutil
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -245,13 +247,21 @@ def finalize(png: bytes, caption: str, attribution: str) -> bytes:
 # ---------------------------------------------------------------- メイン
 
 def render_model(model: str, run: datetime, steps: "list[int]", out: Path,
-                 grib_cache: Path) -> "list[int]":
+                 grib_cache: Path, *, keep_grib: bool = False) -> "list[int]":
+    """1 モデル分を描く。
+
+    ディスクの決まり: 取得した GRIB/NetCDF はそのステップを描き終えたら消す
+    （ECMWF bulk は 1 本 約150MB × 65 ステップ ≈ 10GB になるので残せない）。
+    キャッシュはラン別ディレクトリに置く。以前はステップ名だけで置いていたため、
+    次のランが前のランの GRIB をそのまま使い回していた（2026-10-09 修正）。
+    """
+
     from aiseed_weather.figures.render_pool import render_layer
     from aiseed_weather.figures.regions import JAPAN, ARCTIC
     from aiseed_weather.products.catalog import field_by_key
     regions = {"japan": JAPAN, "arctic": ARCTIC}
     done_steps = []
-    work = grib_cache / model
+    work = grib_cache / model / f"{run:%Y%m%d%H}"
     work.mkdir(parents=True, exist_ok=True)
     for step in steps:
         if model == "ecmwf":
@@ -260,9 +270,11 @@ def render_model(model: str, run: datetime, steps: "list[int]", out: Path,
             if not path.exists() or path.stat().st_size == 0:
                 http_get(_bulk_url("google", run, step), path)
             path_for = {"sfc": path, "pl": path}
+            step_files = [path]
         else:
             sfc_nc, pl_nc = fetch_gfs_step(run, step, work)
             path_for = {"sfc": sfc_nc, "pl": pl_nc}
+            step_files = [sfc_nc, pl_nc]
         run_id = f"{model.upper()} {run:%Y-%m-%d %H}Z +{step}h"
         for product, layer, region_key, overlay in DET_PRODUCTS:
             target = out / "charts" / model / product / f"{step:03d}.png"
@@ -278,8 +290,11 @@ def render_model(model: str, run: datetime, steps: "list[int]", out: Path,
             logger.info("%s step %3dh: 海外向け %d 枚", model, step, n_world)
         done_steps.append(step)
         logger.info("%s step %3dh: %d 製品", model, step, len(DET_PRODUCTS))
-        if model == "ecmwf":
-            pass  # bulk GRIB は publish_forecast と共用のため残す
+        if not keep_grib:
+            for f in step_files:
+                f.unlink(missing_ok=True)
+    if not keep_grib:
+        shutil.rmtree(work, ignore_errors=True)
     return done_steps
 
 
@@ -320,8 +335,10 @@ def render_world(model: str, run: datetime, step: int, path_for: dict, out: Path
 
 
 def render_ens_products(run: datetime, out: Path, grib_cache: Path,
-                        windows: "list[int]") -> "list[int]":
-    work = grib_cache / "ens"
+                        windows: "list[int]", *, keep_grib: bool = False) -> "list[int]":
+    """ENS 降水 3 製品。中間の .npy（51 メンバー × 全球 ≈ 212MB/ステップ）は
+    ラン別ディレクトリに置き、描き終えたら消す。"""
+    work = grib_cache / "ens" / f"{run:%Y%m%d%H}"
     work.mkdir(parents=True, exist_ok=True)
     lons = np.arange(0, 360, 0.25, dtype=np.float32)
     lats = np.arange(90, -90.25, -0.25, dtype=np.float32)
@@ -349,6 +366,13 @@ def render_ens_products(run: datetime, out: Path, grib_cache: Path,
                 ATTR["ens"]))
         done.append(w_end)
         logger.info("ens 窓 T+%d..%dh: 3 製品", w_end - 24, w_end)
+        if not keep_grib:
+            # 次の窓の基準に使う w_end だけ残し、それより前は消す
+            for old_npy in work.glob("ens-tp-*.npy"):
+                if int(old_npy.stem.split("-")[-1]) < w_end:
+                    old_npy.unlink()
+    if not keep_grib:
+        shutil.rmtree(work, ignore_errors=True)
     return done
 
 
@@ -359,6 +383,8 @@ def main() -> int:
     ap.add_argument("--model", choices=["both", "ecmwf", "gfs", "none"], default="both")
     ap.add_argument("--ens", action=argparse.BooleanOptionalAction, default=True)
     ap.add_argument("--run", help="YYYYMMDDHH（省略時は各モデルの最新完全ラン）")
+    ap.add_argument("--keep-grib", action="store_true",
+                    help="取得した GRIB/中間ファイルを残す（デバッグ用。既定は描画後に削除）")
     args = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -377,7 +403,7 @@ def main() -> int:
         else:
             run = latest_complete_run("google") if model == "ecmwf" else latest_gfs_run()
         logger.info("%s ラン: %s", model, f"{run:%Y-%m-%d %H}Z")
-        done = render_model(model, run, steps, out, grib_cache)
+        done = render_model(model, run, steps, out, grib_cache, keep_grib=args.keep_grib)
         latest["models"][model] = {
             "run": f"{run:%Y-%m-%dT%H}Z", "steps": done,
             "products": [p for p, *_ in DET_PRODUCTS], "attribution": ATTR[model]}
@@ -398,10 +424,13 @@ def main() -> int:
         windows = [w for w in ENS_STEPS if args.steps == "all" or w in steps or True][:len(ENS_STEPS)]
         if args.steps != "all":
             windows = [w for w in ENS_STEPS if w <= max(steps)] or [24]
-        done = render_ens_products(run, out, grib_cache, windows)
+        done = render_ens_products(run, out, grib_cache, windows, keep_grib=args.keep_grib)
         latest["models"]["ens"] = {
             "run": f"{run:%Y-%m-%dT%H}Z", "steps": done,
             "products": ENS_PRODUCTS, "attribution": ATTR["ens"]}
+
+    if not args.keep_grib:
+        shutil.rmtree(grib_cache, ignore_errors=True)   # 取り残しがあっても次のランに持ち越さない
 
     lj = out / "charts" / "latest.json"
     lj.parent.mkdir(parents=True, exist_ok=True)

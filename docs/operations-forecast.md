@@ -47,6 +47,18 @@ ECMWF 数値予報の配信、観測データの配布、世界天気の取得�
 
 ## 数値予報
 
+### ディスク（ECMWF の生データはサーバーに溜めない）
+
+| 置き場所 | 中身 | 保持 |
+|---|---|---|
+| `~/wxpub/grib-cache/{run}/` | publish_forecast の bulk GRIB（150MB × 65） | パック後に削除。core→ext の間だけ最大 約10GB |
+| `~/wxpub/grib-cache-charts/{model}/{run}/` | publish_charts の bulk GRIB・GFS NetCDF・ENS .npy | **ステップを描き終えるたびに削除**、ラン終了時にディレクトリごと削除（2026-10-09 修正。それ以前は 10GB+2GB が残り続け、次のランでも使い回していた） |
+| `~/wxpub/forecast/`、`~/wxpub/charts/` | 配信する生成物（R2 へ sync） | forecast は `--runs-keep 2`、charts は最新 1 ラン上書き |
+| デスクトップアプリ `~/.cache/aiseed-weather/ecmwf/` | 利用者の端末側のキャッシュ | サーバーには無い |
+
+一時的なピークは publish_forecast の 約10GB。これを下回る空きしか無い環境では
+`--tier core` だけにする（約2.7GB）。
+
 `publish_forecast` と `publish_charts` は grib-cache を別に持つが、参照する
 bulk GRIB は同じ。帯域が気になる場合は charts の `--out` を forecast と
 同じにしてよい（安全）。
