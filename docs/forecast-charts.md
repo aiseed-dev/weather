@@ -85,3 +85,31 @@ tools/publish_charts.py                             /Forecast/ ページ
 1. 製品セットは上の 9 つでよいか（旧サイト同等＋wind500。追加希望があれば）
 2. 既定モデルは ECMWF でよいか（GFS を既定にもできる）
 3. 極域は北極のみでよいか（旧サイトに南極はなかった認識）
+
+## 海外向けセット（2026-10-09 追加、time-j.net worldtime 用）
+
+worldtime（世界時計）の都市ページから、その都市の地域の天気図へ導線を張るための
+セット。**日本の排他的経済水域（EEZ）を空白にして描く**。日本向けの予報を
+Web に出さないという線引き（worldtime 設計書 K12/K13）を図でも守るため。
+
+| 項目 | 内容 |
+|---|---|
+| 領域 | 全球、アジア、ヨーロッパ、アフリカ、北米、南米、オセアニア（figures/regions.py に追加） |
+| 製品 | msl-precip、t2m、wind10m |
+| モデル | ECMWF のみ（GFS 比較は日本周辺セットだけ） |
+| ステップ | 0–240h の 6 時間刻み（41） → 7 × 3 × 41 = **861 枚/ラン** |
+| 出力 | `charts/ecmwf/world/{region}/{product}/{step:03d}.png`、`latest.json` の `models.ecmwf.world` |
+| 空白 | `figures/_blank.py`（`jp_eez`）。日本の EEZ ＋ 重複主張域（千島・尖閣・竹島）＋ 日韓共同開発区域をすべて含める（安全側、ユーザー決定）。境界の外側に 1 格子（0.25°）の余白 |
+| 元データ | Marine Regions World EEZ v12（Flanders Marine Institute、CC BY 4.0）。`figures/_jp_eez_claims.geojson` に間引いて同梱（出典・ライセンスはファイル内） |
+
+仕組み: 全描画経路が最後に `_coastlines.apply_coastlines` を通るので、そこで
+「有効中の空白マスク」を塗ってから海岸線を乗せる。有効化は
+`with blanking("jp_eez"):`（publish_charts.render_world だけが使う。アプリは使わない）。
+**マスクの無い領域で空白を有効にすると描画は例外で止まる**。空白なしの図が黙って出ることはない。
+
+前計算（領域を増やしたとき・EEZ を更新したとき）:
+
+```bash
+PYTHONPATH=src python -m aiseed_weather.figures._precompute_coastlines   # 海岸線・陸（cartopy 無しなら pyshp + ~/.cache の Natural Earth）
+PYTHONPATH=src python -m aiseed_weather.figures._precompute_eez_blank    # 空白マスク
+```

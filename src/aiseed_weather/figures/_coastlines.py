@@ -21,6 +21,8 @@ from pathlib import Path
 
 import numpy as np
 
+from aiseed_weather.figures._blank import apply_active_blank
+
 _CACHE_PATH = Path(__file__).parent / "_coastline_masks.npz"
 
 
@@ -52,6 +54,11 @@ def apply_coastlines(rgb: np.ndarray, region_key: str) -> None:
     precomputed mask (e.g. data at non-0.25° resolution). Both are
     expected fallbacks rather than errors.
     """
+    # Blank-out (e.g. Japan EEZ for the overseas chart set) goes under
+    # the coastline so geography stays readable while data is hidden.
+    # No-op unless a blank is active (see _blank.blanking).
+    apply_active_blank(rgb, region_key)
+
     mask = _MASKS.get(region_key)
     if mask is None:
         return

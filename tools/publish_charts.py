@@ -16,6 +16,12 @@
 
 出力: {out}/charts/{model}/{product}/{step:03d}.png + charts/latest.json
 （最新 1 ランのみ保持・上書き）
+
+海外向けセット（2026-10-09、time-j.net worldtime の都市ページから参照）:
+  {out}/charts/{model}/world/{region}/{product}/{step:03d}.png
+  全球＋大陸別 7 領域 × 3 製品、6 時間刻み、ECMWF のみ。**日本の排他的経済水域
+  （重複主張域・共同開発区域を含む）を空白にして描く**（figures/_blank.py）。
+  空白マスクの無い領域で描こうとすると例外で止まり、空白なしの図は出ない。
 """
 
 from __future__ import annotations
@@ -45,6 +51,20 @@ UA = {"User-Agent": "aiseed-weather-charts (+https://github.com/aiseed-dev/weath
 GFS_BASE = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 ENS_STEPS = list(range(24, 241, 24))  # 24h 窓の終端
 UPSCALE_MIN_W = 800   # これより小さい画像は 3 倍に拡大（ユーザー決定: 大きく見やすく）
+
+# 海外向け製品セット（worldtime）。日本の EEZ を空白にする（_blank.py の jp_eez）。
+WORLD_REGIONS = ("global", "asia", "europe", "africa",
+                 "north_america", "south_america", "oceania")
+WORLD_PRODUCTS = (            # (product, layer_key, msl_overlay)
+    ("msl-precip", "tp", True),
+    ("t2m", "t2m", True),
+    ("wind10m", "wind10m", False),
+)
+WORLD_MODELS = ("ecmwf",)     # 比較用の GFS は海外セットでは描かない（枚数を抑える）
+WORLD_STEP_HOURS = 6          # 0–240h を 6 時間刻み（41 ステップ）
+WORLD_BLANK = "jp_eez"
+WORLD_BLANK_NOTE = "日本のEEZは非表示"
+ATTR_EEZ = "EEZ: Flanders Marine Institute, Marine Regions v12 (CC BY 4.0)"
 
 # 製品カタログ: (product, layer_key, region_key, msl_overlay)
 DET_PRODUCTS = [
@@ -253,11 +273,50 @@ def render_model(model: str, run: datetime, steps: "list[int]", out: Path,
                                msl_overlay_path=path_for["sfc"] if overlay else None)
             target.write_bytes(finalize(
                 png, f"{product}  {run:%Y-%m-%d %H}Z  T+{step}h", ATTR[model]))
+        if model in WORLD_MODELS and step % WORLD_STEP_HOURS == 0:
+            n_world = render_world(model, run, step, path_for, out, run_id)
+            logger.info("%s step %3dh: 海外向け %d 枚", model, step, n_world)
         done_steps.append(step)
         logger.info("%s step %3dh: %d 製品", model, step, len(DET_PRODUCTS))
         if model == "ecmwf":
             pass  # bulk GRIB は publish_forecast と共用のため残す
     return done_steps
+
+
+def render_world(model: str, run: datetime, step: int, path_for: dict, out: Path,
+                 run_id: str) -> int:
+    """海外向けセットを 1 ステップ分描く。日本の EEZ を空白にする。
+
+    blanking() の中では、空白マスクの無い領域は描画が例外で止まる
+    （_blank.apply_blank）。空白なしの図が黙って出ることはない。
+    """
+    from aiseed_weather.figures._blank import blanking, has_mask
+    from aiseed_weather.figures.regions import by_key
+    from aiseed_weather.figures.render_pool import render_layer
+    from aiseed_weather.products.catalog import field_by_key
+
+    for region_key in WORLD_REGIONS:
+        if not has_mask(WORLD_BLANK, region_key):
+            raise RuntimeError(
+                f"空白マスク {WORLD_BLANK}/{region_key} がありません。"
+                "python -m aiseed_weather.figures._precompute_eez_blank を実行してください")
+    n = 0
+    with blanking(WORLD_BLANK):
+        for region_key in WORLD_REGIONS:
+            region = by_key(region_key)
+            for product, layer, overlay in WORLD_PRODUCTS:
+                target = out / "charts" / model / "world" / region_key / product / f"{step:03d}.png"
+                target.parent.mkdir(parents=True, exist_ok=True)
+                kind = field_by_key(layer).kind
+                png = render_layer(path_for[kind], region, run_id=run_id, layer_key=layer,
+                                   msl_overlay_path=path_for["sfc"] if overlay else None)
+                target.write_bytes(finalize(
+                    png,
+                    f"{region.label.split(' / ')[-1]}  {product}  {run:%Y-%m-%d %H}Z  "
+                    f"T+{step}h  {WORLD_BLANK_NOTE}",
+                    f"{ATTR[model]} / {ATTR_EEZ}"))
+                n += 1
+    return n
 
 
 def render_ens_products(run: datetime, out: Path, grib_cache: Path,
@@ -322,6 +381,14 @@ def main() -> int:
         latest["models"][model] = {
             "run": f"{run:%Y-%m-%dT%H}Z", "steps": done,
             "products": [p for p, *_ in DET_PRODUCTS], "attribution": ATTR[model]}
+        if model in WORLD_MODELS:
+            latest["models"][model]["world"] = {
+                "regions": list(WORLD_REGIONS),
+                "products": [p for p, *_ in WORLD_PRODUCTS],
+                "steps": [s for s in done if s % WORLD_STEP_HOURS == 0],
+                "path": "charts/{model}/world/{region}/{product}/{step:03d}.png",
+                "blank": "日本の排他的経済水域(重複主張域・共同開発区域を含む)は表示していません",
+                "attribution": f"{ATTR[model]} / {ATTR_EEZ}"}
 
     if args.ens:
         if args.run:

@@ -60,6 +60,18 @@ NORTH_AMERICA = Region(
     "north_america", "北米 / N. America", "platecarree", (-170.0, -50.0, 15.0, 75.0),
 )
 
+# Continental presets for the overseas chart set (time-j.net worldtime
+# city pages link to the chart for the city's area). Extents are plain
+# plate-carrée boxes chosen so each continent fits with synoptic
+# context; the Japan EEZ blank (_blank.py) applies on top when the
+# publisher renders these.
+ASIA = Region("asia", "アジア / Asia", "platecarree", (25.0, 150.0, -10.0, 60.0))
+AFRICA = Region("africa", "アフリカ / Africa", "platecarree", (-25.0, 60.0, -40.0, 40.0))
+SOUTH_AMERICA = Region(
+    "south_america", "南米 / S. America", "platecarree", (-95.0, -30.0, -60.0, 15.0),
+)
+OCEANIA = Region("oceania", "オセアニア / Oceania", "platecarree", (100.0, 180.0, -50.0, 0.0))
+
 
 PRESETS: tuple[Region, ...] = (
     GLOBAL,
@@ -71,6 +83,10 @@ PRESETS: tuple[Region, ...] = (
     NORTH_ATLANTIC,
     EUROPE,
     NORTH_AMERICA,
+    ASIA,
+    AFRICA,
+    SOUTH_AMERICA,
+    OCEANIA,
 )
 
 

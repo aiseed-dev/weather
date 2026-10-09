@@ -45,14 +45,88 @@ _POLAR_OUT_SIZE = 800
 _POLAR_BOUNDARY_COLAT_DEG = 60.0
 
 
-def _extract_lonlat_polylines(resolution: str = "110m"):
-    from cartopy.io.shapereader import Reader, natural_earth
+_NE_CACHE = Path.home() / ".cache" / "aiseed-weather" / "natural_earth"
+_NE_URL = "https://naturalearth.s3.amazonaws.com/{res}_{cat}/ne_{res}_{name}.zip"
 
-    shp_path = natural_earth(
-        resolution=resolution, category="physical", name="coastline",
-    )
-    reader = Reader(shp_path)
-    for geom in reader.geometries():
+
+def _natural_earth_path(resolution: str, category: str, name: str) -> Path:
+    """Shapefile path via cartopy when installed, else a pyshp-readable
+    copy fetched once into ~/.cache (the dev venv on this machine has no
+    cartopy; the conda env on the server does. Same public-domain data)."""
+    try:
+        from cartopy.io.shapereader import natural_earth
+        return Path(natural_earth(resolution=resolution, category=category, name=name))
+    except ImportError:
+        pass
+    shp = _NE_CACHE / f"ne_{resolution}_{name}.shp"
+    if not shp.exists():
+        import io
+        import urllib.request
+        import zipfile
+        _NE_CACHE.mkdir(parents=True, exist_ok=True)
+        url = _NE_URL.format(res=resolution, cat=category, name=name)
+        with urllib.request.urlopen(url, timeout=120) as res:
+            zipfile.ZipFile(io.BytesIO(res.read())).extractall(_NE_CACHE)
+    return shp
+
+
+def _iter_geometries(shp_path: Path):
+    """Yield geometries with a cartopy/shapely-like interface.
+
+    With cartopy: shapely geometries as before. Without: pyshp records
+    wrapped so the two extractors below see the same ``geom_type`` /
+    ``coords`` / ``exterior`` shape. Shapefile polygon rings are
+    clockwise for outer rings and counter-clockwise for holes.
+    """
+    try:
+        from cartopy.io.shapereader import Reader
+        yield from Reader(str(shp_path)).geometries()
+        return
+    except ImportError:
+        pass
+    import shapefile  # pyshp
+
+    class _Ring:
+        def __init__(self, pts):
+            self.coords = pts
+
+    class _Geom:
+        def __init__(self, kind, parts):
+            self.geom_type = kind
+            self._parts = parts
+            if kind == "Polygon":
+                self.exterior = _Ring(parts[0])
+                self.interiors = [_Ring(p) for p in parts[1:]]
+            elif kind == "MultiPolygon":
+                self.geoms = [_Geom("Polygon", [p]) for p in parts]
+            elif kind == "MultiLineString":
+                self.geoms = [_Geom("LineString", [p]) for p in parts]
+            else:
+                self.coords = parts[0]
+
+    def _signed_area(pts):
+        a = 0.0
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            a += x0 * y1 - x1 * y0
+        return a / 2.0
+
+    for shp in shapefile.Reader(str(shp_path)).shapes():
+        pts = [tuple(p[:2]) for p in shp.points]
+        parts = list(shp.parts) + [len(pts)]
+        rings = [pts[parts[i]:parts[i + 1]] for i in range(len(parts) - 1)]
+        if shp.shapeType in (shapefile.POLYLINE, shapefile.POLYLINEZ):
+            yield _Geom("MultiLineString", rings)
+        else:
+            # Outer rings (clockwise, negative signed area) each become a
+            # polygon; holes are dropped — matching the cartopy path, which
+            # only ever reads ``exterior`` for the land mask.
+            outers = [r for r in rings if _signed_area(r) < 0] or rings
+            yield _Geom("MultiPolygon", outers)
+
+
+def _extract_lonlat_polylines(resolution: str = "110m"):
+    shp_path = _natural_earth_path(resolution, "physical", "coastline")
+    for geom in _iter_geometries(shp_path):
         kind = geom.geom_type
         if kind == "LineString":
             yield np.asarray(geom.coords, dtype=np.float32)[:, :2]
@@ -271,12 +345,8 @@ def _extract_land_polygons(resolution: str = "110m"):
     derived from these — they come from the dedicated coastline
     shapefile via :func:`_extract_lonlat_polylines`.
     """
-    from cartopy.io.shapereader import Reader, natural_earth
-
-    shp_path = natural_earth(
-        resolution=resolution, category="physical", name="land",
-    )
-    for geom in Reader(shp_path).geometries():
+    shp_path = _natural_earth_path(resolution, "physical", "land")
+    for geom in _iter_geometries(shp_path):
         kind = geom.geom_type
         if kind == "Polygon":
             yield np.asarray(geom.exterior.coords, dtype=np.float32)[:, :2]

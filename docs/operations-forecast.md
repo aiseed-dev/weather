@@ -53,6 +53,10 @@ bulk GRIB は同じ。帯域が気になる場合は charts の `--out` を fore
 
 ENS 降水（アンサンブル）は `publish_charts --ens`（既定オン）。
 
+海外向けセット（worldtime 用、日本の EEZ を空白、861 枚/ラン）も同じ
+`publish_charts` が描く（`charts/ecmwf/world/…`）。詳細は forecast-charts.md。
+worldtime 側がリンクする公開 URL（R2 の r2.dev か独自ドメイン）は未決。
+
 ## 過去観測データの配布（月次で十分）
 
 「過去の気象データ・ダウンロード」型の動的切り出しの代わりに、
