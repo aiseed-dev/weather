@@ -336,8 +336,11 @@ correction_log   (logged_at, amedas, date, field, old_value, new_value)
 
 fetch_world.py が生成(2026-07-07 追加)。都市マスターは `master/world_cities.json`
 (**worldtime-web 側の tools/export_world_cities.py が生成**。都市の一次管理は worldtime)。
-出力は `data/world/` → `public/data/world/` に同期し、`public/_headers` の
-`/data/world/*` に `Access-Control-Allow-Origin: *` を保証する(www.time-j.net からの fetch 用)。
+出力は `data/world/` → `public/data/world/` に同期する。`public/_headers` の
+`/data/world/*`(`Access-Control-Allow-Origin: *`、max-age=600)は **generate.py が書く**
+(2026-10-09 まで fetch_world.py が追記していたが、generate.py が毎回 _headers を書き直すため
+公開のたびに消えていた)。www.time-j.net のブラウザが直接 fetch する。
+`master/world_cities.json` は master/ で唯一 git 管理し、sync_to_server.py で deb2 へ送る。
 
 ### data/world/forecast/{place}.json(112都市、ソース中立スキーマ)
 
@@ -372,11 +375,7 @@ fetch_world.py が生成(2026-07-07 追加)。都市マスターは `master/worl
 
 ### 運用
 
-- cron: 既存の日次実行に `fetch_world.py` を追加(全量で約2分30秒、met.no 112リクエスト+aviationweather 4リクエスト)。METAR だけ高頻度にする場合は `--metar-only`。
+- cron(deb2、毎時40分): `fetch_world.py`(全量で約2分30秒、met.no 112リクエスト+aviationweather 4リクエスト)。公開は既存の `build_site.py --publish`(10分ごと)が public/data/world/ ごと上げる。行は docs/operations-forecast.md の一覧。
 - `generate.py --clean` 後は `fetch_world.py --sync-only` で public/ に再同期する。
 
-### data/world/map.json(地図描画用・全都市1ファイル)
-
-`{"updated": "…Z", "cities": [{"p": "Asia/Tokyo", "t": 23, "s": "cloudy"}, …]}`
-(t=METAR 実測気温、s=直近の予報 symbol_code。どちらかがある都市のみ収録。
-fetch_world.py が取得済みファイルから組み立てる。利用者: time-j.net/WorldTime/Map)
+(data/world/map.json は worldtime の天気地図とともに 2026-10-09 に廃止)

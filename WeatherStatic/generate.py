@@ -2048,6 +2048,11 @@ def build_seo(env: Environment, stations: dict) -> None:
         "  Cache-Control: public, max-age=600",
         f"/{DAILY_URL}/*",
         "  Access-Control-Allow-Origin: *",
+        # 世界の天気(fetch_world.py が public/data/world/ に置く。www.time-j.net の
+        # ブラウザが直接 fetch する)。毎時更新なので短めに持たせる
+        "/data/world/*",
+        "  Access-Control-Allow-Origin: *",
+        "  Cache-Control: public, max-age=600",
         "",
     ]), encoding="utf-8")
 

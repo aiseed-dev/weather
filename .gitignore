@@ -225,7 +225,9 @@ WeatherStatic/.venv/
 WeatherStatic/store/
 WeatherStatic/data/
 WeatherStatic/public/
-WeatherStatic/master/
+WeatherStatic/master/*
+# world_cities.json だけは worldtime-web が生成する原本(deb2 へ sync_to_server.py で送る)
+!WeatherStatic/master/world_cities.json
 # ただし観測所情報は git で管理する（下の stations/ を参照）。
 # master/ は再生成できる派生物の置き場、stations/ は履歴を残す原本。
 WeatherStatic/logs/

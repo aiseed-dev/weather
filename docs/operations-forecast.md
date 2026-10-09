@@ -21,15 +21,28 @@ ECMWF 数値予報の配信、観測データの配布、世界天気の取得�
   ./.venv/bin/cf-publish r2 sync $HOME/wxpub/forecast weather-forecast/forecast --delete && \
   ./.venv/bin/cf-publish r2 sync $HOME/wxpub/charts weather-forecast/charts --delete
 
-# 世界天気（met.no 予報 + METAR）→ data/world/
-40 * * * * cd $HOME/dev/weather/WeatherStatic && ./.venv/bin/python fetch_world.py
+# 世界天気（met.no 予報 + METAR）→ data/world/ → public/data/world/（公開は build_site.py の cron が運ぶ）
+40 * * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_world.py >> $HOME/dev/weather/logs/world.log 2>&1
 
 # 世界気温タイル 1 日 4 回（各ランの公開後 ≈ JST 17:30/23:30/5:30/11:30）
 30 17,23,5,11 * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python fetch_tiles.py
 ```
 
-**タイルだけ conda 環境（`../.venv`）で実行する。** cfgrib が要るため。
-他は WeatherStatic の venv。
+**deb2 の venv は repo 直下の `../.venv` だけ**（operations.md の一覧と同じ。
+`./.venv` は deb2 に無く、書くと毎時 exec 失敗する。2026-10-09 まで一覧がその形だった）。
+
+## 世界天気（worldtime-web 向け）
+
+- 都市マスター `WeatherStatic/master/world_cities.json` は **worldtime-web 側**の
+  `tools/export_world_cities.py` が作る。master/ で唯一 git 管理し、
+  `sync_to_server.py --apply` で deb2 へ届く。都市を増減したら worldtime 側で
+  作り直してコミットし、送る
+- 初回だけ deb2 で手動実行して data/world/ を作る:
+  `ssh deb2 'cd dev/weather/WeatherStatic && ../.venv/bin/python fetch_world.py'`
+- CORS ヘッダ（`/data/world/*`）は generate.py が `_headers` に書く。
+  配信確認: `curl -sI https://weather.time-j.net/data/world/index.json | grep -i access-control`
+- 利用側は www.time-j.net の都市ページ（現在の天気・天気予報）。
+  天気地図（map.json）は 2026-10-09 に廃止
 
 ## 数値予報
 

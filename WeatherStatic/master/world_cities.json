@@ -1,0 +1,3914 @@
+{
+ "cities": [
+  {
+   "place": "Africa/Abidjan",
+   "name": "アビジャン",
+   "country": "コートジボワール",
+   "lat": 5.31667,
+   "lng": -4.03333,
+   "tz": "Africa/Abidjan",
+   "icao": "DIAP",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Accra",
+   "name": "アクラ",
+   "country": "ガーナ",
+   "lat": 5.55,
+   "lng": -0.21667,
+   "tz": "Africa/Accra",
+   "icao": "DGAA",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Algiers",
+   "name": "アルジェ",
+   "country": "アルジェリア",
+   "lat": 36.78333,
+   "lng": 3.05,
+   "tz": "Africa/Algiers",
+   "icao": "DAAG",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Bamako",
+   "name": "バマコ",
+   "country": "マリ",
+   "lat": 12.65,
+   "lng": -8.0,
+   "tz": "Africa/Bamako",
+   "icao": "GABS",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Bangui",
+   "name": "バンギ",
+   "country": "中央アフリカ",
+   "lat": 4.36667,
+   "lng": 18.58333,
+   "tz": "Africa/Bangui",
+   "icao": "FEFF",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Banjul",
+   "name": "バンジュール",
+   "country": "ガンビア",
+   "lat": 13.46667,
+   "lng": -16.65,
+   "tz": "Africa/Banjul",
+   "icao": "GBYD",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Bissau",
+   "name": "ビサウ",
+   "country": "ギニアビサウ",
+   "lat": 11.85,
+   "lng": -15.58333,
+   "tz": "Africa/Bissau",
+   "icao": "GGOV",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Brazzaville",
+   "name": "ブラザビル",
+   "country": "コンゴ共和国",
+   "lat": -4.26667,
+   "lng": 15.28333,
+   "tz": "Africa/Brazzaville",
+   "icao": "FCBB",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Cairo",
+   "name": "カイロ",
+   "country": "エジプト",
+   "lat": 30.05,
+   "lng": 31.25,
+   "tz": "Africa/Cairo",
+   "icao": "HECA",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Cape_Town",
+   "name": "ケープタウン",
+   "country": "南アフリカ",
+   "lat": -33.916667,
+   "lng": 18.416667,
+   "tz": "Africa/Johannesburg",
+   "icao": "FACT",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Casablanca",
+   "name": "カサブランカ",
+   "country": "モロッコ",
+   "lat": 33.65,
+   "lng": -7.58333,
+   "tz": "Africa/Casablanca",
+   "icao": "GMMN",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Ceuta",
+   "name": "セウタ",
+   "country": "スペイン",
+   "lat": 35.88333,
+   "lng": -5.31667,
+   "tz": "Africa/Ceuta",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Dakar",
+   "name": "ダカール",
+   "country": "セネガル",
+   "lat": 14.66667,
+   "lng": -17.43333,
+   "tz": "Africa/Dakar",
+   "icao": "GOOY",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Douala",
+   "name": "ドゥアラ",
+   "country": "カメルーン",
+   "lat": 4.05,
+   "lng": 9.7,
+   "tz": "Africa/Douala",
+   "icao": "FKKD",
+   "forecast": false
+  },
+  {
+   "place": "Africa/El_Aaiun",
+   "name": "アイウン",
+   "country": "西サハラ",
+   "lat": 27.15,
+   "lng": -13.2,
+   "tz": "Africa/El_Aaiun",
+   "icao": "GMML",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Gaborone",
+   "name": "ハボローネ",
+   "country": "ボツワナ",
+   "lat": -24.65,
+   "lng": 25.91667,
+   "tz": "Africa/Gaborone",
+   "icao": "FBSK",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Harare",
+   "name": "ハラレ",
+   "country": "ジンバブエ",
+   "lat": -17.83333,
+   "lng": 31.05,
+   "tz": "Africa/Harare",
+   "icao": "FVHA",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Johannesburg",
+   "name": "ヨハネスブルグ",
+   "country": "南アフリカ",
+   "lat": -26.25,
+   "lng": 28.0,
+   "tz": "Africa/Johannesburg",
+   "icao": "FAOR",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Khartoum",
+   "name": "ハルツーム",
+   "country": "スーダン",
+   "lat": 15.6,
+   "lng": 32.53333,
+   "tz": "Africa/Khartoum",
+   "icao": "HSSS",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Kigali",
+   "name": "キガリ",
+   "country": "ルワンダ",
+   "lat": -1.95,
+   "lng": 30.06667,
+   "tz": "Africa/Kigali",
+   "icao": "HRYR",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Kinshasa",
+   "name": "キンシャサ",
+   "country": "コンゴ民主共和国",
+   "lat": -4.3,
+   "lng": 15.3,
+   "tz": "Africa/Kinshasa",
+   "icao": "FZAA",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Lagos",
+   "name": "ラゴス",
+   "country": "ナイジェリア",
+   "lat": 6.45,
+   "lng": 3.4,
+   "tz": "Africa/Lagos",
+   "icao": "DNMM",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Libreville",
+   "name": "リーブルヴィル",
+   "country": "ガボン",
+   "lat": 0.38333,
+   "lng": 9.45,
+   "tz": "Africa/Libreville",
+   "icao": "FOOL",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Lome",
+   "name": "ロメ",
+   "country": "トーゴ",
+   "lat": 6.13333,
+   "lng": 1.21667,
+   "tz": "Africa/Lome",
+   "icao": "DXXX",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Lusaka",
+   "name": "ルサカ",
+   "country": "ザンビア",
+   "lat": -15.41667,
+   "lng": 28.28333,
+   "tz": "Africa/Lusaka",
+   "icao": "FLKK",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Luxor",
+   "name": "ルクソール",
+   "country": "エジプト",
+   "lat": 25.683333,
+   "lng": 32.65,
+   "tz": "Africa/Cairo",
+   "icao": "HELX",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Malabo",
+   "name": "マラボ",
+   "country": "赤道ギニア",
+   "lat": 3.75,
+   "lng": 8.78333,
+   "tz": "Africa/Malabo",
+   "icao": "FGSL",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Maputo",
+   "name": "マプト",
+   "country": "モザンビーク",
+   "lat": -25.96667,
+   "lng": 32.58333,
+   "tz": "Africa/Maputo",
+   "icao": "FQMA",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Monrovia",
+   "name": "モンロビア",
+   "country": "リベリア",
+   "lat": 6.3,
+   "lng": -10.78333,
+   "tz": "Africa/Monrovia",
+   "icao": "GLRB",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Nairobi",
+   "name": "ナイロビ",
+   "country": "ケニア",
+   "lat": -1.28333,
+   "lng": 36.81667,
+   "tz": "Africa/Nairobi",
+   "icao": "HKJK",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Ndjamena",
+   "name": "ンジャメナ",
+   "country": "チャド",
+   "lat": 12.11667,
+   "lng": 15.05,
+   "tz": "Africa/Ndjamena",
+   "icao": "FTTJ",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Niamey",
+   "name": "ニアメ",
+   "country": "ニジェール",
+   "lat": 13.51667,
+   "lng": 2.11667,
+   "tz": "Africa/Niamey",
+   "icao": "DRRN",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Nouakchott",
+   "name": "ヌアクショット",
+   "country": "モーリタニア",
+   "lat": 18.1,
+   "lng": -15.95,
+   "tz": "Africa/Nouakchott",
+   "icao": "GQNN",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Ouagadougou",
+   "name": "ワガドゥグー",
+   "country": "ブルキナファソ",
+   "lat": 12.36667,
+   "lng": -1.51667,
+   "tz": "Africa/Ouagadougou",
+   "icao": "DFFD",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Porto-Novo",
+   "name": "ポルトノボ",
+   "country": "ベナン",
+   "lat": 6.48333,
+   "lng": 2.61667,
+   "tz": "Africa/Porto-Novo",
+   "icao": "DBBB",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Sao_Tome",
+   "name": "サントメ",
+   "country": "サントメ・プリンシペ",
+   "lat": 0.33333,
+   "lng": 6.73333,
+   "tz": "Africa/Sao_Tome",
+   "icao": "FPST",
+   "forecast": false
+  },
+  {
+   "place": "Africa/Tripoli",
+   "name": "トリポリ",
+   "country": "リビア",
+   "lat": 32.9,
+   "lng": 13.18333,
+   "tz": "Africa/Tripoli",
+   "icao": "HLLT",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Tunis",
+   "name": "チュニス",
+   "country": "チュニジア",
+   "lat": 36.8,
+   "lng": 10.18333,
+   "tz": "Africa/Tunis",
+   "icao": "DTTA",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Windhoek",
+   "name": "ウィントフック",
+   "country": "ナミビア",
+   "lat": -22.56667,
+   "lng": 17.1,
+   "tz": "Africa/Windhoek",
+   "icao": "FYWH",
+   "forecast": false
+  },
+  {
+   "place": "America/Adak",
+   "name": "アダック",
+   "country": "アメリカ",
+   "lat": 51.86667,
+   "lng": -176.65,
+   "tz": "America/Adak",
+   "icao": "PADK",
+   "forecast": false
+  },
+  {
+   "place": "America/Anchorage",
+   "name": "アンカレッジ（アラスカ）",
+   "country": "アメリカ",
+   "lat": 61.21667,
+   "lng": -149.9,
+   "tz": "America/Anchorage",
+   "icao": "PANC",
+   "forecast": false
+  },
+  {
+   "place": "America/Anguilla",
+   "name": "アンギラ",
+   "country": "アンギラ",
+   "lat": 18.220556,
+   "lng": -63.068611,
+   "tz": "America/Anguilla",
+   "icao": "TQPF",
+   "forecast": false
+  },
+  {
+   "place": "America/Antigua",
+   "name": "アンティグア島",
+   "country": "アンティグア・バーブーダ",
+   "lat": 17.116667,
+   "lng": -61.85,
+   "tz": "America/Antigua",
+   "icao": "TAPA",
+   "forecast": false
+  },
+  {
+   "place": "America/Argentina/Buenos_Aires",
+   "name": "ブエノスアイレス",
+   "country": "アルゼンチン",
+   "lat": -34.61,
+   "lng": -58.369997,
+   "tz": "America/Argentina/Buenos_Aires",
+   "icao": "SAEZ",
+   "forecast": false
+  },
+  {
+   "place": "America/Argentina/Cordoba",
+   "name": "コルドバ",
+   "country": "アルゼンチン",
+   "lat": -31.41647,
+   "lng": -64.1689,
+   "tz": "America/Argentina/Cordoba",
+   "icao": "SACO",
+   "forecast": false
+  },
+  {
+   "place": "America/Argentina/Rio_Gallegos",
+   "name": "リオ・ガジェゴス",
+   "country": "アルゼンチン",
+   "lat": -51.63745,
+   "lng": -69.199,
+   "tz": "America/Argentina/Rio_Gallegos",
+   "icao": "SAWG",
+   "forecast": false
+  },
+  {
+   "place": "America/Argentina/Salta",
+   "name": "サルタ",
+   "country": "アルゼンチン",
+   "lat": -24.82014,
+   "lng": -65.406,
+   "tz": "America/Argentina/Salta",
+   "icao": "SASA",
+   "forecast": false
+  },
+  {
+   "place": "America/Argentina/Ushuaia",
+   "name": "ウシュアイア",
+   "country": "アルゼンチン",
+   "lat": -54.8,
+   "lng": -68.3,
+   "tz": "America/Argentina/Ushuaia",
+   "icao": "SAWH",
+   "forecast": false
+  },
+  {
+   "place": "America/Aruba",
+   "name": "アルバ",
+   "country": "アルバ",
+   "lat": 12.519,
+   "lng": -70.037,
+   "tz": "America/Aruba",
+   "icao": "TNCA",
+   "forecast": false
+  },
+  {
+   "place": "America/Asuncion",
+   "name": "アスンシオン",
+   "country": "パラグアイ",
+   "lat": -25.26667,
+   "lng": -57.66667,
+   "tz": "America/Asuncion",
+   "icao": "SGAS",
+   "forecast": false
+  },
+  {
+   "place": "America/Atlanta",
+   "name": "アトランタ",
+   "country": "アメリカ",
+   "lat": 33.755,
+   "lng": -84.39,
+   "tz": "America/New_York",
+   "icao": "KATL",
+   "forecast": false
+  },
+  {
+   "place": "America/Bahia",
+   "name": "バイーア（サルバドール）",
+   "country": "ブラジル",
+   "lat": -12.98333,
+   "lng": -38.51667,
+   "tz": "America/Bahia",
+   "icao": "SBSV",
+   "forecast": false
+  },
+  {
+   "place": "America/Barbados",
+   "name": "バルバドス",
+   "country": "バルバドス",
+   "lat": 13.1,
+   "lng": -59.61667,
+   "tz": "America/Barbados",
+   "icao": "TBPB",
+   "forecast": false
+  },
+  {
+   "place": "America/Belem",
+   "name": "ベレン",
+   "country": "ブラジル",
+   "lat": -1.45,
+   "lng": -48.48333,
+   "tz": "America/Belem",
+   "icao": "SBBE",
+   "forecast": false
+  },
+  {
+   "place": "America/Belize",
+   "name": "ベリーズシティ",
+   "country": "ベリーズ",
+   "lat": 17.5,
+   "lng": -88.2,
+   "tz": "America/Belize",
+   "icao": "MZBZ",
+   "forecast": false
+  },
+  {
+   "place": "America/Belo_Horizonte",
+   "name": "ベロオリゾンテ",
+   "country": "ブラジル",
+   "lat": -19.916667,
+   "lng": -43.933333,
+   "tz": "America/Sao_Paulo",
+   "icao": "SBCF",
+   "forecast": false
+  },
+  {
+   "place": "America/Boa_Vista",
+   "name": "ボア・ヴィスタ",
+   "country": "ブラジル",
+   "lat": 2.81667,
+   "lng": -60.66667,
+   "tz": "America/Boa_Vista",
+   "icao": "SBBV",
+   "forecast": false
+  },
+  {
+   "place": "America/Bogota",
+   "name": "ボゴタ",
+   "country": "コロンビア",
+   "lat": 4.6,
+   "lng": -74.08333,
+   "tz": "America/Bogota",
+   "icao": "SKBO",
+   "forecast": false
+  },
+  {
+   "place": "America/Boston",
+   "name": "ボストン",
+   "country": "アメリカ",
+   "lat": 42.357778,
+   "lng": -71.061667,
+   "tz": "America/New_York",
+   "icao": "KBOS",
+   "forecast": false
+  },
+  {
+   "place": "America/Brasilia",
+   "name": "ブラジリア",
+   "country": "ブラジル",
+   "lat": -15.798889,
+   "lng": -47.866667,
+   "tz": "America/Sao_Paulo",
+   "icao": "SBBR",
+   "forecast": false
+  },
+  {
+   "place": "America/Calgary",
+   "name": "カルガリー",
+   "country": "カナダ",
+   "lat": 51.045,
+   "lng": -114.0572,
+   "tz": "America/Edmonton",
+   "icao": "CYYC",
+   "forecast": false
+  },
+  {
+   "place": "America/Campo_Grande",
+   "name": "カンポ・グランデ",
+   "country": "ブラジル",
+   "lat": -20.45,
+   "lng": -54.61667,
+   "tz": "America/Campo_Grande",
+   "icao": "SBCG",
+   "forecast": false
+  },
+  {
+   "place": "America/Cancun",
+   "name": "カンクン",
+   "country": "メキシコ",
+   "lat": 21.08333,
+   "lng": -86.76667,
+   "tz": "America/Cancun",
+   "icao": "MMUN",
+   "forecast": false
+  },
+  {
+   "place": "America/Caracas",
+   "name": "カラカス",
+   "country": "ベネズエラ",
+   "lat": 10.5,
+   "lng": -66.93333,
+   "tz": "America/Caracas",
+   "icao": "SVMI",
+   "forecast": false
+  },
+  {
+   "place": "America/Cayenne",
+   "name": "カイエンヌ",
+   "country": "フランス領ギアナ",
+   "lat": 4.93333,
+   "lng": -52.33333,
+   "tz": "America/Cayenne",
+   "icao": "SOCA",
+   "forecast": false
+  },
+  {
+   "place": "America/Cayman",
+   "name": "ケイマン諸島",
+   "country": "ケイマン諸島",
+   "lat": 19.3,
+   "lng": -81.38333,
+   "tz": "America/Cayman",
+   "icao": "MWCR",
+   "forecast": false
+  },
+  {
+   "place": "America/Chicago",
+   "name": "シカゴ",
+   "country": "アメリカ",
+   "lat": 41.85,
+   "lng": -87.65,
+   "tz": "America/Chicago",
+   "icao": "KORD",
+   "forecast": false
+  },
+  {
+   "place": "America/Chihuahua",
+   "name": "チワワ",
+   "country": "メキシコ",
+   "lat": 28.63333,
+   "lng": -106.08333,
+   "tz": "America/Chihuahua",
+   "icao": "MMCU",
+   "forecast": false
+  },
+  {
+   "place": "America/Costa_Rica",
+   "name": "サンホセ",
+   "country": "コスタリカ",
+   "lat": 9.93333,
+   "lng": -84.08333,
+   "tz": "America/Costa_Rica",
+   "icao": "MROC",
+   "forecast": false
+  },
+  {
+   "place": "America/Cuiaba",
+   "name": "クイアバ",
+   "country": "ブラジル",
+   "lat": -15.58333,
+   "lng": -56.08333,
+   "tz": "America/Cuiaba",
+   "icao": "SBCY",
+   "forecast": false
+  },
+  {
+   "place": "America/Curacao",
+   "name": "キュラソー",
+   "country": "キュラソー",
+   "lat": 12.1833,
+   "lng": -69.0,
+   "tz": "America/Curacao",
+   "icao": "TNCC",
+   "forecast": false
+  },
+  {
+   "place": "America/Curitiba",
+   "name": "クリチバ",
+   "country": "ブラジル",
+   "lat": -25.416667,
+   "lng": -49.25,
+   "tz": "America/Sao_Paulo",
+   "icao": "SBCF",
+   "forecast": false
+  },
+  {
+   "place": "America/Dallas",
+   "name": "ダラス",
+   "country": "アメリカ",
+   "lat": 32.782778,
+   "lng": -96.803889,
+   "tz": "America/Chicago",
+   "icao": "KDFW",
+   "forecast": false
+  },
+  {
+   "place": "America/Denver",
+   "name": "デンバー",
+   "country": "アメリカ",
+   "lat": 39.73333,
+   "lng": -104.98333,
+   "tz": "America/Denver",
+   "icao": "KDEN",
+   "forecast": false
+  },
+  {
+   "place": "America/Detroit",
+   "name": "デトロイト",
+   "country": "アメリカ",
+   "lat": 42.31667,
+   "lng": -83.03333,
+   "tz": "America/Detroit",
+   "icao": "KDTW",
+   "forecast": false
+  },
+  {
+   "place": "America/Dominica",
+   "name": "ドミニカ島",
+   "country": "ドミニカ国",
+   "lat": 15.3,
+   "lng": -61.4,
+   "tz": "America/Dominica",
+   "icao": "TDCF",
+   "forecast": false
+  },
+  {
+   "place": "America/Edmonton",
+   "name": "エドモントン",
+   "country": "カナダ",
+   "lat": 53.55,
+   "lng": -113.46667,
+   "tz": "America/Edmonton",
+   "icao": "CYEG",
+   "forecast": false
+  },
+  {
+   "place": "America/El_Paso",
+   "name": "エル・パソ",
+   "country": "アメリカ",
+   "lat": 31.790278,
+   "lng": -106.423333,
+   "tz": "America/Denver",
+   "icao": "KELP",
+   "forecast": false
+  },
+  {
+   "place": "America/El_Salvador",
+   "name": "サンサルバドル",
+   "country": "エルサルバドル",
+   "lat": 13.7,
+   "lng": -89.2,
+   "tz": "America/El_Salvador",
+   "icao": "MSLP",
+   "forecast": false
+  },
+  {
+   "place": "America/Fairbanks",
+   "name": "フェアバンクス",
+   "country": "アメリカ",
+   "lat": 64.843611,
+   "lng": -147.723056,
+   "tz": "America/Anchorage",
+   "icao": "PAFA",
+   "forecast": false
+  },
+  {
+   "place": "America/Fortaleza",
+   "name": "フォルタレザ",
+   "country": "ブラジル",
+   "lat": -3.71667,
+   "lng": -38.5,
+   "tz": "America/Fortaleza",
+   "icao": "SBFZ",
+   "forecast": false
+  },
+  {
+   "place": "America/Godthab",
+   "name": "ヌーク",
+   "country": "グリーンランド",
+   "lat": 64.18333,
+   "lng": -51.73333,
+   "tz": "America/Nuuk",
+   "icao": "BGGH",
+   "forecast": false
+  },
+  {
+   "place": "America/Grand_Turk",
+   "name": "グランドターク島",
+   "country": "タークス・カイコス諸島",
+   "lat": 21.46667,
+   "lng": -71.13333,
+   "tz": "America/Grand_Turk",
+   "icao": "MBPV",
+   "forecast": false
+  },
+  {
+   "place": "America/Grenada",
+   "name": "グレナダ",
+   "country": "グレナダ",
+   "lat": 12.05,
+   "lng": -61.75,
+   "tz": "America/Grenada",
+   "icao": "TGPY",
+   "forecast": false
+  },
+  {
+   "place": "America/Guadalajara",
+   "name": "グアダラハラ",
+   "country": "メキシコ",
+   "lat": 20.666714,
+   "lng": -103.350342,
+   "tz": "America/Mexico_City",
+   "icao": "MMGL",
+   "forecast": false
+  },
+  {
+   "place": "America/Guadeloupe",
+   "name": "グアドループ",
+   "country": "グアドループ",
+   "lat": 16.23333,
+   "lng": -61.53333,
+   "tz": "America/Guadeloupe",
+   "icao": "TFFR",
+   "forecast": false
+  },
+  {
+   "place": "America/Guatemala",
+   "name": "グアテマラシティ",
+   "country": "グアテマラ",
+   "lat": 14.63333,
+   "lng": -90.51667,
+   "tz": "America/Guatemala",
+   "icao": "MGGT",
+   "forecast": false
+  },
+  {
+   "place": "America/Guayaquil",
+   "name": "グアヤキル",
+   "country": "エクアドル",
+   "lat": -2.16667,
+   "lng": -79.83333,
+   "tz": "America/Guayaquil",
+   "icao": "SEGU",
+   "forecast": false
+  },
+  {
+   "place": "America/Guyana",
+   "name": "ジョージタウン",
+   "country": "ガイアナ",
+   "lat": 6.8,
+   "lng": -58.16667,
+   "tz": "America/Guyana",
+   "icao": "SYCJ",
+   "forecast": false
+  },
+  {
+   "place": "America/Halifax",
+   "name": "ハリファックス",
+   "country": "カナダ",
+   "lat": 44.65,
+   "lng": -63.6,
+   "tz": "America/Halifax",
+   "icao": "CYHZ",
+   "forecast": false
+  },
+  {
+   "place": "America/Havana",
+   "name": "ハバナ",
+   "country": "キューバ",
+   "lat": 23.13333,
+   "lng": -82.36667,
+   "tz": "America/Havana",
+   "icao": "MUHA",
+   "forecast": false
+  },
+  {
+   "place": "America/Hermosillo",
+   "name": "エルモシージョ",
+   "country": "メキシコ",
+   "lat": 29.06667,
+   "lng": -110.96667,
+   "tz": "America/Hermosillo",
+   "icao": "MMHO",
+   "forecast": false
+  },
+  {
+   "place": "America/Houston",
+   "name": "ヒューストン",
+   "country": "アメリカ",
+   "lat": 29.7628,
+   "lng": -95.383056,
+   "tz": "America/Chicago",
+   "icao": "KIAH",
+   "forecast": false
+  },
+  {
+   "place": "America/Indiana/Indianapolis",
+   "name": "インディアナポリス",
+   "country": "アメリカ",
+   "lat": 39.76667,
+   "lng": -86.15,
+   "tz": "America/Indiana/Indianapolis",
+   "icao": "KIND",
+   "forecast": false
+  },
+  {
+   "place": "America/Inuvik",
+   "name": "イヌヴィック",
+   "country": "カナダ",
+   "lat": 68.33333,
+   "lng": -133.71667,
+   "tz": "America/Inuvik",
+   "icao": "CYEV",
+   "forecast": false
+  },
+  {
+   "place": "America/Iqaluit",
+   "name": "イカルイト",
+   "country": "カナダ",
+   "lat": 63.73333,
+   "lng": -68.46667,
+   "tz": "America/Iqaluit",
+   "icao": "CYFB",
+   "forecast": false
+  },
+  {
+   "place": "America/Jamaica",
+   "name": "キングストン",
+   "country": "ジャマイカ",
+   "lat": 18.0,
+   "lng": -76.8,
+   "tz": "America/Jamaica",
+   "icao": "MKJP",
+   "forecast": false
+  },
+  {
+   "place": "America/Juneau",
+   "name": "ジュノー",
+   "country": "アメリカ",
+   "lat": 58.3,
+   "lng": -134.41667,
+   "tz": "America/Juneau",
+   "icao": "PAJA",
+   "forecast": false
+  },
+  {
+   "place": "America/Kansas_City",
+   "name": "カンザスシティ",
+   "country": "アメリカ",
+   "lat": 39.1,
+   "lng": -94.58,
+   "tz": "America/Chicago",
+   "icao": "KMCI",
+   "forecast": false
+  },
+  {
+   "place": "America/Kentucky/Louisville",
+   "name": "ルイビル",
+   "country": "アメリカ",
+   "lat": 38.25,
+   "lng": -85.75,
+   "tz": "America/Kentucky/Louisville",
+   "icao": "KSDF",
+   "forecast": false
+  },
+  {
+   "place": "America/La_Paz",
+   "name": "ラパス",
+   "country": "ボリビア",
+   "lat": -16.5,
+   "lng": -68.15,
+   "tz": "America/La_Paz",
+   "icao": "SLLP",
+   "forecast": false
+  },
+  {
+   "place": "America/Las_Vegas",
+   "name": "ラスベガス",
+   "country": "アメリカ",
+   "lat": 36.176,
+   "lng": -115.137,
+   "tz": "America/Los_Angeles",
+   "icao": "KLAS",
+   "forecast": false
+  },
+  {
+   "place": "America/Lima",
+   "name": "リマ",
+   "country": "ペルー",
+   "lat": -12.05,
+   "lng": -77.05,
+   "tz": "America/Lima",
+   "icao": "SPIM",
+   "forecast": false
+  },
+  {
+   "place": "America/Los_Angeles",
+   "name": "ロサンゼルス",
+   "country": "アメリカ",
+   "lat": 34.05,
+   "lng": -118.23333,
+   "tz": "America/Los_Angeles",
+   "icao": "KLAX",
+   "forecast": false
+  },
+  {
+   "place": "America/Lower_Princes",
+   "name": "シント・マールテン",
+   "country": "シント・マールテン",
+   "lat": 18.0237,
+   "lng": -63.0458,
+   "tz": "America/Lower_Princes",
+   "icao": "TNCM",
+   "forecast": false
+  },
+  {
+   "place": "America/Maceio",
+   "name": "マセイオ",
+   "country": "ブラジル",
+   "lat": -9.66667,
+   "lng": -35.71667,
+   "tz": "America/Maceio",
+   "icao": "SBMO",
+   "forecast": false
+  },
+  {
+   "place": "America/Managua",
+   "name": "マナグア",
+   "country": "ニカラグア",
+   "lat": 12.15,
+   "lng": -86.28333,
+   "tz": "America/Managua",
+   "icao": "MNMG",
+   "forecast": false
+  },
+  {
+   "place": "America/Manaus",
+   "name": "マナウス",
+   "country": "ブラジル",
+   "lat": -3.13333,
+   "lng": -60.01667,
+   "tz": "America/Manaus",
+   "icao": "SBEG",
+   "forecast": false
+  },
+  {
+   "place": "America/Martinique",
+   "name": "マルティニーク",
+   "country": "マルティニーク",
+   "lat": 14.6,
+   "lng": -61.08333,
+   "tz": "America/Martinique",
+   "icao": "TFFF",
+   "forecast": false
+  },
+  {
+   "place": "America/Mazatlan",
+   "name": "マサトラン",
+   "country": "メキシコ",
+   "lat": 23.21667,
+   "lng": -106.41667,
+   "tz": "America/Mazatlan",
+   "icao": "MMMZ",
+   "forecast": false
+  },
+  {
+   "place": "America/Memphis",
+   "name": "メンフィス",
+   "country": "アメリカ",
+   "lat": 35.1175,
+   "lng": -89.971111,
+   "tz": "America/Chicago",
+   "icao": "KMEM",
+   "forecast": false
+  },
+  {
+   "place": "America/Merida",
+   "name": "メリダ",
+   "country": "メキシコ",
+   "lat": 20.96667,
+   "lng": -89.61667,
+   "tz": "America/Merida",
+   "icao": "MMMD",
+   "forecast": false
+  },
+  {
+   "place": "America/Mexico_City",
+   "name": "メキシコシティ",
+   "country": "メキシコ",
+   "lat": 19.4,
+   "lng": -99.15,
+   "tz": "America/Mexico_City",
+   "icao": "MMMX",
+   "forecast": false
+  },
+  {
+   "place": "America/Miami",
+   "name": "マイアミ",
+   "country": "アメリカ",
+   "lat": 25.787676,
+   "lng": -80.224145,
+   "tz": "America/New_York",
+   "icao": "KMIA",
+   "forecast": false
+  },
+  {
+   "place": "America/Minneapolis",
+   "name": "ミネアポリス",
+   "country": "アメリカ",
+   "lat": 44.983333,
+   "lng": -93.266667,
+   "tz": "America/Chicago",
+   "icao": "KMSP",
+   "forecast": false
+  },
+  {
+   "place": "America/Miquelon",
+   "name": "サンピエール",
+   "country": "サンピエール島・ミクロン島",
+   "lat": 46.777778,
+   "lng": -56.177778,
+   "tz": "America/Miquelon",
+   "icao": "LFVP",
+   "forecast": false
+  },
+  {
+   "place": "America/Moncton",
+   "name": "モンクトン",
+   "country": "カナダ",
+   "lat": 46.1,
+   "lng": -64.78333,
+   "tz": "America/Moncton",
+   "icao": "CYQM",
+   "forecast": false
+  },
+  {
+   "place": "America/Monterrey",
+   "name": "モンテレー",
+   "country": "メキシコ",
+   "lat": 25.66667,
+   "lng": -100.31667,
+   "tz": "America/Monterrey",
+   "icao": "MMMY",
+   "forecast": false
+  },
+  {
+   "place": "America/Montevideo",
+   "name": "モンテビデオ",
+   "country": "ウルグアイ",
+   "lat": -34.88333,
+   "lng": -56.18333,
+   "tz": "America/Montevideo",
+   "icao": "SUMU",
+   "forecast": false
+  },
+  {
+   "place": "America/Montreal",
+   "name": "モントリオール",
+   "country": "カナダ",
+   "lat": 45.51667,
+   "lng": -73.56667,
+   "tz": "America/Toronto",
+   "icao": "CYUL",
+   "forecast": false
+  },
+  {
+   "place": "America/Nassau",
+   "name": "ナッソー",
+   "country": "バハマ",
+   "lat": 25.08333,
+   "lng": -77.35,
+   "tz": "America/Nassau",
+   "icao": "MYNN",
+   "forecast": false
+  },
+  {
+   "place": "America/Natal",
+   "name": "ナタール",
+   "country": "ブラジル",
+   "lat": -5.766667,
+   "lng": -35.2,
+   "tz": "America/Fortaleza",
+   "icao": "SBNT",
+   "forecast": false
+  },
+  {
+   "place": "America/New_York",
+   "name": "ニューヨーク",
+   "country": "アメリカ",
+   "lat": 40.7,
+   "lng": -74.0,
+   "tz": "America/New_York",
+   "icao": "KJFK",
+   "forecast": false
+  },
+  {
+   "place": "America/Oklahoma_City",
+   "name": "オクラホマシティ",
+   "country": "アメリカ",
+   "lat": 35.471654,
+   "lng": -97.521324,
+   "tz": "America/Chicago",
+   "icao": "KOKC",
+   "forecast": false
+  },
+  {
+   "place": "America/Ottawa",
+   "name": "オタワ",
+   "country": "カナダ",
+   "lat": 45.417,
+   "lng": -75.7,
+   "tz": "America/Toronto",
+   "icao": "CYOW",
+   "forecast": false
+  },
+  {
+   "place": "America/Panama",
+   "name": "パナマ市",
+   "country": "パナマ",
+   "lat": 8.96667,
+   "lng": -79.53333,
+   "tz": "America/Panama",
+   "icao": "MPTO",
+   "forecast": false
+  },
+  {
+   "place": "America/Paramaribo",
+   "name": "パラマリボ",
+   "country": "スリナム",
+   "lat": 5.83333,
+   "lng": -55.16667,
+   "tz": "America/Paramaribo",
+   "icao": "SMJP",
+   "forecast": false
+  },
+  {
+   "place": "America/Philadelphia",
+   "name": "フィラデルフィア",
+   "country": "アメリカ",
+   "lat": 39.9533,
+   "lng": -75.17,
+   "tz": "America/New_York",
+   "icao": "KPHL",
+   "forecast": false
+  },
+  {
+   "place": "America/Phoenix",
+   "name": "フェニックス",
+   "country": "アメリカ",
+   "lat": 33.43333,
+   "lng": -112.06667,
+   "tz": "America/Phoenix",
+   "icao": "KPHX",
+   "forecast": false
+  },
+  {
+   "place": "America/Port_of_Spain",
+   "name": "ポートオブスペイン",
+   "country": "トリニダード・トバゴ",
+   "lat": 10.65,
+   "lng": -61.51667,
+   "tz": "America/Port_of_Spain",
+   "icao": "TTPP",
+   "forecast": false
+  },
+  {
+   "place": "America/Portland",
+   "name": "ポートランド",
+   "country": "アメリカ",
+   "lat": 45.52,
+   "lng": -122.681944,
+   "tz": "America/Los_Angeles",
+   "icao": "KPDX",
+   "forecast": false
+  },
+  {
+   "place": "America/Porto_Alegre",
+   "name": "ポルト・アレグレ",
+   "country": "ブラジル",
+   "lat": -30.033056,
+   "lng": -51.23,
+   "tz": "America/Sao_Paulo",
+   "icao": "SBCF",
+   "forecast": false
+  },
+  {
+   "place": "America/Porto_Velho",
+   "name": "ポルト・ベーリョ",
+   "country": "ブラジル",
+   "lat": -8.76667,
+   "lng": -63.9,
+   "tz": "America/Porto_Velho",
+   "icao": "SBPV",
+   "forecast": false
+  },
+  {
+   "place": "America/Puerto_Rico",
+   "name": "サンフアン",
+   "country": "プエルトリコ",
+   "lat": 18.46667,
+   "lng": -66.1,
+   "tz": "America/Puerto_Rico",
+   "icao": "TJSJ",
+   "forecast": false
+  },
+  {
+   "place": "America/Punta_Arenas",
+   "name": "プンタ・アレーナス",
+   "country": "チリ",
+   "lat": -53.16265,
+   "lng": -70.90804,
+   "tz": "America/Punta_Arenas",
+   "icao": "SCCI",
+   "forecast": false
+  },
+  {
+   "place": "America/Quito",
+   "name": "キト",
+   "country": "エクアドル",
+   "lat": -0.216667,
+   "lng": -78.516667,
+   "tz": "America/Guayaquil",
+   "icao": "SEQU",
+   "forecast": false
+  },
+  {
+   "place": "America/Recife",
+   "name": "レシフェ",
+   "country": "ブラジル",
+   "lat": -8.05,
+   "lng": -34.9,
+   "tz": "America/Recife",
+   "icao": "SBRF",
+   "forecast": false
+  },
+  {
+   "place": "America/Regina",
+   "name": "レジャイナ",
+   "country": "カナダ",
+   "lat": 50.4,
+   "lng": -104.65,
+   "tz": "America/Regina",
+   "icao": "CYQR",
+   "forecast": false
+  },
+  {
+   "place": "America/Rio_Branco",
+   "name": "リオブランコ",
+   "country": "ブラジル",
+   "lat": -9.96667,
+   "lng": -67.8,
+   "tz": "America/Rio_Branco",
+   "icao": "SBRB",
+   "forecast": false
+  },
+  {
+   "place": "America/Rio_de_Janeiro",
+   "name": "リオデジャネイロ",
+   "country": "ブラジル",
+   "lat": -22.908333,
+   "lng": -43.196389,
+   "tz": "America/Sao_Paulo",
+   "icao": "SBRJ",
+   "forecast": false
+  },
+  {
+   "place": "America/Salt_Lake_City",
+   "name": "ソルトレイクシティ",
+   "country": "アメリカ",
+   "lat": 40.75,
+   "lng": -111.883333,
+   "tz": "America/Denver",
+   "icao": "KSLC",
+   "forecast": false
+  },
+  {
+   "place": "America/San_Francisco",
+   "name": "サンフランシスコ",
+   "country": "アメリカ",
+   "lat": 37.7793,
+   "lng": -122.4192,
+   "tz": "America/Los_Angeles",
+   "icao": "KSFO",
+   "forecast": false
+  },
+  {
+   "place": "America/Santarem",
+   "name": "サンタレン",
+   "country": "ブラジル",
+   "lat": -2.43333,
+   "lng": -54.86667,
+   "tz": "America/Santarem",
+   "icao": "SBSN",
+   "forecast": false
+  },
+  {
+   "place": "America/Santiago",
+   "name": "サンティアゴ",
+   "country": "チリ",
+   "lat": -33.45,
+   "lng": -70.66667,
+   "tz": "America/Santiago",
+   "icao": "SCEL",
+   "forecast": false
+  },
+  {
+   "place": "America/Santo_Domingo",
+   "name": "サントドミンゴ",
+   "country": "ドミニカ共和国",
+   "lat": 18.46667,
+   "lng": -69.9,
+   "tz": "America/Santo_Domingo",
+   "icao": "MDSD",
+   "forecast": false
+  },
+  {
+   "place": "America/Sao_Paulo",
+   "name": "サンパウロ",
+   "country": "ブラジル",
+   "lat": -23.53333,
+   "lng": -46.61667,
+   "tz": "America/Sao_Paulo",
+   "icao": "SBGR",
+   "forecast": false
+  },
+  {
+   "place": "America/Scoresbysund",
+   "name": "イトコルトルミット",
+   "country": "グリーンランド",
+   "lat": 70.48333,
+   "lng": -21.96667,
+   "tz": "America/Scoresbysund",
+   "icao": "BGCO",
+   "forecast": false
+  },
+  {
+   "place": "America/Seattle",
+   "name": "シアトル",
+   "country": "アメリカ",
+   "lat": 47.609722,
+   "lng": -122.333056,
+   "tz": "America/Los_Angeles",
+   "icao": "KSEA",
+   "forecast": false
+  },
+  {
+   "place": "America/St_Johns",
+   "name": "セント・ジョンズ",
+   "country": "カナダ",
+   "lat": 47.56667,
+   "lng": -52.71667,
+   "tz": "America/St_Johns",
+   "icao": "CYYT",
+   "forecast": false
+  },
+  {
+   "place": "America/St_Kitts",
+   "name": "セントクリストファー島",
+   "country": "セントクリストファー・ネービス",
+   "lat": 17.3,
+   "lng": -62.71667,
+   "tz": "America/St_Kitts",
+   "icao": "TKPK",
+   "forecast": false
+  },
+  {
+   "place": "America/St_Lucia",
+   "name": "セントルシア",
+   "country": "セントルシア",
+   "lat": 14.01667,
+   "lng": -61.0,
+   "tz": "America/St_Lucia",
+   "icao": "TLPL",
+   "forecast": false
+  },
+  {
+   "place": "America/St_Thomas",
+   "name": "セント・トーマス島",
+   "country": "アメリカ領ヴァージン諸島",
+   "lat": 18.35,
+   "lng": -64.93333,
+   "tz": "America/St_Thomas",
+   "icao": "TIST",
+   "forecast": false
+  },
+  {
+   "place": "America/St_Vincent",
+   "name": "セントビンセント",
+   "country": "セントビンセントおよびグレナディーン諸島",
+   "lat": 13.15,
+   "lng": -61.23333,
+   "tz": "America/St_Vincent",
+   "icao": "TVSV",
+   "forecast": false
+  },
+  {
+   "place": "America/Tegucigalpa",
+   "name": "テグシガルパ",
+   "country": "ホンジュラス",
+   "lat": 14.1,
+   "lng": -87.21667,
+   "tz": "America/Tegucigalpa",
+   "icao": "MHTG",
+   "forecast": false
+  },
+  {
+   "place": "America/Thule",
+   "name": "チューレ",
+   "country": "グリーンランド",
+   "lat": 76.56667,
+   "lng": -68.78333,
+   "tz": "America/Thule",
+   "icao": "BGQQ",
+   "forecast": false
+  },
+  {
+   "place": "America/Tijuana",
+   "name": "ティファナ",
+   "country": "メキシコ",
+   "lat": 32.53333,
+   "lng": -117.01667,
+   "tz": "America/Tijuana",
+   "icao": "MMTJ",
+   "forecast": false
+  },
+  {
+   "place": "America/Toronto",
+   "name": "トロント",
+   "country": "カナダ",
+   "lat": 43.65,
+   "lng": -79.38333,
+   "tz": "America/Toronto",
+   "icao": "CYYZ",
+   "forecast": false
+  },
+  {
+   "place": "America/Tortola",
+   "name": "トルトラ島",
+   "country": "イギリス領ヴァージン諸島",
+   "lat": 18.45,
+   "lng": -64.61667,
+   "tz": "America/Tortola",
+   "icao": "TUPJ",
+   "forecast": false
+  },
+  {
+   "place": "America/Vancouver",
+   "name": "バンクーバー",
+   "country": "カナダ",
+   "lat": 49.26667,
+   "lng": -123.11667,
+   "tz": "America/Vancouver",
+   "icao": "CYVR",
+   "forecast": false
+  },
+  {
+   "place": "America/Washington_DC",
+   "name": "ワシントンD.C.",
+   "country": "アメリカ",
+   "lat": 38.8951,
+   "lng": -77.0367,
+   "tz": "America/New_York",
+   "icao": "KIAD",
+   "forecast": false
+  },
+  {
+   "place": "America/Whitehorse",
+   "name": "ホワイトホース",
+   "country": "カナダ",
+   "lat": 60.71667,
+   "lng": -135.05,
+   "tz": "America/Whitehorse",
+   "icao": "CYXY",
+   "forecast": false
+  },
+  {
+   "place": "America/Winnipeg",
+   "name": "ウィニペグ",
+   "country": "カナダ",
+   "lat": 49.88333,
+   "lng": -97.15,
+   "tz": "America/Winnipeg",
+   "icao": "CYWG",
+   "forecast": false
+  },
+  {
+   "place": "America/Yellowknife",
+   "name": "イエローナイフ",
+   "country": "カナダ",
+   "lat": 62.45,
+   "lng": -114.35,
+   "tz": "America/Yellowknife",
+   "icao": "CYZF",
+   "forecast": false
+  },
+  {
+   "place": "Arctic/Longyearbyen",
+   "name": "ロングイェールビーン",
+   "country": "スヴァールバル諸島・ヤンマイエン島",
+   "lat": 78.223102,
+   "lng": 15.642652,
+   "tz": "Arctic/Longyearbyen",
+   "icao": "ENSB",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Abu_Dhabi",
+   "name": "アブダビ",
+   "country": "アラブ首長国連邦",
+   "lat": 24.466667,
+   "lng": 54.366667,
+   "tz": "Asia/Dubai",
+   "icao": "OMAA",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Aden",
+   "name": "アデン",
+   "country": "イエメン",
+   "lat": 12.75,
+   "lng": 45.2,
+   "tz": "Asia/Aden",
+   "icao": "OYAA",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Almaty",
+   "name": "アルマトイ",
+   "country": "カザフスタン",
+   "lat": 43.25,
+   "lng": 76.95,
+   "tz": "Asia/Almaty",
+   "icao": "UAAA",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Amman",
+   "name": "アンマン",
+   "country": "ヨルダン",
+   "lat": 31.95,
+   "lng": 35.93333,
+   "tz": "Asia/Amman",
+   "icao": "OJAI",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Anadyr",
+   "name": "アナディリ",
+   "country": "ロシア",
+   "lat": 64.75,
+   "lng": 177.48333,
+   "tz": "Asia/Anadyr",
+   "icao": "UHMA",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Ankara",
+   "name": "アンカラ",
+   "country": "トルコ",
+   "lat": 39.875,
+   "lng": 32.8333,
+   "tz": "Europe/Istanbul",
+   "icao": "LTAC",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Ashgabat",
+   "name": "アシガバート",
+   "country": "トルクメニスタン",
+   "lat": 37.95,
+   "lng": 58.38333,
+   "tz": "Asia/Ashgabat",
+   "icao": "UTAA",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Astana",
+   "name": "アスタナ",
+   "country": "カザフスタン",
+   "lat": 51.1807,
+   "lng": 71.461,
+   "tz": "Asia/Almaty",
+   "icao": "UACC",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Baghdad",
+   "name": "バグダッド",
+   "country": "イラク",
+   "lat": 33.35,
+   "lng": 44.41667,
+   "tz": "Asia/Baghdad",
+   "icao": "ORBI",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Bahrain",
+   "name": "マナーマ",
+   "country": "バーレーン",
+   "lat": 26.38333,
+   "lng": 50.58333,
+   "tz": "Asia/Bahrain",
+   "icao": "OBBI",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Baku",
+   "name": "バクー",
+   "country": "アゼルバイジャン",
+   "lat": 40.38333,
+   "lng": 49.85,
+   "tz": "Asia/Baku",
+   "icao": "UBBB",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Bali",
+   "name": "バリ島",
+   "country": "インドネシア",
+   "lat": -8.65,
+   "lng": 115.216667,
+   "tz": "Asia/Makassar",
+   "icao": "WADD",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Bangalore",
+   "name": "バンガロール",
+   "country": "インド",
+   "lat": 12.966667,
+   "lng": 77.566667,
+   "tz": "Asia/Kolkata",
+   "icao": "VOBL",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Bangkok",
+   "name": "バンコク",
+   "country": "タイ",
+   "lat": 13.75,
+   "lng": 100.51667,
+   "tz": "Asia/Bangkok",
+   "icao": "VTBS",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Beijing",
+   "name": "北京",
+   "country": "中国",
+   "lat": 39.913889,
+   "lng": 116.391667,
+   "tz": "Asia/Shanghai",
+   "icao": "ZBAA",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Beirut",
+   "name": "ベイルート",
+   "country": "レバノン",
+   "lat": 33.88333,
+   "lng": 35.5,
+   "tz": "Asia/Beirut",
+   "icao": "OLBA",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Bishkek",
+   "name": "ビシュケク",
+   "country": "キルギス",
+   "lat": 42.9,
+   "lng": 74.6,
+   "tz": "Asia/Bishkek",
+   "icao": "UAFM",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Brunei",
+   "name": "ブルネイ",
+   "country": "ブルネイ",
+   "lat": 4.93333,
+   "lng": 114.91667,
+   "tz": "Asia/Brunei",
+   "icao": "WBSB",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Busan",
+   "name": "釜山",
+   "country": "韓国",
+   "lat": 35.179444,
+   "lng": 129.075556,
+   "tz": "Asia/Seoul",
+   "icao": "RKPK",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Cebu",
+   "name": "セブ島",
+   "country": "フィリピン",
+   "lat": 10.283333,
+   "lng": 123.9,
+   "tz": "Asia/Manila",
+   "icao": "RPVM",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Chengdu",
+   "name": "成都",
+   "country": "中国",
+   "lat": 30.659722,
+   "lng": 104.063333,
+   "tz": "Asia/Shanghai",
+   "icao": "ZUUU",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Chennai",
+   "name": "チェンナイ",
+   "country": "インド",
+   "lat": 13.083889,
+   "lng": 80.27,
+   "tz": "Asia/Kolkata",
+   "icao": "VOMM",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Chita",
+   "name": "チタ",
+   "country": "ロシア",
+   "lat": 52.05,
+   "lng": 113.466667,
+   "tz": "Asia/Chita",
+   "icao": "UIAA",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Chongqing",
+   "name": "重慶",
+   "country": "中国",
+   "lat": 29.56667,
+   "lng": 106.58333,
+   "tz": "Asia/Shanghai",
+   "icao": "ZUCK",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Colombo",
+   "name": "コロンボ",
+   "country": "スリランカ",
+   "lat": 6.93333,
+   "lng": 79.85,
+   "tz": "Asia/Colombo",
+   "icao": "VCBI",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Dalian",
+   "name": "大連",
+   "country": "中国",
+   "lat": 38.920833,
+   "lng": 121.639167,
+   "tz": "Asia/Shanghai",
+   "icao": "ZYTL",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Damascus",
+   "name": "ダマスカス",
+   "country": "シリア",
+   "lat": 33.5,
+   "lng": 36.3,
+   "tz": "Asia/Damascus",
+   "icao": "OSDI",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Delhi",
+   "name": "ニューデリー",
+   "country": "インド",
+   "lat": 28.61,
+   "lng": 77.23,
+   "tz": "Asia/Kolkata",
+   "icao": "VIDP",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Dhaka",
+   "name": "ダッカ",
+   "country": "バングラデシュ",
+   "lat": 23.71667,
+   "lng": 90.41667,
+   "tz": "Asia/Dhaka",
+   "icao": "VGHS",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Dubai",
+   "name": "ドバイ",
+   "country": "アラブ首長国連邦",
+   "lat": 25.3,
+   "lng": 55.3,
+   "tz": "Asia/Dubai",
+   "icao": "OMDB",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Dushanbe",
+   "name": "ドゥシャンベ",
+   "country": "タジキスタン",
+   "lat": 38.58333,
+   "lng": 68.8,
+   "tz": "Asia/Dushanbe",
+   "icao": "UTDD",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Gaza",
+   "name": "ガザ",
+   "country": "パレスチナ",
+   "lat": 31.5,
+   "lng": 34.46667,
+   "tz": "Asia/Gaza",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Guangzhou",
+   "name": "広州",
+   "country": "中国",
+   "lat": 23.108889,
+   "lng": 113.264722,
+   "tz": "Asia/Shanghai",
+   "icao": "ZGGG",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Hanoi",
+   "name": "ハノイ",
+   "country": "ベトナム",
+   "lat": 21.03333,
+   "lng": 105.85,
+   "tz": "Asia/Ho_Chi_Minh",
+   "icao": "VVNB",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Harbin",
+   "name": "ハルビン",
+   "country": "中国",
+   "lat": 45.75,
+   "lng": 126.68333,
+   "tz": "Asia/Shanghai",
+   "icao": "ZYCC",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Ho_Chi_Minh",
+   "name": "ホーチミン",
+   "country": "ベトナム",
+   "lat": 10.75,
+   "lng": 106.66667,
+   "tz": "Asia/Ho_Chi_Minh",
+   "icao": "VVTS",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Hong_Kong",
+   "name": "香港",
+   "country": "香港",
+   "lat": 22.28333,
+   "lng": 114.15,
+   "tz": "Asia/Hong_Kong",
+   "icao": "VHHH",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Irkutsk",
+   "name": "イルクーツク",
+   "country": "ロシア",
+   "lat": 52.26667,
+   "lng": 104.33333,
+   "tz": "Asia/Irkutsk",
+   "icao": "UIII",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Jakarta",
+   "name": "ジャカルタ",
+   "country": "インドネシア",
+   "lat": -6.16667,
+   "lng": 106.8,
+   "tz": "Asia/Jakarta",
+   "icao": "WIII",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Jeddah",
+   "name": "ジッダ",
+   "country": "サウジアラビア",
+   "lat": 21.543333,
+   "lng": 39.172778,
+   "tz": "Asia/Riyadh",
+   "icao": "OEJN",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Jeju",
+   "name": "済州島",
+   "country": "韓国",
+   "lat": 33.5,
+   "lng": 126.516667,
+   "tz": "Asia/Seoul",
+   "icao": "RKPC",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Jerusalem",
+   "name": "エルサレム",
+   "country": "イスラエル",
+   "lat": 31.76667,
+   "lng": 35.23333,
+   "tz": "Asia/Jerusalem",
+   "icao": "LLBG",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Kabul",
+   "name": "カブール",
+   "country": "アフガニスタン",
+   "lat": 34.5167,
+   "lng": 69.2,
+   "tz": "Asia/Kabul",
+   "icao": "OAKB",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Kamchatka",
+   "name": "カムチャッカ",
+   "country": "ロシア",
+   "lat": 53.01667,
+   "lng": 158.65,
+   "tz": "Asia/Kamchatka",
+   "icao": "UHPP",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Karachi",
+   "name": "カラチ",
+   "country": "パキスタン",
+   "lat": 24.86667,
+   "lng": 67.05,
+   "tz": "Asia/Karachi",
+   "icao": "OPKC",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Kashgar",
+   "name": "カシュガル",
+   "country": "中国",
+   "lat": 39.48333,
+   "lng": 75.98333,
+   "tz": "Asia/Urumqi",
+   "icao": "ZWSH",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Kathmandu",
+   "name": "カトマンズ",
+   "country": "ネパール",
+   "lat": 27.71667,
+   "lng": 85.31667,
+   "tz": "Asia/Kathmandu",
+   "icao": "VNKT",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Kolkata",
+   "name": "コルカタ",
+   "country": "インド",
+   "lat": 22.53333,
+   "lng": 88.36667,
+   "tz": "Asia/Kolkata",
+   "icao": "VECC",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Krasnoyarsk",
+   "name": "クラスノヤルスク",
+   "country": "ロシア",
+   "lat": 56.01667,
+   "lng": 92.83333,
+   "tz": "Asia/Krasnoyarsk",
+   "icao": "UNKL",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Kuala_Lumpur",
+   "name": "クアラルンプール",
+   "country": "マレーシア",
+   "lat": 3.16667,
+   "lng": 101.7,
+   "tz": "Asia/Kuala_Lumpur",
+   "icao": "WMKK",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Kuching",
+   "name": "クチン",
+   "country": "マレーシア",
+   "lat": 1.55,
+   "lng": 110.33333,
+   "tz": "Asia/Kuching",
+   "icao": "WBGG",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Kuwait",
+   "name": "クウェート",
+   "country": "クウェート",
+   "lat": 29.33333,
+   "lng": 47.98333,
+   "tz": "Asia/Kuwait",
+   "icao": "OKBK",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Lahore",
+   "name": "ラホール",
+   "country": "パキスタン",
+   "lat": 31.549722,
+   "lng": 74.343611,
+   "tz": "Asia/Karachi",
+   "icao": "OPLA",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Macau",
+   "name": "マカオ",
+   "country": "マカオ",
+   "lat": 22.23333,
+   "lng": 113.58333,
+   "tz": "Asia/Macau",
+   "icao": "VMMC",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Magadan",
+   "name": "マガダン",
+   "country": "ロシア",
+   "lat": 59.56667,
+   "lng": 150.8,
+   "tz": "Asia/Magadan",
+   "icao": "UHMM",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Makassar",
+   "name": "マカッサル",
+   "country": "インドネシア",
+   "lat": -5.11667,
+   "lng": 119.4,
+   "tz": "Asia/Makassar",
+   "icao": "WAAA",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Manila",
+   "name": "マニラ",
+   "country": "フィリピン",
+   "lat": 14.58333,
+   "lng": 121.0,
+   "tz": "Asia/Manila",
+   "icao": "RPLL",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Mecca",
+   "name": "メッカ",
+   "country": "サウジアラビア",
+   "lat": 21.416667,
+   "lng": 39.816667,
+   "tz": "Asia/Riyadh",
+   "icao": "OEMK",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Mumbai",
+   "name": "ムンバイ",
+   "country": "インド",
+   "lat": 18.975,
+   "lng": 72.825833,
+   "tz": "Asia/Kolkata",
+   "icao": "VABB",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Muscat",
+   "name": "マスカット",
+   "country": "オマーン",
+   "lat": 23.6,
+   "lng": 58.58333,
+   "tz": "Asia/Muscat",
+   "icao": "OOMS",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Nicosia",
+   "name": "ニコシア",
+   "country": "キプロス",
+   "lat": 35.16667,
+   "lng": 33.36667,
+   "tz": "Asia/Nicosia",
+   "icao": "LCLK",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Novokuznetsk",
+   "name": "ノヴォクズネツク",
+   "country": "ロシア",
+   "lat": 53.75,
+   "lng": 87.11667,
+   "tz": "Asia/Novokuznetsk",
+   "icao": "UNWW",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Novosibirsk",
+   "name": "ノヴォシビルスク",
+   "country": "ロシア",
+   "lat": 55.03333,
+   "lng": 82.91667,
+   "tz": "Asia/Novosibirsk",
+   "icao": "UNNT",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Omsk",
+   "name": "オムスク",
+   "country": "ロシア",
+   "lat": 55.0,
+   "lng": 73.4,
+   "tz": "Asia/Omsk",
+   "icao": "UNOO",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Phnom_Penh",
+   "name": "プノンペン",
+   "country": "カンボジア",
+   "lat": 11.55,
+   "lng": 104.91667,
+   "tz": "Asia/Phnom_Penh",
+   "icao": "VDPP",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Phuket",
+   "name": "プーケット島",
+   "country": "タイ",
+   "lat": 7.888056,
+   "lng": 98.3975,
+   "tz": "Asia/Bangkok",
+   "icao": "VTSP",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Pontianak",
+   "name": "ポンティアナック",
+   "country": "インドネシア",
+   "lat": -0.03333,
+   "lng": 109.33333,
+   "tz": "Asia/Pontianak",
+   "icao": "WIOO",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Qatar",
+   "name": "ドーハ",
+   "country": "カタール",
+   "lat": 25.28333,
+   "lng": 51.53333,
+   "tz": "Asia/Qatar",
+   "icao": "OTBD",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Qingdao",
+   "name": "青島",
+   "country": "中国",
+   "lat": 36.066667,
+   "lng": 120.383333,
+   "tz": "Asia/Shanghai",
+   "icao": "ZSQD",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Riyadh",
+   "name": "リヤド",
+   "country": "サウジアラビア",
+   "lat": 24.63333,
+   "lng": 46.71667,
+   "tz": "Asia/Riyadh",
+   "icao": "OERK",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Sakhalin",
+   "name": "サハリン",
+   "country": "ロシア",
+   "lat": 46.96667,
+   "lng": 142.7,
+   "tz": "Asia/Sakhalin",
+   "icao": "UHSS",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Samarkand",
+   "name": "サマルカンド",
+   "country": "ウズベキスタン",
+   "lat": 39.66667,
+   "lng": 66.8,
+   "tz": "Asia/Samarkand",
+   "icao": "UTSS",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Sanya",
+   "name": "三亜（ハイナン島）",
+   "country": "中国",
+   "lat": 18.253333,
+   "lng": 109.503611,
+   "tz": "Asia/Shanghai",
+   "icao": "ZJSY",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Seoul",
+   "name": "ソウル",
+   "country": "韓国",
+   "lat": 37.55,
+   "lng": 126.96667,
+   "tz": "Asia/Seoul",
+   "icao": "RKSS",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Shanghai",
+   "name": "上海",
+   "country": "中国",
+   "lat": 31.23333,
+   "lng": 121.46667,
+   "tz": "Asia/Shanghai",
+   "icao": "ZSSS",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Singapore",
+   "name": "シンガポール",
+   "country": "シンガポール",
+   "lat": 1.28333,
+   "lng": 103.85,
+   "tz": "Asia/Singapore",
+   "icao": "WSSS",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Taipei",
+   "name": "台北",
+   "country": "台湾",
+   "lat": 25.05,
+   "lng": 121.5,
+   "tz": "Asia/Taipei",
+   "icao": "RCTP",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Tashkent",
+   "name": "タシュケント",
+   "country": "ウズベキスタン",
+   "lat": 41.33333,
+   "lng": 69.3,
+   "tz": "Asia/Tashkent",
+   "icao": "UTTT",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Tbilisi",
+   "name": "トビリシ",
+   "country": "ジョージア",
+   "lat": 41.71667,
+   "lng": 44.81667,
+   "tz": "Asia/Tbilisi",
+   "icao": "UGTB",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Tehran",
+   "name": "テヘラン",
+   "country": "イラン",
+   "lat": 35.66667,
+   "lng": 51.43333,
+   "tz": "Asia/Tehran",
+   "icao": "OIII",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Tel_Aviv",
+   "name": "テルアビブ",
+   "country": "イスラエル",
+   "lat": 32.066667,
+   "lng": 34.783333,
+   "tz": "Asia/Jerusalem",
+   "icao": "LLBG",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Tianjin",
+   "name": "天津",
+   "country": "中国",
+   "lat": 39.133333,
+   "lng": 117.183333,
+   "tz": "Asia/Shanghai",
+   "icao": "ZBTJ",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Tokyo",
+   "name": "東京",
+   "country": "日本",
+   "lat": 35.65,
+   "lng": 139.73333,
+   "tz": "Asia/Tokyo",
+   "icao": "RJTT",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Ulaanbaatar",
+   "name": "ウランバートル",
+   "country": "モンゴル",
+   "lat": 47.91667,
+   "lng": 106.88333,
+   "tz": "Asia/Ulaanbaatar",
+   "icao": "ZMUB",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Urumqi",
+   "name": "ウルムチ",
+   "country": "中国",
+   "lat": 43.8,
+   "lng": 87.58333,
+   "tz": "Asia/Urumqi",
+   "icao": "ZWWW",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Vientiane",
+   "name": "ヴィエンチャン",
+   "country": "ラオス",
+   "lat": 17.96667,
+   "lng": 102.6,
+   "tz": "Asia/Vientiane",
+   "icao": "VLVT",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Vladivostok",
+   "name": "ウラジオストク",
+   "country": "ロシア",
+   "lat": 43.16667,
+   "lng": 131.93333,
+   "tz": "Asia/Vladivostok",
+   "icao": "UHWW",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Wuhan",
+   "name": "武漢",
+   "country": "中国",
+   "lat": 30.5725,
+   "lng": 114.279167,
+   "tz": "Asia/Shanghai",
+   "icao": "ZHHH",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Xian",
+   "name": "西安",
+   "country": "中国",
+   "lat": 34.266667,
+   "lng": 108.9,
+   "tz": "Asia/Shanghai",
+   "icao": "ZLXY",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Yakutsk",
+   "name": "ヤクーツク",
+   "country": "ロシア",
+   "lat": 62.0,
+   "lng": 129.66667,
+   "tz": "Asia/Yakutsk",
+   "icao": "UEEE",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Yangon",
+   "name": "ヤンゴン",
+   "country": "ミャンマー",
+   "lat": 16.78333,
+   "lng": 96.16667,
+   "tz": "Asia/Yangon",
+   "icao": "VYYY",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Yekaterinburg",
+   "name": "エカテリンブルグ",
+   "country": "ロシア",
+   "lat": 56.85,
+   "lng": 60.6,
+   "tz": "Asia/Yekaterinburg",
+   "icao": "USSS",
+   "forecast": false
+  },
+  {
+   "place": "Asia/Yerevan",
+   "name": "エレバン",
+   "country": "アルメニア",
+   "lat": 40.1833,
+   "lng": 44.5,
+   "tz": "Asia/Yerevan",
+   "icao": "UDYZ",
+   "forecast": false
+  },
+  {
+   "place": "Atlantic/Ascension",
+   "name": "アセンション島",
+   "country": "セントヘレナ、アセンション及びトリスタン・ダ・クーニャ",
+   "lat": -7.9333,
+   "lng": -14.4167,
+   "tz": "Atlantic/St_Helena",
+   "icao": "FHAW",
+   "forecast": false
+  },
+  {
+   "place": "Atlantic/Azores",
+   "name": "アゾレス諸島",
+   "country": "ポルトガル",
+   "lat": 37.73333,
+   "lng": -25.66667,
+   "tz": "Atlantic/Azores",
+   "icao": "LPPD",
+   "forecast": true
+  },
+  {
+   "place": "Atlantic/Bermuda",
+   "name": "バミューダ諸島",
+   "country": "バミューダ諸島",
+   "lat": 32.28333,
+   "lng": -64.76667,
+   "tz": "Atlantic/Bermuda",
+   "icao": "TXKF",
+   "forecast": false
+  },
+  {
+   "place": "Atlantic/Canary",
+   "name": "グラン・カナリア島",
+   "country": "スペイン",
+   "lat": 28.1,
+   "lng": -15.4,
+   "tz": "Atlantic/Canary",
+   "icao": "GCLP",
+   "forecast": true
+  },
+  {
+   "place": "Atlantic/Cape_Verde",
+   "name": "プライア",
+   "country": "カーボベルデ",
+   "lat": 14.91667,
+   "lng": -23.51667,
+   "tz": "Atlantic/Cape_Verde",
+   "icao": "GVNP",
+   "forecast": false
+  },
+  {
+   "place": "Atlantic/Faroe",
+   "name": "フェロー諸島",
+   "country": "フェロー諸島",
+   "lat": 62.01667,
+   "lng": -6.76667,
+   "tz": "Atlantic/Faroe",
+   "icao": "EKVG",
+   "forecast": true
+  },
+  {
+   "place": "Atlantic/Madeira",
+   "name": "マデイラ諸島",
+   "country": "ポルトガル",
+   "lat": 32.63333,
+   "lng": -16.9,
+   "tz": "Atlantic/Madeira",
+   "icao": "LPMA",
+   "forecast": true
+  },
+  {
+   "place": "Atlantic/Reykjavik",
+   "name": "レイキャビク",
+   "country": "アイスランド",
+   "lat": 64.15,
+   "lng": -21.85,
+   "tz": "Atlantic/Reykjavik",
+   "icao": "BIKF",
+   "forecast": true
+  },
+  {
+   "place": "Atlantic/Stanley",
+   "name": "スタンリー",
+   "country": "フォークランド諸島",
+   "lat": -51.7,
+   "lng": -57.85,
+   "tz": "Atlantic/Stanley",
+   "icao": "EGYP",
+   "forecast": false
+  },
+  {
+   "place": "Australia/Adelaide",
+   "name": "アデレード",
+   "country": "オーストラリア",
+   "lat": -34.91667,
+   "lng": 138.58333,
+   "tz": "Australia/Adelaide",
+   "icao": "YPAD",
+   "forecast": false
+  },
+  {
+   "place": "Australia/Alice_Springs",
+   "name": "アリススプリングス",
+   "country": "オーストラリア",
+   "lat": -23.7,
+   "lng": 133.87,
+   "tz": "Australia/Darwin",
+   "icao": "YBAS",
+   "forecast": false
+  },
+  {
+   "place": "Australia/Brisbane",
+   "name": "ブリスベン",
+   "country": "オーストラリア",
+   "lat": -27.46667,
+   "lng": 153.03333,
+   "tz": "Australia/Brisbane",
+   "icao": "YBBN",
+   "forecast": false
+  },
+  {
+   "place": "Australia/Cairns",
+   "name": "ケアンズ",
+   "country": "オーストラリア",
+   "lat": -16.925556,
+   "lng": 145.775278,
+   "tz": "Australia/Brisbane",
+   "icao": "YBCS",
+   "forecast": false
+  },
+  {
+   "place": "Australia/Canberra",
+   "name": "キャンベラ",
+   "country": "オーストラリア",
+   "lat": -35.3075,
+   "lng": 149.124417,
+   "tz": "Australia/Sydney",
+   "icao": "YSCB",
+   "forecast": false
+  },
+  {
+   "place": "Australia/Darwin",
+   "name": "ダーウィン",
+   "country": "オーストラリア",
+   "lat": -12.46667,
+   "lng": 130.83333,
+   "tz": "Australia/Darwin",
+   "icao": "YPDN",
+   "forecast": false
+  },
+  {
+   "place": "Australia/Hobart",
+   "name": "ホバート",
+   "country": "オーストラリア",
+   "lat": -42.88333,
+   "lng": 147.31667,
+   "tz": "Australia/Hobart",
+   "icao": "YMHB",
+   "forecast": false
+  },
+  {
+   "place": "Australia/Melbourne",
+   "name": "メルボルン",
+   "country": "オーストラリア",
+   "lat": -37.81667,
+   "lng": 144.96667,
+   "tz": "Australia/Melbourne",
+   "icao": "YMML",
+   "forecast": false
+  },
+  {
+   "place": "Australia/Perth",
+   "name": "パース",
+   "country": "オーストラリア",
+   "lat": -31.95,
+   "lng": 115.85,
+   "tz": "Australia/Perth",
+   "icao": "YPPH",
+   "forecast": false
+  },
+  {
+   "place": "Australia/Sydney",
+   "name": "シドニー",
+   "country": "オーストラリア",
+   "lat": -33.86667,
+   "lng": 151.21667,
+   "tz": "Australia/Sydney",
+   "icao": "YSSY",
+   "forecast": false
+  },
+  {
+   "place": "Europe/Amsterdam",
+   "name": "アムステルダム",
+   "country": "オランダ",
+   "lat": 52.36667,
+   "lng": 4.9,
+   "tz": "Europe/Amsterdam",
+   "icao": "EHAM",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Andorra",
+   "name": "アンドラ",
+   "country": "アンドラ",
+   "lat": 42.5,
+   "lng": 1.5167,
+   "tz": "Europe/Andorra",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Athens",
+   "name": "アテネ",
+   "country": "ギリシャ",
+   "lat": 37.96667,
+   "lng": 23.71667,
+   "tz": "Europe/Athens",
+   "icao": "LGAV",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Barcelona",
+   "name": "バルセロナ",
+   "country": "スペイン",
+   "lat": 41.383333,
+   "lng": 2.183333,
+   "tz": "Europe/Madrid",
+   "icao": "LEBL",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Belfast",
+   "name": "ベルファスト",
+   "country": "イギリス",
+   "lat": 54.6,
+   "lng": -5.916667,
+   "tz": "Europe/London",
+   "icao": "EGAC",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Belgrade",
+   "name": "ベオグラード",
+   "country": "セルビア",
+   "lat": 44.83333,
+   "lng": 20.5,
+   "tz": "Europe/Belgrade",
+   "icao": "LYBE",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Berlin",
+   "name": "ベルリン",
+   "country": "ドイツ",
+   "lat": 52.5,
+   "lng": 13.36667,
+   "tz": "Europe/Berlin",
+   "icao": "EDDT",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Birmingham",
+   "name": "バーミンガム",
+   "country": "イギリス",
+   "lat": 52.4796,
+   "lng": -1.903,
+   "tz": "Europe/London",
+   "icao": "EGBB",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Bordeaux",
+   "name": "ボルドー",
+   "country": "フランス",
+   "lat": 44.838611,
+   "lng": -0.578333,
+   "tz": "Europe/Paris",
+   "icao": "LFBD",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Bratislava",
+   "name": "ブラチスラヴァ",
+   "country": "スロバキア",
+   "lat": 48.15,
+   "lng": 17.11667,
+   "tz": "Europe/Bratislava",
+   "icao": "LZIB",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Brussels",
+   "name": "ブリュッセル",
+   "country": "ベルギー",
+   "lat": 50.83333,
+   "lng": 4.33333,
+   "tz": "Europe/Brussels",
+   "icao": "EBBR",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Bucharest",
+   "name": "ブカレスト",
+   "country": "ルーマニア",
+   "lat": 44.43333,
+   "lng": 26.1,
+   "tz": "Europe/Bucharest",
+   "icao": "LROP",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Budapest",
+   "name": "ブダペスト",
+   "country": "ハンガリー",
+   "lat": 47.5,
+   "lng": 19.08333,
+   "tz": "Europe/Budapest",
+   "icao": "LHBP",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Cardiff",
+   "name": "カーディフ",
+   "country": "イギリス",
+   "lat": 51.485278,
+   "lng": -3.186667,
+   "tz": "Europe/London",
+   "icao": "EGFF",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Chisinau",
+   "name": "キシナウ",
+   "country": "モルドバ",
+   "lat": 47.0,
+   "lng": 28.83333,
+   "tz": "Europe/Chisinau",
+   "icao": "LUKK",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Cologne",
+   "name": "ケルン",
+   "country": "ドイツ",
+   "lat": 50.95,
+   "lng": 6.966667,
+   "tz": "Europe/Berlin",
+   "icao": "EDDK",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Copenhagen",
+   "name": "コペンハーゲン",
+   "country": "デンマーク",
+   "lat": 55.66667,
+   "lng": 12.58333,
+   "tz": "Europe/Copenhagen",
+   "icao": "EKCH",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Dresden",
+   "name": "ドレスデン",
+   "country": "ドイツ",
+   "lat": 51.033333,
+   "lng": 13.733333,
+   "tz": "Europe/Berlin",
+   "icao": "EDDC",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Dublin",
+   "name": "ダブリン",
+   "country": "アイルランド",
+   "lat": 53.33333,
+   "lng": -6.25,
+   "tz": "Europe/Dublin",
+   "icao": "EIDW",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Edinburgh",
+   "name": "エディンバラ",
+   "country": "イギリス",
+   "lat": 55.953056,
+   "lng": -3.188889,
+   "tz": "Europe/London",
+   "icao": "EGPH",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Florence",
+   "name": "フィレンツェ",
+   "country": "イタリア",
+   "lat": 43.783333,
+   "lng": 11.25,
+   "tz": "Europe/Rome",
+   "icao": "LIRQ",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Frankfurt",
+   "name": "フランクフルト",
+   "country": "ドイツ",
+   "lat": 50.110278,
+   "lng": 8.682222,
+   "tz": "Europe/Berlin",
+   "icao": "EDDF",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Geneva",
+   "name": "ジュネーヴ",
+   "country": "スイス",
+   "lat": 46.2,
+   "lng": 6.15,
+   "tz": "Europe/Zurich",
+   "icao": "LSGG",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Glasgow",
+   "name": "グラスゴー",
+   "country": "イギリス",
+   "lat": 55.858,
+   "lng": -4.259,
+   "tz": "Europe/London",
+   "icao": "EGPF",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Guernsey",
+   "name": "ガーンジー島",
+   "country": "ガーンジー島",
+   "lat": 49.45,
+   "lng": -2.53333,
+   "tz": "Europe/Guernsey",
+   "icao": "EGJB",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Hamburg",
+   "name": "ハンブルク",
+   "country": "ドイツ",
+   "lat": 53.550278,
+   "lng": 9.992778,
+   "tz": "Europe/Berlin",
+   "icao": "EDDH",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Hanover",
+   "name": "ハノーファー",
+   "country": "ドイツ",
+   "lat": 52.374444,
+   "lng": 9.738611,
+   "tz": "Europe/Berlin",
+   "icao": "EDDV",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Helsinki",
+   "name": "ヘルシンキ",
+   "country": "フィンランド",
+   "lat": 60.16667,
+   "lng": 24.96667,
+   "tz": "Europe/Helsinki",
+   "icao": "EFHK",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Isle_of_Man",
+   "name": "マン島",
+   "country": "マン島",
+   "lat": 54.15,
+   "lng": -4.46667,
+   "tz": "Europe/Isle_of_Man",
+   "icao": "EGNS",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Istanbul",
+   "name": "イスタンブル",
+   "country": "トルコ",
+   "lat": 41.01667,
+   "lng": 28.96667,
+   "tz": "Europe/Istanbul",
+   "icao": "LTBA",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Jersey",
+   "name": "ジャージー島",
+   "country": "ジャージー島",
+   "lat": 49.2,
+   "lng": -2.11667,
+   "tz": "Europe/Jersey",
+   "icao": "EGJJ",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Kaliningrad",
+   "name": "カリーニングラード",
+   "country": "ロシア",
+   "lat": 54.71667,
+   "lng": 20.5,
+   "tz": "Europe/Kaliningrad",
+   "icao": "UMKK",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Kazan",
+   "name": "カザン",
+   "country": "ロシア",
+   "lat": 55.783,
+   "lng": 49.1667,
+   "tz": "Europe/Moscow",
+   "icao": "UWKD",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Kiev",
+   "name": "キエフ",
+   "country": "ウクライナ",
+   "lat": 50.43333,
+   "lng": 30.51667,
+   "tz": "Europe/Kyiv",
+   "icao": "UKBB",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Lille",
+   "name": "リール",
+   "country": "フランス",
+   "lat": 50.6346,
+   "lng": 3.0629,
+   "tz": "Europe/Paris",
+   "icao": "LFQQ",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Lisbon",
+   "name": "リスボン",
+   "country": "ポルトガル",
+   "lat": 38.71667,
+   "lng": -9.13333,
+   "tz": "Europe/Lisbon",
+   "icao": "LPPT",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Liverpool",
+   "name": "リヴァプール",
+   "country": "イギリス",
+   "lat": 53.4,
+   "lng": -3.0,
+   "tz": "Europe/London",
+   "icao": "EGGP",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Ljubljana",
+   "name": "リュブリャナ",
+   "country": "スロベニア",
+   "lat": 46.05,
+   "lng": 14.51667,
+   "tz": "Europe/Ljubljana",
+   "icao": "LJLJ",
+   "forecast": true
+  },
+  {
+   "place": "Europe/London",
+   "name": "ロンドン",
+   "country": "イギリス",
+   "lat": 51.5,
+   "lng": -0.11667,
+   "tz": "Europe/London",
+   "icao": "EGLC",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Luxembourg",
+   "name": "ルクセンブルク",
+   "country": "ルクセンブルク",
+   "lat": 49.6,
+   "lng": 6.15,
+   "tz": "Europe/Luxembourg",
+   "icao": "ELLX",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Lyon",
+   "name": "リヨン",
+   "country": "フランス",
+   "lat": 45.759723,
+   "lng": 4.842223,
+   "tz": "Europe/Paris",
+   "icao": "LFLY",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Madrid",
+   "name": "マドリード",
+   "country": "スペイン",
+   "lat": 40.4,
+   "lng": -3.68333,
+   "tz": "Europe/Madrid",
+   "icao": "LEMD",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Malta",
+   "name": "マルタ",
+   "country": "マルタ",
+   "lat": 35.9,
+   "lng": 14.51667,
+   "tz": "Europe/Malta",
+   "icao": "LMML",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Manchester",
+   "name": "マンチェスター",
+   "country": "イギリス",
+   "lat": 53.4667,
+   "lng": -2.2333,
+   "tz": "Europe/London",
+   "icao": "EGCC",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Mariehamn",
+   "name": "マリエハムン",
+   "country": "オーランド諸島",
+   "lat": 60.1,
+   "lng": 19.95,
+   "tz": "Europe/Mariehamn",
+   "icao": "EFMA",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Marseille",
+   "name": "マルセイユ",
+   "country": "フランス",
+   "lat": 43.2975,
+   "lng": 5.377222,
+   "tz": "Europe/Paris",
+   "icao": "LFML",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Milano",
+   "name": "ミラノ",
+   "country": "イタリア",
+   "lat": 45.464167,
+   "lng": 9.190278,
+   "tz": "Europe/Rome",
+   "icao": "LIMC",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Minsk",
+   "name": "ミンスク",
+   "country": "ベラルーシ",
+   "lat": 53.9,
+   "lng": 27.56667,
+   "tz": "Europe/Minsk",
+   "icao": "UMMS",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Monaco",
+   "name": "モナコ",
+   "country": "モナコ",
+   "lat": 43.7,
+   "lng": 7.38333,
+   "tz": "Europe/Monaco",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Moscow",
+   "name": "モスクワ",
+   "country": "ロシア",
+   "lat": 55.75,
+   "lng": 37.58333,
+   "tz": "Europe/Moscow",
+   "icao": "UUEE",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Munich",
+   "name": "ミュンヘン",
+   "country": "ドイツ",
+   "lat": 48.133333,
+   "lng": 11.566667,
+   "tz": "Europe/Berlin",
+   "icao": "EDDM",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Nantes",
+   "name": "ナント",
+   "country": "フランス",
+   "lat": 47.21806,
+   "lng": -1.55278,
+   "tz": "Europe/Paris",
+   "icao": "LFRS",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Nice",
+   "name": "ニース",
+   "country": "フランス",
+   "lat": 43.702778,
+   "lng": 7.269167,
+   "tz": "Europe/Paris",
+   "icao": "LFMN",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Nizhny_Novgorod",
+   "name": "ニジニ・ノヴゴロド",
+   "country": "ロシア",
+   "lat": 56.33,
+   "lng": 44.0,
+   "tz": "Europe/Moscow",
+   "icao": "UWGG",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Oslo",
+   "name": "オスロ",
+   "country": "ノルウェー",
+   "lat": 59.91667,
+   "lng": 10.75,
+   "tz": "Europe/Oslo",
+   "icao": "ENGM",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Paris",
+   "name": "パリ",
+   "country": "フランス",
+   "lat": 48.86667,
+   "lng": 2.33333,
+   "tz": "Europe/Paris",
+   "icao": "LFPG",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Podgorica",
+   "name": "ポドゴリツァ",
+   "country": "モンテネグロ",
+   "lat": 42.43333,
+   "lng": 19.26667,
+   "tz": "Europe/Podgorica",
+   "icao": "LYPG",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Prague",
+   "name": "プラハ",
+   "country": "チェコ",
+   "lat": 50.08333,
+   "lng": 14.43333,
+   "tz": "Europe/Prague",
+   "icao": "LKPR",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Riga",
+   "name": "リガ",
+   "country": "ラトビア",
+   "lat": 56.95,
+   "lng": 24.1,
+   "tz": "Europe/Riga",
+   "icao": "EVRA",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Rome",
+   "name": "ローマ",
+   "country": "イタリア",
+   "lat": 41.9,
+   "lng": 12.48333,
+   "tz": "Europe/Rome",
+   "icao": "LIRA",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Rostov-on-Don",
+   "name": "ロストフ・ナ・ドヌ",
+   "country": "ロシア",
+   "lat": 47.216667,
+   "lng": 39.716667,
+   "tz": "Europe/Moscow",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Rovaniemi",
+   "name": "ロヴァニエミ",
+   "country": "フィンランド",
+   "lat": 66.5,
+   "lng": 25.733333,
+   "tz": "Europe/Helsinki",
+   "icao": "EFRO",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Saint_Petersburg",
+   "name": "サンクトペテルブルク",
+   "country": "ロシア",
+   "lat": 59.657175,
+   "lng": 30.342169,
+   "tz": "Europe/Moscow",
+   "icao": "ULLI",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Samara",
+   "name": "サマーラ",
+   "country": "ロシア",
+   "lat": 53.2,
+   "lng": 50.15,
+   "tz": "Europe/Samara",
+   "icao": "UWWW",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Sarajevo",
+   "name": "サラエヴォ",
+   "country": "ボスニア・ヘルツェゴビナ",
+   "lat": 43.86667,
+   "lng": 18.41667,
+   "tz": "Europe/Sarajevo",
+   "icao": "LQSA",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Saransk",
+   "name": "サランスク",
+   "country": "ロシア",
+   "lat": 54.183333,
+   "lng": 45.183333,
+   "tz": "Europe/Moscow",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Simferopol",
+   "name": "シンフェロポリ",
+   "country": "ウクライナ",
+   "lat": 44.95,
+   "lng": 34.1,
+   "tz": "Europe/Simferopol",
+   "icao": "UKFF",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Skopje",
+   "name": "スコピエ",
+   "country": "マケドニア共和国",
+   "lat": 41.98333,
+   "lng": 21.43333,
+   "tz": "Europe/Skopje",
+   "icao": "LWSK",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Sochi",
+   "name": "ソチ",
+   "country": "ロシア",
+   "lat": 43.585278,
+   "lng": 39.720278,
+   "tz": "Europe/Volgograd",
+   "icao": "URSS",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Sofia",
+   "name": "ソフィア",
+   "country": "ブルガリア",
+   "lat": 42.68333,
+   "lng": 23.31667,
+   "tz": "Europe/Sofia",
+   "icao": "LBSF",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Stockholm",
+   "name": "ストックホルム",
+   "country": "スウェーデン",
+   "lat": 59.33333,
+   "lng": 18.05,
+   "tz": "Europe/Stockholm",
+   "icao": "ESSB",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Stuttgart",
+   "name": "シュトゥットガルト",
+   "country": "ドイツ",
+   "lat": 48.778611,
+   "lng": 9.179444,
+   "tz": "Europe/Berlin",
+   "icao": "EDDS",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Tallinn",
+   "name": "タリン",
+   "country": "エストニア",
+   "lat": 59.41667,
+   "lng": 24.75,
+   "tz": "Europe/Tallinn",
+   "icao": "EETN",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Tirane",
+   "name": "ティラナ",
+   "country": "アルバニア",
+   "lat": 41.3333,
+   "lng": 19.8333,
+   "tz": "Europe/Tirane",
+   "icao": "LATI",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Toulouse",
+   "name": "トゥールーズ",
+   "country": "フランス",
+   "lat": 43.604503,
+   "lng": 1.444026,
+   "tz": "Europe/Paris",
+   "icao": "LFBO",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Tromuso",
+   "name": "トロムソ",
+   "country": "ノルウェー",
+   "lat": 69.682778,
+   "lng": 18.942778,
+   "tz": "Europe/Oslo",
+   "icao": "ENTC",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Vienna",
+   "name": "ウィーン",
+   "country": "オーストリア",
+   "lat": 48.21667,
+   "lng": 16.33333,
+   "tz": "Europe/Vienna",
+   "icao": "LOWW",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Vilnius",
+   "name": "ビリニュス",
+   "country": "リトアニア",
+   "lat": 54.68333,
+   "lng": 25.31667,
+   "tz": "Europe/Vilnius",
+   "icao": "EYVI",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Volgograd",
+   "name": "ヴォルゴグラード",
+   "country": "ロシア",
+   "lat": 48.73333,
+   "lng": 44.41667,
+   "tz": "Europe/Volgograd",
+   "icao": "URWW",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Warsaw",
+   "name": "ワルシャワ",
+   "country": "ポーランド",
+   "lat": 52.25,
+   "lng": 21.0,
+   "tz": "Europe/Warsaw",
+   "icao": "EPWA",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Zagreb",
+   "name": "ザグレブ",
+   "country": "クロアチア",
+   "lat": 45.8,
+   "lng": 15.96667,
+   "tz": "Europe/Zagreb",
+   "icao": "LDZA",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Zaporozhye",
+   "name": "ザポリージャ",
+   "country": "ウクライナ",
+   "lat": 47.83333,
+   "lng": 35.16667,
+   "tz": "Europe/Kyiv",
+   "icao": "UKDE",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Zurich",
+   "name": "チューリッヒ",
+   "country": "スイス",
+   "lat": 47.38333,
+   "lng": 8.53333,
+   "tz": "Europe/Zurich",
+   "icao": "LSZH",
+   "forecast": true
+  },
+  {
+   "place": "Indian/Antananarivo",
+   "name": "アンタナナリボ",
+   "country": "マダガスカル",
+   "lat": -18.91667,
+   "lng": 47.51667,
+   "tz": "Indian/Antananarivo",
+   "icao": "FMMI",
+   "forecast": false
+  },
+  {
+   "place": "Indian/Chagos",
+   "name": "チャゴス諸島",
+   "country": "イギリス領インド洋地域",
+   "lat": -7.33333,
+   "lng": 72.41667,
+   "tz": "Indian/Chagos",
+   "icao": "FJDG",
+   "forecast": false
+  },
+  {
+   "place": "Indian/Christmas",
+   "name": "クリスマス島",
+   "country": "クリスマス島",
+   "lat": -10.41667,
+   "lng": 105.71667,
+   "tz": "Indian/Christmas",
+   "icao": "YPXM",
+   "forecast": false
+  },
+  {
+   "place": "Indian/Cocos",
+   "name": "ココス諸島",
+   "country": "ココス諸島",
+   "lat": -12.16667,
+   "lng": 96.91667,
+   "tz": "Indian/Cocos",
+   "icao": "YPCC",
+   "forecast": false
+  },
+  {
+   "place": "Indian/Comoro",
+   "name": "モロニ",
+   "country": "コモロ",
+   "lat": -11.68333,
+   "lng": 43.26667,
+   "tz": "Indian/Comoro",
+   "icao": "FMCH",
+   "forecast": false
+  },
+  {
+   "place": "Indian/Mahe",
+   "name": "マヘ島",
+   "country": "セーシェル",
+   "lat": -4.66667,
+   "lng": 55.46667,
+   "tz": "Indian/Mahe",
+   "icao": "FSIA",
+   "forecast": false
+  },
+  {
+   "place": "Indian/Maldives",
+   "name": "マレ島",
+   "country": "モルディブ",
+   "lat": 4.16667,
+   "lng": 73.5,
+   "tz": "Indian/Maldives",
+   "icao": "VRMM",
+   "forecast": false
+  },
+  {
+   "place": "Indian/Mauritius",
+   "name": "ポートルイス",
+   "country": "モーリシャス",
+   "lat": -20.16667,
+   "lng": 57.5,
+   "tz": "Indian/Mauritius",
+   "icao": "FIMP",
+   "forecast": false
+  },
+  {
+   "place": "Indian/Mayotte",
+   "name": "マヨット",
+   "country": "マヨット",
+   "lat": -12.78333,
+   "lng": 45.23333,
+   "tz": "Indian/Mayotte",
+   "icao": "FMCZ",
+   "forecast": false
+  },
+  {
+   "place": "Indian/Reunion",
+   "name": "レユニオン",
+   "country": "レユニオン",
+   "lat": -20.86667,
+   "lng": 55.46667,
+   "tz": "Indian/Reunion",
+   "icao": "FMEE",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Apia",
+   "name": "アピア",
+   "country": "サモア",
+   "lat": -13.83333,
+   "lng": -171.73333,
+   "tz": "Pacific/Apia",
+   "icao": "NSFA",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Auckland",
+   "name": "オークランド",
+   "country": "ニュージーランド",
+   "lat": -36.86667,
+   "lng": 174.76667,
+   "tz": "Pacific/Auckland",
+   "icao": "NZAA",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Christchurch",
+   "name": "クライストチャーチ",
+   "country": "ニュージーランド",
+   "lat": -43.53,
+   "lng": 172.620278,
+   "tz": "Pacific/Auckland",
+   "icao": "NZCH",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Chuuk",
+   "name": "チューク州",
+   "country": "ミクロネシア連邦",
+   "lat": 7.41667,
+   "lng": 151.78333,
+   "tz": "Pacific/Chuuk",
+   "icao": "PTKK",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Easter",
+   "name": "イースター島",
+   "country": "チリ",
+   "lat": -27.15,
+   "lng": -109.43333,
+   "tz": "Pacific/Easter",
+   "icao": "SCIP",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Fiji",
+   "name": "スバ",
+   "country": "フィジー",
+   "lat": -18.13333,
+   "lng": 178.41667,
+   "tz": "Pacific/Fiji",
+   "icao": "NFFN",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Funafuti",
+   "name": "フナフティ島",
+   "country": "ツバル",
+   "lat": -8.51667,
+   "lng": 179.21667,
+   "tz": "Pacific/Funafuti",
+   "icao": "NGFU",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Guadalcanal",
+   "name": "ガダルカナル島",
+   "country": "ソロモン諸島",
+   "lat": -9.53333,
+   "lng": 160.2,
+   "tz": "Pacific/Guadalcanal",
+   "icao": "AGGH",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Guam",
+   "name": "グアム",
+   "country": "グアム",
+   "lat": 13.46667,
+   "lng": 144.75,
+   "tz": "Pacific/Guam",
+   "icao": "PGUM",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Honolulu",
+   "name": "ホノルル（ハワイ）",
+   "country": "アメリカ",
+   "lat": 21.3,
+   "lng": -157.85,
+   "tz": "Pacific/Honolulu",
+   "icao": "PHNL",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Maui",
+   "name": "マウイ島",
+   "country": "アメリカ",
+   "lat": 20.881667,
+   "lng": -156.4675,
+   "tz": "Pacific/Honolulu",
+   "icao": "PHOG",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Niue",
+   "name": "ニウエ",
+   "country": "ニウエ",
+   "lat": -19.01667,
+   "lng": -169.91667,
+   "tz": "Pacific/Niue",
+   "icao": "NIUE",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Norfolk",
+   "name": "ノーフォーク島",
+   "country": "ノーフォーク島",
+   "lat": -29.05,
+   "lng": 167.96667,
+   "tz": "Pacific/Norfolk",
+   "icao": "YSNF",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Noumea",
+   "name": "ヌメア",
+   "country": "ニューカレドニア",
+   "lat": -22.26667,
+   "lng": 166.45,
+   "tz": "Pacific/Noumea",
+   "icao": "NWWW",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Pago_Pago",
+   "name": "パゴパゴ",
+   "country": "アメリカ領サモア",
+   "lat": -14.26667,
+   "lng": -170.7,
+   "tz": "Pacific/Pago_Pago",
+   "icao": "NSTU",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Palau",
+   "name": "パラオ",
+   "country": "パラオ",
+   "lat": 7.33333,
+   "lng": 134.48333,
+   "tz": "Pacific/Palau",
+   "icao": "PTRO",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Pohnpei",
+   "name": "ポンペイ州",
+   "country": "ミクロネシア連邦",
+   "lat": 6.96667,
+   "lng": 158.21667,
+   "tz": "Pacific/Pohnpei",
+   "icao": "PTPN",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Port_Moresby",
+   "name": "ポートモレスビー",
+   "country": "パプアニューギニア",
+   "lat": -9.5,
+   "lng": 147.16667,
+   "tz": "Pacific/Port_Moresby",
+   "icao": "AYPY",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Rarotonga",
+   "name": "ラロトンガ島",
+   "country": "クック諸島",
+   "lat": -21.23333,
+   "lng": -159.76667,
+   "tz": "Pacific/Rarotonga",
+   "icao": "NCRG",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Saipan",
+   "name": "サイパン島",
+   "country": "北マリアナ諸島",
+   "lat": 15.2,
+   "lng": 145.75,
+   "tz": "Pacific/Saipan",
+   "icao": "PGSN",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Tahiti",
+   "name": "タヒチ島",
+   "country": "フランス領ポリネシア",
+   "lat": -17.53333,
+   "lng": -149.56667,
+   "tz": "Pacific/Tahiti",
+   "icao": "NTAA",
+   "forecast": false
+  },
+  {
+   "place": "Pacific/Tongatapu",
+   "name": "トンガタプ島",
+   "country": "トンガ",
+   "lat": -21.16667,
+   "lng": -175.16667,
+   "tz": "Pacific/Tongatapu",
+   "icao": "NFTF",
+   "forecast": false
+  }
+ ]
+}
