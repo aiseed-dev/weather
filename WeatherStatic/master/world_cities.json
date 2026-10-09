@@ -8,7 +8,7 @@
    "lng": -4.03333,
    "tz": "Africa/Abidjan",
    "icao": "DIAP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Accra",
@@ -18,7 +18,17 @@
    "lng": -0.21667,
    "tz": "Africa/Accra",
    "icao": "DGAA",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Africa/Addis_Ababa",
+   "name": "アディスアベバ",
+   "country": "エチオピア",
+   "lat": 9.03333,
+   "lng": 38.7,
+   "tz": "Africa/Addis_Ababa",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Africa/Algiers",
@@ -31,6 +41,16 @@
    "forecast": true
   },
   {
+   "place": "Africa/Asmara",
+   "name": "アスマラ",
+   "country": "エリトリア",
+   "lat": 15.33333,
+   "lng": 38.88333,
+   "tz": "Africa/Asmara",
+   "icao": "",
+   "forecast": true
+  },
+  {
    "place": "Africa/Bamako",
    "name": "バマコ",
    "country": "マリ",
@@ -38,7 +58,7 @@
    "lng": -8.0,
    "tz": "Africa/Bamako",
    "icao": "GABS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Bangui",
@@ -48,7 +68,7 @@
    "lng": 18.58333,
    "tz": "Africa/Bangui",
    "icao": "FEFF",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Banjul",
@@ -58,7 +78,7 @@
    "lng": -16.65,
    "tz": "Africa/Banjul",
    "icao": "GBYD",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Bissau",
@@ -68,7 +88,17 @@
    "lng": -15.58333,
    "tz": "Africa/Bissau",
    "icao": "GGOV",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Africa/Blantyre",
+   "name": "ブランタイヤ",
+   "country": "マラウイ",
+   "lat": -15.78333,
+   "lng": 35.0,
+   "tz": "Africa/Blantyre",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Africa/Brazzaville",
@@ -78,7 +108,17 @@
    "lng": 15.28333,
    "tz": "Africa/Brazzaville",
    "icao": "FCBB",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Africa/Bujumbura",
+   "name": "ブジュンブラ",
+   "country": "ブルンジ",
+   "lat": -3.38333,
+   "lng": 29.36667,
+   "tz": "Africa/Bujumbura",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Africa/Cairo",
@@ -98,7 +138,7 @@
    "lng": 18.416667,
    "tz": "Africa/Johannesburg",
    "icao": "FACT",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Casablanca",
@@ -121,6 +161,16 @@
    "forecast": true
   },
   {
+   "place": "Africa/Conakry",
+   "name": "コナクリ",
+   "country": "ギニア",
+   "lat": 9.51667,
+   "lng": -13.71667,
+   "tz": "Africa/Conakry",
+   "icao": "",
+   "forecast": true
+  },
+  {
    "place": "Africa/Dakar",
    "name": "ダカール",
    "country": "セネガル",
@@ -128,7 +178,27 @@
    "lng": -17.43333,
    "tz": "Africa/Dakar",
    "icao": "GOOY",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Africa/Dar_es_Salaam",
+   "name": "ダルエスサラーム",
+   "country": "タンザニア",
+   "lat": -6.8,
+   "lng": 39.28333,
+   "tz": "Africa/Dar_es_Salaam",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Djibouti",
+   "name": "ジブチ",
+   "country": "ジブチ",
+   "lat": 11.6,
+   "lng": 43.15,
+   "tz": "Africa/Djibouti",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Africa/Douala",
@@ -138,7 +208,7 @@
    "lng": 9.7,
    "tz": "Africa/Douala",
    "icao": "FKKD",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/El_Aaiun",
@@ -151,6 +221,16 @@
    "forecast": true
   },
   {
+   "place": "Africa/Freetown",
+   "name": "フリータウン",
+   "country": "シエラレオネ",
+   "lat": 8.5,
+   "lng": -13.25,
+   "tz": "Africa/Freetown",
+   "icao": "",
+   "forecast": true
+  },
+  {
    "place": "Africa/Gaborone",
    "name": "ハボローネ",
    "country": "ボツワナ",
@@ -158,7 +238,7 @@
    "lng": 25.91667,
    "tz": "Africa/Gaborone",
    "icao": "FBSK",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Harare",
@@ -168,7 +248,7 @@
    "lng": 31.05,
    "tz": "Africa/Harare",
    "icao": "FVHA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Johannesburg",
@@ -178,7 +258,27 @@
    "lng": 28.0,
    "tz": "Africa/Johannesburg",
    "icao": "FAOR",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Africa/Juba",
+   "name": "ジュバ",
+   "country": "南スーダン",
+   "lat": 4.85,
+   "lng": 31.6,
+   "tz": "Africa/Juba",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Kampala",
+   "name": "カンパラ",
+   "country": "ウガンダ",
+   "lat": 0.31667,
+   "lng": 32.41667,
+   "tz": "Africa/Kampala",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Africa/Khartoum",
@@ -188,7 +288,7 @@
    "lng": 32.53333,
    "tz": "Africa/Khartoum",
    "icao": "HSSS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Kigali",
@@ -198,7 +298,7 @@
    "lng": 30.06667,
    "tz": "Africa/Kigali",
    "icao": "HRYR",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Kinshasa",
@@ -208,7 +308,7 @@
    "lng": 15.3,
    "tz": "Africa/Kinshasa",
    "icao": "FZAA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Lagos",
@@ -218,7 +318,7 @@
    "lng": 3.4,
    "tz": "Africa/Lagos",
    "icao": "DNMM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Libreville",
@@ -228,7 +328,7 @@
    "lng": 9.45,
    "tz": "Africa/Libreville",
    "icao": "FOOL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Lome",
@@ -238,7 +338,27 @@
    "lng": 1.21667,
    "tz": "Africa/Lome",
    "icao": "DXXX",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Africa/Luanda",
+   "name": "ルアンダ",
+   "country": "アンゴラ",
+   "lat": -8.838333,
+   "lng": 13.234444,
+   "tz": "Africa/Luanda",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Lubumbashi",
+   "name": "ルブンバシ",
+   "country": "コンゴ民主共和国",
+   "lat": -11.66667,
+   "lng": 27.46667,
+   "tz": "Africa/Lubumbashi",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Africa/Lusaka",
@@ -248,7 +368,7 @@
    "lng": 28.28333,
    "tz": "Africa/Lusaka",
    "icao": "FLKK",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Luxor",
@@ -268,7 +388,7 @@
    "lng": 8.78333,
    "tz": "Africa/Malabo",
    "icao": "FGSL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Maputo",
@@ -278,7 +398,37 @@
    "lng": 32.58333,
    "tz": "Africa/Maputo",
    "icao": "FQMA",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Africa/Maseru",
+   "name": "マセル",
+   "country": "レソト",
+   "lat": -29.46667,
+   "lng": 27.5,
+   "tz": "Africa/Maseru",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Mbabane",
+   "name": "ムババーネ",
+   "country": "スワジランド",
+   "lat": -26.3,
+   "lng": 31.1,
+   "tz": "Africa/Mbabane",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Africa/Mogadishu",
+   "name": "モガディシュ",
+   "country": "ソマリア",
+   "lat": 2.06667,
+   "lng": 45.36667,
+   "tz": "Africa/Mogadishu",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Africa/Monrovia",
@@ -288,7 +438,7 @@
    "lng": -10.78333,
    "tz": "Africa/Monrovia",
    "icao": "GLRB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Nairobi",
@@ -298,7 +448,7 @@
    "lng": 36.81667,
    "tz": "Africa/Nairobi",
    "icao": "HKJK",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Ndjamena",
@@ -308,7 +458,7 @@
    "lng": 15.05,
    "tz": "Africa/Ndjamena",
    "icao": "FTTJ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Niamey",
@@ -318,7 +468,7 @@
    "lng": 2.11667,
    "tz": "Africa/Niamey",
    "icao": "DRRN",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Nouakchott",
@@ -328,7 +478,7 @@
    "lng": -15.95,
    "tz": "Africa/Nouakchott",
    "icao": "GQNN",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Ouagadougou",
@@ -338,7 +488,7 @@
    "lng": -1.51667,
    "tz": "Africa/Ouagadougou",
    "icao": "DFFD",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Porto-Novo",
@@ -348,7 +498,7 @@
    "lng": 2.61667,
    "tz": "Africa/Porto-Novo",
    "icao": "DBBB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Sao_Tome",
@@ -358,7 +508,7 @@
    "lng": 6.73333,
    "tz": "Africa/Sao_Tome",
    "icao": "FPST",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Africa/Tripoli",
@@ -388,7 +538,7 @@
    "lng": 17.1,
    "tz": "Africa/Windhoek",
    "icao": "FYWH",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Adak",
@@ -398,7 +548,7 @@
    "lng": -176.65,
    "tz": "America/Adak",
    "icao": "PADK",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Anchorage",
@@ -408,7 +558,7 @@
    "lng": -149.9,
    "tz": "America/Anchorage",
    "icao": "PANC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Anguilla",
@@ -418,7 +568,7 @@
    "lng": -63.068611,
    "tz": "America/Anguilla",
    "icao": "TQPF",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Antigua",
@@ -428,7 +578,17 @@
    "lng": -61.85,
    "tz": "America/Antigua",
    "icao": "TAPA",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Araguaina",
+   "name": "アラグアイーナ",
+   "country": "ブラジル",
+   "lat": -7.2,
+   "lng": -48.2,
+   "tz": "America/Araguaina",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Argentina/Buenos_Aires",
@@ -438,7 +598,17 @@
    "lng": -58.369997,
    "tz": "America/Argentina/Buenos_Aires",
    "icao": "SAEZ",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Argentina/Catamarca",
+   "name": "カタマルカ",
+   "country": "アルゼンチン",
+   "lat": -28.4996,
+   "lng": -65.7565,
+   "tz": "America/Argentina/Catamarca",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Argentina/Cordoba",
@@ -448,7 +618,37 @@
    "lng": -64.1689,
    "tz": "America/Argentina/Cordoba",
    "icao": "SACO",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Argentina/Jujuy",
+   "name": "フフイ",
+   "country": "アルゼンチン",
+   "lat": -24.19887,
+   "lng": -65.28955,
+   "tz": "America/Argentina/Jujuy",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Argentina/La_Rioja",
+   "name": "ラ・リオハ",
+   "country": "アルゼンチン",
+   "lat": -29.43577,
+   "lng": -66.86169,
+   "tz": "America/Argentina/La_Rioja",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Argentina/Mendoza",
+   "name": "メンドーサ",
+   "country": "アルゼンチン",
+   "lat": -32.90126,
+   "lng": -68.83099,
+   "tz": "America/Argentina/Mendoza",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Argentina/Rio_Gallegos",
@@ -458,7 +658,7 @@
    "lng": -69.199,
    "tz": "America/Argentina/Rio_Gallegos",
    "icao": "SAWG",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Argentina/Salta",
@@ -468,7 +668,37 @@
    "lng": -65.406,
    "tz": "America/Argentina/Salta",
    "icao": "SASA",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Argentina/San_Juan",
+   "name": "サンフアン",
+   "country": "アルゼンチン",
+   "lat": -31.55138,
+   "lng": -68.52612,
+   "tz": "America/Argentina/San_Juan",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Argentina/San_Luis",
+   "name": "サンルイス",
+   "country": "アルゼンチン",
+   "lat": -33.32777,
+   "lng": -66.3387,
+   "tz": "America/Argentina/San_Luis",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Argentina/Tucuman",
+   "name": "トゥクマン",
+   "country": "アルゼンチン",
+   "lat": -26.88679,
+   "lng": -65.18847,
+   "tz": "America/Argentina/Tucuman",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Argentina/Ushuaia",
@@ -478,7 +708,7 @@
    "lng": -68.3,
    "tz": "America/Argentina/Ushuaia",
    "icao": "SAWH",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Aruba",
@@ -488,7 +718,7 @@
    "lng": -70.037,
    "tz": "America/Aruba",
    "icao": "TNCA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Asuncion",
@@ -498,7 +728,17 @@
    "lng": -57.66667,
    "tz": "America/Asuncion",
    "icao": "SGAS",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Atikokan",
+   "name": "アティコカン",
+   "country": "カナダ",
+   "lat": 48.75,
+   "lng": -91.61667,
+   "tz": "America/Atikokan",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Atlanta",
@@ -508,7 +748,7 @@
    "lng": -84.39,
    "tz": "America/New_York",
    "icao": "KATL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Bahia",
@@ -518,7 +758,7 @@
    "lng": -38.51667,
    "tz": "America/Bahia",
    "icao": "SBSV",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Barbados",
@@ -528,7 +768,7 @@
    "lng": -59.61667,
    "tz": "America/Barbados",
    "icao": "TBPB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Belem",
@@ -538,7 +778,7 @@
    "lng": -48.48333,
    "tz": "America/Belem",
    "icao": "SBBE",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Belize",
@@ -548,7 +788,7 @@
    "lng": -88.2,
    "tz": "America/Belize",
    "icao": "MZBZ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Belo_Horizonte",
@@ -558,7 +798,17 @@
    "lng": -43.933333,
    "tz": "America/Sao_Paulo",
    "icao": "SBCF",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Blanc-Sablon",
+   "name": "ブラン・サブロン",
+   "country": "カナダ",
+   "lat": 51.41667,
+   "lng": -57.11667,
+   "tz": "America/Blanc-Sablon",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Boa_Vista",
@@ -568,7 +818,7 @@
    "lng": -60.66667,
    "tz": "America/Boa_Vista",
    "icao": "SBBV",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Bogota",
@@ -578,7 +828,17 @@
    "lng": -74.08333,
    "tz": "America/Bogota",
    "icao": "SKBO",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Boise",
+   "name": "ボイシ",
+   "country": "アメリカ",
+   "lat": 43.6,
+   "lng": -116.2,
+   "tz": "America/Boise",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Boston",
@@ -588,7 +848,7 @@
    "lng": -71.061667,
    "tz": "America/New_York",
    "icao": "KBOS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Brasilia",
@@ -598,7 +858,7 @@
    "lng": -47.866667,
    "tz": "America/Sao_Paulo",
    "icao": "SBBR",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Calgary",
@@ -608,7 +868,17 @@
    "lng": -114.0572,
    "tz": "America/Edmonton",
    "icao": "CYYC",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Cambridge_Bay",
+   "name": "ケンブリッジベイ",
+   "country": "カナダ",
+   "lat": 69.1,
+   "lng": -105.05,
+   "tz": "America/Cambridge_Bay",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Campo_Grande",
@@ -618,7 +888,7 @@
    "lng": -54.61667,
    "tz": "America/Campo_Grande",
    "icao": "SBCG",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Cancun",
@@ -628,7 +898,7 @@
    "lng": -86.76667,
    "tz": "America/Cancun",
    "icao": "MMUN",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Caracas",
@@ -638,7 +908,7 @@
    "lng": -66.93333,
    "tz": "America/Caracas",
    "icao": "SVMI",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Cayenne",
@@ -648,7 +918,7 @@
    "lng": -52.33333,
    "tz": "America/Cayenne",
    "icao": "SOCA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Cayman",
@@ -658,7 +928,7 @@
    "lng": -81.38333,
    "tz": "America/Cayman",
    "icao": "MWCR",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Chicago",
@@ -668,7 +938,7 @@
    "lng": -87.65,
    "tz": "America/Chicago",
    "icao": "KORD",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Chihuahua",
@@ -678,7 +948,7 @@
    "lng": -106.08333,
    "tz": "America/Chihuahua",
    "icao": "MMCU",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Costa_Rica",
@@ -688,7 +958,7 @@
    "lng": -84.08333,
    "tz": "America/Costa_Rica",
    "icao": "MROC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Cuiaba",
@@ -698,7 +968,7 @@
    "lng": -56.08333,
    "tz": "America/Cuiaba",
    "icao": "SBCY",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Curacao",
@@ -708,7 +978,7 @@
    "lng": -69.0,
    "tz": "America/Curacao",
    "icao": "TNCC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Curitiba",
@@ -718,7 +988,7 @@
    "lng": -49.25,
    "tz": "America/Sao_Paulo",
    "icao": "SBCF",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Dallas",
@@ -728,7 +998,37 @@
    "lng": -96.803889,
    "tz": "America/Chicago",
    "icao": "KDFW",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Danmarkshavn",
+   "name": "デンマークシャウン",
+   "country": "グリーンランド",
+   "lat": 76.76667,
+   "lng": -18.66667,
+   "tz": "America/Danmarkshavn",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Dawson",
+   "name": "ドーソン・シティ",
+   "country": "カナダ",
+   "lat": 64.06667,
+   "lng": -139.41667,
+   "tz": "America/Dawson",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Dawson_Creek",
+   "name": "ドーソン・クリーク",
+   "country": "カナダ",
+   "lat": 55.75953,
+   "lng": -120.2294,
+   "tz": "America/Dawson_Creek",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Denver",
@@ -738,7 +1038,7 @@
    "lng": -104.98333,
    "tz": "America/Denver",
    "icao": "KDEN",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Detroit",
@@ -748,7 +1048,7 @@
    "lng": -83.03333,
    "tz": "America/Detroit",
    "icao": "KDTW",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Dominica",
@@ -758,7 +1058,7 @@
    "lng": -61.4,
    "tz": "America/Dominica",
    "icao": "TDCF",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Edmonton",
@@ -768,7 +1068,17 @@
    "lng": -113.46667,
    "tz": "America/Edmonton",
    "icao": "CYEG",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Eirunepe",
+   "name": "エイルネペ",
+   "country": "ブラジル",
+   "lat": -6.66667,
+   "lng": -69.86667,
+   "tz": "America/Eirunepe",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/El_Paso",
@@ -778,7 +1088,7 @@
    "lng": -106.423333,
    "tz": "America/Denver",
    "icao": "KELP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/El_Salvador",
@@ -788,7 +1098,7 @@
    "lng": -89.2,
    "tz": "America/El_Salvador",
    "icao": "MSLP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Fairbanks",
@@ -798,7 +1108,17 @@
    "lng": -147.723056,
    "tz": "America/Anchorage",
    "icao": "PAFA",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Fort_Nelson",
+   "name": "フォート・ネルソン",
+   "country": "カナダ",
+   "lat": 58.8057352,
+   "lng": -122.696922,
+   "tz": "America/Fort_Nelson",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Fortaleza",
@@ -808,7 +1128,17 @@
    "lng": -38.5,
    "tz": "America/Fortaleza",
    "icao": "SBFZ",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Glace_Bay",
+   "name": "グレースベイ",
+   "country": "カナダ",
+   "lat": 46.2,
+   "lng": -59.95,
+   "tz": "America/Glace_Bay",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Godthab",
@@ -818,7 +1148,17 @@
    "lng": -51.73333,
    "tz": "America/Nuuk",
    "icao": "BGGH",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Goose_Bay",
+   "name": "ハッピーバレー・グースベイ",
+   "country": "カナダ",
+   "lat": 53.33333,
+   "lng": -60.41667,
+   "tz": "America/Goose_Bay",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Grand_Turk",
@@ -828,7 +1168,7 @@
    "lng": -71.13333,
    "tz": "America/Grand_Turk",
    "icao": "MBPV",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Grenada",
@@ -838,7 +1178,7 @@
    "lng": -61.75,
    "tz": "America/Grenada",
    "icao": "TGPY",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Guadalajara",
@@ -848,7 +1188,7 @@
    "lng": -103.350342,
    "tz": "America/Mexico_City",
    "icao": "MMGL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Guadeloupe",
@@ -858,7 +1198,7 @@
    "lng": -61.53333,
    "tz": "America/Guadeloupe",
    "icao": "TFFR",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Guatemala",
@@ -868,7 +1208,7 @@
    "lng": -90.51667,
    "tz": "America/Guatemala",
    "icao": "MGGT",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Guayaquil",
@@ -878,7 +1218,7 @@
    "lng": -79.83333,
    "tz": "America/Guayaquil",
    "icao": "SEGU",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Guyana",
@@ -888,7 +1228,7 @@
    "lng": -58.16667,
    "tz": "America/Guyana",
    "icao": "SYCJ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Halifax",
@@ -898,7 +1238,7 @@
    "lng": -63.6,
    "tz": "America/Halifax",
    "icao": "CYHZ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Havana",
@@ -908,7 +1248,7 @@
    "lng": -82.36667,
    "tz": "America/Havana",
    "icao": "MUHA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Hermosillo",
@@ -918,7 +1258,7 @@
    "lng": -110.96667,
    "tz": "America/Hermosillo",
    "icao": "MMHO",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Houston",
@@ -928,7 +1268,7 @@
    "lng": -95.383056,
    "tz": "America/Chicago",
    "icao": "KIAH",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Indiana/Indianapolis",
@@ -938,7 +1278,77 @@
    "lng": -86.15,
    "tz": "America/Indiana/Indianapolis",
    "icao": "KIND",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Indiana/Knox",
+   "name": "ノックス郡",
+   "country": "アメリカ",
+   "lat": 41.28333,
+   "lng": -86.61667,
+   "tz": "America/Indiana/Knox",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Indiana/Marengo",
+   "name": "マレンゴ",
+   "country": "アメリカ",
+   "lat": 38.36667,
+   "lng": -86.33333,
+   "tz": "America/Indiana/Marengo",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Indiana/Petersburg",
+   "name": "ピーターズバーグ",
+   "country": "アメリカ",
+   "lat": 38.48333,
+   "lng": -87.26667,
+   "tz": "America/Indiana/Petersburg",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Indiana/Tell_City",
+   "name": "テルシティ",
+   "country": "アメリカ",
+   "lat": 37.95,
+   "lng": -86.75,
+   "tz": "America/Indiana/Tell_City",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Indiana/Vevay",
+   "name": "ベベイ",
+   "country": "アメリカ",
+   "lat": 38.73333,
+   "lng": -85.06667,
+   "tz": "America/Indiana/Vevay",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Indiana/Vincennes",
+   "name": "ヴィンセンス",
+   "country": "アメリカ",
+   "lat": 38.66667,
+   "lng": -87.51667,
+   "tz": "America/Indiana/Vincennes",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Indiana/Winamac",
+   "name": "ウィナマク",
+   "country": "アメリカ",
+   "lat": 41.05,
+   "lng": -86.6,
+   "tz": "America/Indiana/Winamac",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Inuvik",
@@ -948,7 +1358,7 @@
    "lng": -133.71667,
    "tz": "America/Inuvik",
    "icao": "CYEV",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Iqaluit",
@@ -958,7 +1368,7 @@
    "lng": -68.46667,
    "tz": "America/Iqaluit",
    "icao": "CYFB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Jamaica",
@@ -968,7 +1378,7 @@
    "lng": -76.8,
    "tz": "America/Jamaica",
    "icao": "MKJP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Juneau",
@@ -978,7 +1388,7 @@
    "lng": -134.41667,
    "tz": "America/Juneau",
    "icao": "PAJA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Kansas_City",
@@ -988,7 +1398,7 @@
    "lng": -94.58,
    "tz": "America/Chicago",
    "icao": "KMCI",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Kentucky/Louisville",
@@ -998,7 +1408,27 @@
    "lng": -85.75,
    "tz": "America/Kentucky/Louisville",
    "icao": "KSDF",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Kentucky/Monticello",
+   "name": "モンティチェロ",
+   "country": "アメリカ",
+   "lat": 36.81667,
+   "lng": -84.83333,
+   "tz": "America/Kentucky/Monticello",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Kralendijk",
+   "name": "ボネール島",
+   "country": "ボネール、シント・ユースタティウス及びサバ",
+   "lat": 12.1507,
+   "lng": -68.2767,
+   "tz": "America/Kralendijk",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/La_Paz",
@@ -1008,7 +1438,7 @@
    "lng": -68.15,
    "tz": "America/La_Paz",
    "icao": "SLLP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Las_Vegas",
@@ -1018,7 +1448,7 @@
    "lng": -115.137,
    "tz": "America/Los_Angeles",
    "icao": "KLAS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Lima",
@@ -1028,7 +1458,7 @@
    "lng": -77.05,
    "tz": "America/Lima",
    "icao": "SPIM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Los_Angeles",
@@ -1038,7 +1468,7 @@
    "lng": -118.23333,
    "tz": "America/Los_Angeles",
    "icao": "KLAX",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Lower_Princes",
@@ -1048,7 +1478,7 @@
    "lng": -63.0458,
    "tz": "America/Lower_Princes",
    "icao": "TNCM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Maceio",
@@ -1058,7 +1488,7 @@
    "lng": -35.71667,
    "tz": "America/Maceio",
    "icao": "SBMO",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Managua",
@@ -1068,7 +1498,7 @@
    "lng": -86.28333,
    "tz": "America/Managua",
    "icao": "MNMG",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Manaus",
@@ -1078,7 +1508,17 @@
    "lng": -60.01667,
    "tz": "America/Manaus",
    "icao": "SBEG",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Marigot",
+   "name": "マリゴ",
+   "country": "サン・マルタン",
+   "lat": 18.06667,
+   "lng": -63.08333,
+   "tz": "America/Marigot",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Martinique",
@@ -1088,7 +1528,17 @@
    "lng": -61.08333,
    "tz": "America/Martinique",
    "icao": "TFFF",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Matamoros",
+   "name": "マタモロス",
+   "country": "メキシコ",
+   "lat": 25.83333,
+   "lng": -97.5,
+   "tz": "America/Matamoros",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Mazatlan",
@@ -1098,7 +1548,7 @@
    "lng": -106.41667,
    "tz": "America/Mazatlan",
    "icao": "MMMZ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Memphis",
@@ -1108,7 +1558,17 @@
    "lng": -89.971111,
    "tz": "America/Chicago",
    "icao": "KMEM",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Menominee",
+   "name": "メノミニー",
+   "country": "アメリカ",
+   "lat": 45.1,
+   "lng": -87.6,
+   "tz": "America/Menominee",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Merida",
@@ -1118,7 +1578,7 @@
    "lng": -89.61667,
    "tz": "America/Merida",
    "icao": "MMMD",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Mexico_City",
@@ -1128,7 +1588,7 @@
    "lng": -99.15,
    "tz": "America/Mexico_City",
    "icao": "MMMX",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Miami",
@@ -1138,7 +1598,7 @@
    "lng": -80.224145,
    "tz": "America/New_York",
    "icao": "KMIA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Minneapolis",
@@ -1148,7 +1608,7 @@
    "lng": -93.266667,
    "tz": "America/Chicago",
    "icao": "KMSP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Miquelon",
@@ -1158,7 +1618,7 @@
    "lng": -56.177778,
    "tz": "America/Miquelon",
    "icao": "LFVP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Moncton",
@@ -1168,7 +1628,7 @@
    "lng": -64.78333,
    "tz": "America/Moncton",
    "icao": "CYQM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Monterrey",
@@ -1178,7 +1638,7 @@
    "lng": -100.31667,
    "tz": "America/Monterrey",
    "icao": "MMMY",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Montevideo",
@@ -1188,7 +1648,7 @@
    "lng": -56.18333,
    "tz": "America/Montevideo",
    "icao": "SUMU",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Montreal",
@@ -1198,7 +1658,17 @@
    "lng": -73.56667,
    "tz": "America/Toronto",
    "icao": "CYUL",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Montserrat",
+   "name": "モントセラト",
+   "country": "モントセラト",
+   "lat": 16.71667,
+   "lng": -62.21667,
+   "tz": "America/Montserrat",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Nassau",
@@ -1208,7 +1678,7 @@
    "lng": -77.35,
    "tz": "America/Nassau",
    "icao": "MYNN",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Natal",
@@ -1218,7 +1688,7 @@
    "lng": -35.2,
    "tz": "America/Fortaleza",
    "icao": "SBNT",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/New_York",
@@ -1228,7 +1698,67 @@
    "lng": -74.0,
    "tz": "America/New_York",
    "icao": "KJFK",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Nipigon",
+   "name": "ニピゴン",
+   "country": "カナダ",
+   "lat": 49.01667,
+   "lng": -88.26667,
+   "tz": "America/Nipigon",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Nome",
+   "name": "ノーム",
+   "country": "アメリカ",
+   "lat": 64.5,
+   "lng": -165.4,
+   "tz": "America/Nome",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Noronha",
+   "name": "フェルナンド・デ・ノローニャ島",
+   "country": "ブラジル",
+   "lat": -3.85,
+   "lng": -32.41667,
+   "tz": "America/Noronha",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/North_Dakota/Center",
+   "name": "センター",
+   "country": "アメリカ",
+   "lat": 47.1,
+   "lng": -101.28333,
+   "tz": "America/North_Dakota/Center",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/North_Dakota/New_Salem",
+   "name": "ニューセイレム",
+   "country": "アメリカ",
+   "lat": 46.83333,
+   "lng": -101.4,
+   "tz": "America/North_Dakota/New_Salem",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Ojinaga",
+   "name": "オヒナガ",
+   "country": "メキシコ",
+   "lat": 29.56667,
+   "lng": -104.41667,
+   "tz": "America/Ojinaga",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Oklahoma_City",
@@ -1238,7 +1768,7 @@
    "lng": -97.521324,
    "tz": "America/Chicago",
    "icao": "KOKC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Ottawa",
@@ -1248,7 +1778,7 @@
    "lng": -75.7,
    "tz": "America/Toronto",
    "icao": "CYOW",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Panama",
@@ -1258,7 +1788,17 @@
    "lng": -79.53333,
    "tz": "America/Panama",
    "icao": "MPTO",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Pangnirtung",
+   "name": "パングナータング",
+   "country": "カナダ",
+   "lat": 66.13333,
+   "lng": -65.73333,
+   "tz": "America/Pangnirtung",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Paramaribo",
@@ -1268,7 +1808,7 @@
    "lng": -55.16667,
    "tz": "America/Paramaribo",
    "icao": "SMJP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Philadelphia",
@@ -1278,7 +1818,7 @@
    "lng": -75.17,
    "tz": "America/New_York",
    "icao": "KPHL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Phoenix",
@@ -1288,7 +1828,17 @@
    "lng": -112.06667,
    "tz": "America/Phoenix",
    "icao": "KPHX",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Port-au-Prince",
+   "name": "ポルトープランス",
+   "country": "ハイチ",
+   "lat": 18.53333,
+   "lng": -72.33333,
+   "tz": "America/Port-au-Prince",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Port_of_Spain",
@@ -1298,7 +1848,7 @@
    "lng": -61.51667,
    "tz": "America/Port_of_Spain",
    "icao": "TTPP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Portland",
@@ -1308,7 +1858,7 @@
    "lng": -122.681944,
    "tz": "America/Los_Angeles",
    "icao": "KPDX",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Porto_Alegre",
@@ -1318,7 +1868,7 @@
    "lng": -51.23,
    "tz": "America/Sao_Paulo",
    "icao": "SBCF",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Porto_Velho",
@@ -1328,7 +1878,7 @@
    "lng": -63.9,
    "tz": "America/Porto_Velho",
    "icao": "SBPV",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Puerto_Rico",
@@ -1338,7 +1888,7 @@
    "lng": -66.1,
    "tz": "America/Puerto_Rico",
    "icao": "TJSJ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Punta_Arenas",
@@ -1348,7 +1898,7 @@
    "lng": -70.90804,
    "tz": "America/Punta_Arenas",
    "icao": "SCCI",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Quito",
@@ -1358,7 +1908,27 @@
    "lng": -78.516667,
    "tz": "America/Guayaquil",
    "icao": "SEQU",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Rainy_River",
+   "name": "レイニーリバー",
+   "country": "カナダ",
+   "lat": 48.71667,
+   "lng": -94.56667,
+   "tz": "America/Rainy_River",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/Rankin_Inlet",
+   "name": "ランキンインレット",
+   "country": "カナダ",
+   "lat": 62.81667,
+   "lng": -92.06667,
+   "tz": "America/Rankin_Inlet",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Recife",
@@ -1368,7 +1938,7 @@
    "lng": -34.9,
    "tz": "America/Recife",
    "icao": "SBRF",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Regina",
@@ -1378,7 +1948,17 @@
    "lng": -104.65,
    "tz": "America/Regina",
    "icao": "CYQR",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Resolute",
+   "name": "レゾリュート",
+   "country": "カナダ",
+   "lat": 74.68333,
+   "lng": -94.81667,
+   "tz": "America/Resolute",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Rio_Branco",
@@ -1388,7 +1968,7 @@
    "lng": -67.8,
    "tz": "America/Rio_Branco",
    "icao": "SBRB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Rio_de_Janeiro",
@@ -1398,7 +1978,7 @@
    "lng": -43.196389,
    "tz": "America/Sao_Paulo",
    "icao": "SBRJ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Salt_Lake_City",
@@ -1408,7 +1988,7 @@
    "lng": -111.883333,
    "tz": "America/Denver",
    "icao": "KSLC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/San_Francisco",
@@ -1418,7 +1998,7 @@
    "lng": -122.4192,
    "tz": "America/Los_Angeles",
    "icao": "KSFO",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Santarem",
@@ -1428,7 +2008,7 @@
    "lng": -54.86667,
    "tz": "America/Santarem",
    "icao": "SBSN",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Santiago",
@@ -1438,7 +2018,7 @@
    "lng": -70.66667,
    "tz": "America/Santiago",
    "icao": "SCEL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Santo_Domingo",
@@ -1448,7 +2028,7 @@
    "lng": -69.9,
    "tz": "America/Santo_Domingo",
    "icao": "MDSD",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Sao_Paulo",
@@ -1458,7 +2038,7 @@
    "lng": -46.61667,
    "tz": "America/Sao_Paulo",
    "icao": "SBGR",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Scoresbysund",
@@ -1468,7 +2048,7 @@
    "lng": -21.96667,
    "tz": "America/Scoresbysund",
    "icao": "BGCO",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Seattle",
@@ -1478,7 +2058,27 @@
    "lng": -122.333056,
    "tz": "America/Los_Angeles",
    "icao": "KSEA",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Shiprock",
+   "name": "シップロック",
+   "country": "アメリカ",
+   "lat": 36.78333,
+   "lng": -108.68333,
+   "tz": "America/Denver",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "America/St_Barthelemy",
+   "name": "サン・バルテルミー島",
+   "country": "サン・バルテルミー島",
+   "lat": 17.88333,
+   "lng": -62.85,
+   "tz": "America/St_Barthelemy",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/St_Johns",
@@ -1488,7 +2088,7 @@
    "lng": -52.71667,
    "tz": "America/St_Johns",
    "icao": "CYYT",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/St_Kitts",
@@ -1498,7 +2098,7 @@
    "lng": -62.71667,
    "tz": "America/St_Kitts",
    "icao": "TKPK",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/St_Lucia",
@@ -1508,7 +2108,7 @@
    "lng": -61.0,
    "tz": "America/St_Lucia",
    "icao": "TLPL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/St_Thomas",
@@ -1518,7 +2118,7 @@
    "lng": -64.93333,
    "tz": "America/St_Thomas",
    "icao": "TIST",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/St_Vincent",
@@ -1528,7 +2128,17 @@
    "lng": -61.23333,
    "tz": "America/St_Vincent",
    "icao": "TVSV",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Swift_Current",
+   "name": "スウィフトカレント",
+   "country": "カナダ",
+   "lat": 50.28333,
+   "lng": -107.83333,
+   "tz": "America/Swift_Current",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Tegucigalpa",
@@ -1538,7 +2148,7 @@
    "lng": -87.21667,
    "tz": "America/Tegucigalpa",
    "icao": "MHTG",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Thule",
@@ -1548,7 +2158,17 @@
    "lng": -68.78333,
    "tz": "America/Thule",
    "icao": "BGQQ",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Thunder_Bay",
+   "name": "サンダー・ベイ",
+   "country": "カナダ",
+   "lat": 48.38333,
+   "lng": -89.25,
+   "tz": "America/Thunder_Bay",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Tijuana",
@@ -1558,7 +2178,7 @@
    "lng": -117.01667,
    "tz": "America/Tijuana",
    "icao": "MMTJ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Toronto",
@@ -1568,7 +2188,7 @@
    "lng": -79.38333,
    "tz": "America/Toronto",
    "icao": "CYYZ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Tortola",
@@ -1578,7 +2198,7 @@
    "lng": -64.61667,
    "tz": "America/Tortola",
    "icao": "TUPJ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Vancouver",
@@ -1588,7 +2208,7 @@
    "lng": -123.11667,
    "tz": "America/Vancouver",
    "icao": "CYVR",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Washington_DC",
@@ -1598,7 +2218,7 @@
    "lng": -77.0367,
    "tz": "America/New_York",
    "icao": "KIAD",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Whitehorse",
@@ -1608,7 +2228,7 @@
    "lng": -135.05,
    "tz": "America/Whitehorse",
    "icao": "CYXY",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "America/Winnipeg",
@@ -1618,7 +2238,17 @@
    "lng": -97.15,
    "tz": "America/Winnipeg",
    "icao": "CYWG",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "America/Yakutat",
+   "name": "ヤクタット",
+   "country": "アメリカ",
+   "lat": 59.53333,
+   "lng": -139.71667,
+   "tz": "America/Yakutat",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "America/Yellowknife",
@@ -1628,7 +2258,127 @@
    "lng": -114.35,
    "tz": "America/Yellowknife",
    "icao": "CYZF",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/Casey",
+   "name": "ケーシー基地",
+   "country": "南極",
+   "lat": -66.28333,
+   "lng": 110.51667,
+   "tz": "Antarctica/Casey",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/Davis",
+   "name": "デービス基地",
+   "country": "南極",
+   "lat": -68.58333,
+   "lng": 77.96667,
+   "tz": "Antarctica/Davis",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/DumontDUrville",
+   "name": "デュモン・デュルヴィル基地",
+   "country": "南極",
+   "lat": -66.66667,
+   "lng": 140.01667,
+   "tz": "Antarctica/DumontDUrville",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/Macquarie",
+   "name": "マッコーリー島",
+   "country": "オーストラリア",
+   "lat": -54.5,
+   "lng": 158.95,
+   "tz": "Antarctica/Macquarie",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/Mawson",
+   "name": "モーソン基地",
+   "country": "南極",
+   "lat": -67.6,
+   "lng": 62.88333,
+   "tz": "Antarctica/Mawson",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/McMurdo",
+   "name": "マクマード基地",
+   "country": "南極",
+   "lat": -77.85,
+   "lng": 166.666667,
+   "tz": "Antarctica/McMurdo",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/Palmer",
+   "name": "パーマー基地",
+   "country": "南極",
+   "lat": -64.8,
+   "lng": -64.1,
+   "tz": "Antarctica/Palmer",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/Rothera",
+   "name": "ロゼラ基地",
+   "country": "南極",
+   "lat": -67.56667,
+   "lng": -68.13333,
+   "tz": "Antarctica/Rothera",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/South_Pole",
+   "name": "アムンゼン・スコット基地",
+   "country": "南極",
+   "lat": -90.0,
+   "lng": 0.0,
+   "tz": "Antarctica/South_Pole",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/Syowa",
+   "name": "昭和基地",
+   "country": "南極",
+   "lat": -69.006111,
+   "lng": 39.59,
+   "tz": "Antarctica/Syowa",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/Troll",
+   "name": "トロール基地",
+   "country": "南極",
+   "lat": -72.01139,
+   "lng": 2.535,
+   "tz": "Antarctica/Troll",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Antarctica/Vostok",
+   "name": "ボストーク基地",
+   "country": "南極",
+   "lat": -78.4,
+   "lng": 106.9,
+   "tz": "Antarctica/Vostok",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Arctic/Longyearbyen",
@@ -1658,7 +2408,7 @@
    "lng": 45.2,
    "tz": "Asia/Aden",
    "icao": "OYAA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Almaty",
@@ -1668,7 +2418,7 @@
    "lng": 76.95,
    "tz": "Asia/Almaty",
    "icao": "UAAA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Amman",
@@ -1688,7 +2438,7 @@
    "lng": 177.48333,
    "tz": "Asia/Anadyr",
    "icao": "UHMA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Ankara",
@@ -1701,6 +2451,26 @@
    "forecast": true
   },
   {
+   "place": "Asia/Aqtau",
+   "name": "アクタウ",
+   "country": "カザフスタン",
+   "lat": 43.635021,
+   "lng": 51.17564,
+   "tz": "Asia/Aqtau",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Aqtobe",
+   "name": "アクトベ",
+   "country": "カザフスタン",
+   "lat": 50.28333,
+   "lng": 57.16667,
+   "tz": "Asia/Aqtobe",
+   "icao": "",
+   "forecast": true
+  },
+  {
    "place": "Asia/Ashgabat",
    "name": "アシガバート",
    "country": "トルクメニスタン",
@@ -1708,7 +2478,7 @@
    "lng": 58.38333,
    "tz": "Asia/Ashgabat",
    "icao": "UTAA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Astana",
@@ -1718,7 +2488,7 @@
    "lng": 71.461,
    "tz": "Asia/Almaty",
    "icao": "UACC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Baghdad",
@@ -1728,7 +2498,7 @@
    "lng": 44.41667,
    "tz": "Asia/Baghdad",
    "icao": "ORBI",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Bahrain",
@@ -1738,7 +2508,7 @@
    "lng": 50.58333,
    "tz": "Asia/Bahrain",
    "icao": "OBBI",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Baku",
@@ -1748,7 +2518,7 @@
    "lng": 49.85,
    "tz": "Asia/Baku",
    "icao": "UBBB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Bali",
@@ -1758,7 +2528,7 @@
    "lng": 115.216667,
    "tz": "Asia/Makassar",
    "icao": "WADD",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Bangalore",
@@ -1768,7 +2538,7 @@
    "lng": 77.566667,
    "tz": "Asia/Kolkata",
    "icao": "VOBL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Bangkok",
@@ -1788,7 +2558,7 @@
    "lng": 116.391667,
    "tz": "Asia/Shanghai",
    "icao": "ZBAA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Beirut",
@@ -1808,7 +2578,7 @@
    "lng": 74.6,
    "tz": "Asia/Bishkek",
    "icao": "UAFM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Brunei",
@@ -1818,7 +2588,7 @@
    "lng": 114.91667,
    "tz": "Asia/Brunei",
    "icao": "WBSB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Busan",
@@ -1828,7 +2598,7 @@
    "lng": 129.075556,
    "tz": "Asia/Seoul",
    "icao": "RKPK",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Cebu",
@@ -1838,7 +2608,7 @@
    "lng": 123.9,
    "tz": "Asia/Manila",
    "icao": "RPVM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Chengdu",
@@ -1848,7 +2618,7 @@
    "lng": 104.063333,
    "tz": "Asia/Shanghai",
    "icao": "ZUUU",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Chennai",
@@ -1858,7 +2628,7 @@
    "lng": 80.27,
    "tz": "Asia/Kolkata",
    "icao": "VOMM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Chita",
@@ -1868,7 +2638,17 @@
    "lng": 113.466667,
    "tz": "Asia/Chita",
    "icao": "UIAA",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Asia/Choibalsan",
+   "name": "チョイバルサン",
+   "country": "モンゴル",
+   "lat": 48.06667,
+   "lng": 114.5,
+   "tz": "Asia/Choibalsan",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Asia/Chongqing",
@@ -1878,7 +2658,7 @@
    "lng": 106.58333,
    "tz": "Asia/Shanghai",
    "icao": "ZUCK",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Colombo",
@@ -1888,7 +2668,7 @@
    "lng": 79.85,
    "tz": "Asia/Colombo",
    "icao": "VCBI",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Dalian",
@@ -1898,7 +2678,7 @@
    "lng": 121.639167,
    "tz": "Asia/Shanghai",
    "icao": "ZYTL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Damascus",
@@ -1918,7 +2698,7 @@
    "lng": 77.23,
    "tz": "Asia/Kolkata",
    "icao": "VIDP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Dhaka",
@@ -1928,7 +2708,17 @@
    "lng": 90.41667,
    "tz": "Asia/Dhaka",
    "icao": "VGHS",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Asia/Dili",
+   "name": "ディリ",
+   "country": "東ティモール",
+   "lat": -8.55,
+   "lng": 125.58333,
+   "tz": "Asia/Dili",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Asia/Dubai",
@@ -1948,7 +2738,17 @@
    "lng": 68.8,
    "tz": "Asia/Dushanbe",
    "icao": "UTDD",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Asia/Famagusta",
+   "name": "ファマグスタ",
+   "country": "キプロス",
+   "lat": 35.121,
+   "lng": 33.93879,
+   "tz": "Asia/Famagusta",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Asia/Gaza",
@@ -1968,7 +2768,7 @@
    "lng": 113.264722,
    "tz": "Asia/Shanghai",
    "icao": "ZGGG",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Hanoi",
@@ -1978,7 +2778,7 @@
    "lng": 105.85,
    "tz": "Asia/Ho_Chi_Minh",
    "icao": "VVNB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Harbin",
@@ -1988,7 +2788,17 @@
    "lng": 126.68333,
    "tz": "Asia/Shanghai",
    "icao": "ZYCC",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Asia/Hebron",
+   "name": "ヨルダン川西岸地区",
+   "country": "パレスチナ",
+   "lat": 31.53281,
+   "lng": 35.0983,
+   "tz": "Asia/Hebron",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Asia/Ho_Chi_Minh",
@@ -1998,7 +2808,7 @@
    "lng": 106.66667,
    "tz": "Asia/Ho_Chi_Minh",
    "icao": "VVTS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Hong_Kong",
@@ -2008,7 +2818,17 @@
    "lng": 114.15,
    "tz": "Asia/Hong_Kong",
    "icao": "VHHH",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Asia/Hovd",
+   "name": "ホブド",
+   "country": "モンゴル",
+   "lat": 48.01667,
+   "lng": 91.65,
+   "tz": "Asia/Hovd",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Asia/Irkutsk",
@@ -2018,7 +2838,7 @@
    "lng": 104.33333,
    "tz": "Asia/Irkutsk",
    "icao": "UIII",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Jakarta",
@@ -2028,7 +2848,17 @@
    "lng": 106.8,
    "tz": "Asia/Jakarta",
    "icao": "WIII",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Asia/Jayapura",
+   "name": "ジャヤプラ",
+   "country": "インドネシア",
+   "lat": -2.53333,
+   "lng": 140.7,
+   "tz": "Asia/Jayapura",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Asia/Jeddah",
@@ -2048,7 +2878,7 @@
    "lng": 126.516667,
    "tz": "Asia/Seoul",
    "icao": "RKPC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Jerusalem",
@@ -2068,7 +2898,7 @@
    "lng": 69.2,
    "tz": "Asia/Kabul",
    "icao": "OAKB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Kamchatka",
@@ -2078,7 +2908,7 @@
    "lng": 158.65,
    "tz": "Asia/Kamchatka",
    "icao": "UHPP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Karachi",
@@ -2088,7 +2918,7 @@
    "lng": 67.05,
    "tz": "Asia/Karachi",
    "icao": "OPKC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Kashgar",
@@ -2098,7 +2928,7 @@
    "lng": 75.98333,
    "tz": "Asia/Urumqi",
    "icao": "ZWSH",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Kathmandu",
@@ -2108,7 +2938,7 @@
    "lng": 85.31667,
    "tz": "Asia/Kathmandu",
    "icao": "VNKT",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Kolkata",
@@ -2118,7 +2948,7 @@
    "lng": 88.36667,
    "tz": "Asia/Kolkata",
    "icao": "VECC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Krasnoyarsk",
@@ -2128,7 +2958,7 @@
    "lng": 92.83333,
    "tz": "Asia/Krasnoyarsk",
    "icao": "UNKL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Kuala_Lumpur",
@@ -2138,7 +2968,7 @@
    "lng": 101.7,
    "tz": "Asia/Kuala_Lumpur",
    "icao": "WMKK",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Kuching",
@@ -2148,7 +2978,7 @@
    "lng": 110.33333,
    "tz": "Asia/Kuching",
    "icao": "WBGG",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Kuwait",
@@ -2158,7 +2988,7 @@
    "lng": 47.98333,
    "tz": "Asia/Kuwait",
    "icao": "OKBK",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Lahore",
@@ -2168,7 +2998,7 @@
    "lng": 74.343611,
    "tz": "Asia/Karachi",
    "icao": "OPLA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Macau",
@@ -2178,7 +3008,7 @@
    "lng": 113.58333,
    "tz": "Asia/Macau",
    "icao": "VMMC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Magadan",
@@ -2188,7 +3018,7 @@
    "lng": 150.8,
    "tz": "Asia/Magadan",
    "icao": "UHMM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Makassar",
@@ -2198,7 +3028,7 @@
    "lng": 119.4,
    "tz": "Asia/Makassar",
    "icao": "WAAA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Manila",
@@ -2208,7 +3038,7 @@
    "lng": 121.0,
    "tz": "Asia/Manila",
    "icao": "RPLL",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Mecca",
@@ -2228,7 +3058,7 @@
    "lng": 72.825833,
    "tz": "Asia/Kolkata",
    "icao": "VABB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Muscat",
@@ -2238,7 +3068,7 @@
    "lng": 58.58333,
    "tz": "Asia/Muscat",
    "icao": "OOMS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Nicosia",
@@ -2258,7 +3088,7 @@
    "lng": 87.11667,
    "tz": "Asia/Novokuznetsk",
    "icao": "UNWW",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Novosibirsk",
@@ -2268,7 +3098,7 @@
    "lng": 82.91667,
    "tz": "Asia/Novosibirsk",
    "icao": "UNNT",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Omsk",
@@ -2278,7 +3108,17 @@
    "lng": 73.4,
    "tz": "Asia/Omsk",
    "icao": "UNOO",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Asia/Oral",
+   "name": "オラル",
+   "country": "カザフスタン",
+   "lat": 51.21667,
+   "lng": 51.35,
+   "tz": "Asia/Oral",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Asia/Phnom_Penh",
@@ -2288,7 +3128,7 @@
    "lng": 104.91667,
    "tz": "Asia/Phnom_Penh",
    "icao": "VDPP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Phuket",
@@ -2298,7 +3138,7 @@
    "lng": 98.3975,
    "tz": "Asia/Bangkok",
    "icao": "VTSP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Pontianak",
@@ -2308,7 +3148,27 @@
    "lng": 109.33333,
    "tz": "Asia/Pontianak",
    "icao": "WIOO",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Asia/Pyeongchang",
+   "name": "平昌",
+   "country": "韓国",
+   "lat": 37.667222,
+   "lng": 128.706111,
+   "tz": "Asia/Seoul",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Asia/Pyongyang",
+   "name": "平壌",
+   "country": "北朝鮮",
+   "lat": 39.01667,
+   "lng": 125.75,
+   "tz": "Asia/Pyongyang",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Asia/Qatar",
@@ -2328,7 +3188,17 @@
    "lng": 120.383333,
    "tz": "Asia/Shanghai",
    "icao": "ZSQD",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Asia/Qyzylorda",
+   "name": "クズルオルダ",
+   "country": "カザフスタン",
+   "lat": 44.8,
+   "lng": 65.46667,
+   "tz": "Asia/Qyzylorda",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Asia/Riyadh",
@@ -2348,7 +3218,7 @@
    "lng": 142.7,
    "tz": "Asia/Sakhalin",
    "icao": "UHSS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Samarkand",
@@ -2358,7 +3228,7 @@
    "lng": 66.8,
    "tz": "Asia/Samarkand",
    "icao": "UTSS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Sanya",
@@ -2368,7 +3238,7 @@
    "lng": 109.503611,
    "tz": "Asia/Shanghai",
    "icao": "ZJSY",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Seoul",
@@ -2378,7 +3248,7 @@
    "lng": 126.96667,
    "tz": "Asia/Seoul",
    "icao": "RKSS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Shanghai",
@@ -2388,7 +3258,7 @@
    "lng": 121.46667,
    "tz": "Asia/Shanghai",
    "icao": "ZSSS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Singapore",
@@ -2398,7 +3268,17 @@
    "lng": 103.85,
    "tz": "Asia/Singapore",
    "icao": "WSSS",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Asia/Srednekolymsk",
+   "name": "スレドネコリムスク",
+   "country": "ロシア",
+   "lat": 67.45,
+   "lng": 153.683333,
+   "tz": "Asia/Srednekolymsk",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Asia/Taipei",
@@ -2408,7 +3288,7 @@
    "lng": 121.5,
    "tz": "Asia/Taipei",
    "icao": "RCTP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Tashkent",
@@ -2418,7 +3298,7 @@
    "lng": 69.3,
    "tz": "Asia/Tashkent",
    "icao": "UTTT",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Tbilisi",
@@ -2428,7 +3308,7 @@
    "lng": 44.81667,
    "tz": "Asia/Tbilisi",
    "icao": "UGTB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Tehran",
@@ -2438,7 +3318,7 @@
    "lng": 51.43333,
    "tz": "Asia/Tehran",
    "icao": "OIII",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Tel_Aviv",
@@ -2451,6 +3331,16 @@
    "forecast": true
   },
   {
+   "place": "Asia/Thimphu",
+   "name": "ティンプー",
+   "country": "ブータン",
+   "lat": 27.46667,
+   "lng": 89.65,
+   "tz": "Asia/Thimphu",
+   "icao": "",
+   "forecast": true
+  },
+  {
    "place": "Asia/Tianjin",
    "name": "天津",
    "country": "中国",
@@ -2458,7 +3348,7 @@
    "lng": 117.183333,
    "tz": "Asia/Shanghai",
    "icao": "ZBTJ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Tokyo",
@@ -2478,7 +3368,7 @@
    "lng": 106.88333,
    "tz": "Asia/Ulaanbaatar",
    "icao": "ZMUB",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Urumqi",
@@ -2488,7 +3378,7 @@
    "lng": 87.58333,
    "tz": "Asia/Urumqi",
    "icao": "ZWWW",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Vientiane",
@@ -2498,7 +3388,7 @@
    "lng": 102.6,
    "tz": "Asia/Vientiane",
    "icao": "VLVT",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Vladivostok",
@@ -2508,7 +3398,7 @@
    "lng": 131.93333,
    "tz": "Asia/Vladivostok",
    "icao": "UHWW",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Wuhan",
@@ -2518,7 +3408,7 @@
    "lng": 114.279167,
    "tz": "Asia/Shanghai",
    "icao": "ZHHH",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Xian",
@@ -2528,7 +3418,7 @@
    "lng": 108.9,
    "tz": "Asia/Shanghai",
    "icao": "ZLXY",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Yakutsk",
@@ -2538,7 +3428,7 @@
    "lng": 129.66667,
    "tz": "Asia/Yakutsk",
    "icao": "UEEE",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Yangon",
@@ -2548,7 +3438,7 @@
    "lng": 96.16667,
    "tz": "Asia/Yangon",
    "icao": "VYYY",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Yekaterinburg",
@@ -2558,7 +3448,7 @@
    "lng": 60.6,
    "tz": "Asia/Yekaterinburg",
    "icao": "USSS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Asia/Yerevan",
@@ -2568,7 +3458,7 @@
    "lng": 44.5,
    "tz": "Asia/Yerevan",
    "icao": "UDYZ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Atlantic/Ascension",
@@ -2578,7 +3468,7 @@
    "lng": -14.4167,
    "tz": "Atlantic/St_Helena",
    "icao": "FHAW",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Atlantic/Azores",
@@ -2598,7 +3488,17 @@
    "lng": -64.76667,
    "tz": "Atlantic/Bermuda",
    "icao": "TXKF",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Atlantic/Bouvet",
+   "name": "ブーベ島",
+   "country": "ブーベ島",
+   "lat": -54.4333,
+   "lng": 3.4,
+   "tz": "GMT",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Atlantic/Canary",
@@ -2618,7 +3518,7 @@
    "lng": -23.51667,
    "tz": "Atlantic/Cape_Verde",
    "icao": "GVNP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Atlantic/Faroe",
@@ -2651,6 +3551,26 @@
    "forecast": true
   },
   {
+   "place": "Atlantic/South_Georgia",
+   "name": "サウスジョージア島",
+   "country": "サウスジョージア・サウスサンドウィッチ諸島",
+   "lat": -54.26667,
+   "lng": -36.53333,
+   "tz": "Atlantic/South_Georgia",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Atlantic/St_Helena",
+   "name": "セントヘレナ",
+   "country": "セントヘレナ、アセンション及びトリスタン・ダ・クーニャ",
+   "lat": -15.91667,
+   "lng": -5.7,
+   "tz": "Atlantic/St_Helena",
+   "icao": "",
+   "forecast": true
+  },
+  {
    "place": "Atlantic/Stanley",
    "name": "スタンリー",
    "country": "フォークランド諸島",
@@ -2658,7 +3578,17 @@
    "lng": -57.85,
    "tz": "Atlantic/Stanley",
    "icao": "EGYP",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Atlantic/Tristan_da_Cunha",
+   "name": "トリスタン・ダ・クーニャ",
+   "country": "セントヘレナ、アセンション及びトリスタン・ダ・クーニャ",
+   "lat": -37.066667,
+   "lng": -12.316667,
+   "tz": "Atlantic/St_Helena",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Australia/Adelaide",
@@ -2668,7 +3598,7 @@
    "lng": 138.58333,
    "tz": "Australia/Adelaide",
    "icao": "YPAD",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Australia/Alice_Springs",
@@ -2678,7 +3608,7 @@
    "lng": 133.87,
    "tz": "Australia/Darwin",
    "icao": "YBAS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Australia/Brisbane",
@@ -2688,7 +3618,17 @@
    "lng": 153.03333,
    "tz": "Australia/Brisbane",
    "icao": "YBBN",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Australia/Broken_Hill",
+   "name": "ブロークンヒル",
+   "country": "オーストラリア",
+   "lat": -31.95,
+   "lng": 141.45,
+   "tz": "Australia/Broken_Hill",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Australia/Cairns",
@@ -2698,7 +3638,7 @@
    "lng": 145.775278,
    "tz": "Australia/Brisbane",
    "icao": "YBCS",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Australia/Canberra",
@@ -2708,7 +3648,17 @@
    "lng": 149.124417,
    "tz": "Australia/Sydney",
    "icao": "YSCB",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Australia/Currie",
+   "name": "カレー（キング島）",
+   "country": "オーストラリア",
+   "lat": -39.93333,
+   "lng": 143.86667,
+   "tz": "Australia/Currie",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Australia/Darwin",
@@ -2718,7 +3668,17 @@
    "lng": 130.83333,
    "tz": "Australia/Darwin",
    "icao": "YPDN",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Australia/Eucla",
+   "name": "ユークラ",
+   "country": "オーストラリア",
+   "lat": -31.71667,
+   "lng": 128.86667,
+   "tz": "Australia/Eucla",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Australia/Hobart",
@@ -2728,7 +3688,27 @@
    "lng": 147.31667,
    "tz": "Australia/Hobart",
    "icao": "YMHB",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Australia/Lindeman",
+   "name": "ハミルトン島",
+   "country": "オーストラリア",
+   "lat": -20.26667,
+   "lng": 149.0,
+   "tz": "Australia/Lindeman",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Australia/Lord_Howe",
+   "name": "ロード・ハウ島",
+   "country": "オーストラリア",
+   "lat": -31.55,
+   "lng": 159.08333,
+   "tz": "Australia/Lord_Howe",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Australia/Melbourne",
@@ -2738,7 +3718,7 @@
    "lng": 144.96667,
    "tz": "Australia/Melbourne",
    "icao": "YMML",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Australia/Perth",
@@ -2748,7 +3728,7 @@
    "lng": 115.85,
    "tz": "Australia/Perth",
    "icao": "YPPH",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Australia/Sydney",
@@ -2758,7 +3738,7 @@
    "lng": 151.21667,
    "tz": "Australia/Sydney",
    "icao": "YSSY",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Europe/Amsterdam",
@@ -2988,6 +3968,16 @@
    "lng": 6.15,
    "tz": "Europe/Zurich",
    "icao": "LSGG",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Gibraltar",
+   "name": "ジブラルタル",
+   "country": "ジブラルタル",
+   "lat": 36.13333,
+   "lng": -5.35,
+   "tz": "Europe/Gibraltar",
+   "icao": "",
    "forecast": true
   },
   {
@@ -3401,6 +4391,16 @@
    "forecast": true
   },
   {
+   "place": "Europe/San_Marino",
+   "name": "サンマリノ",
+   "country": "サンマリノ",
+   "lat": 43.91667,
+   "lng": 12.46667,
+   "tz": "Europe/San_Marino",
+   "icao": "",
+   "forecast": true
+  },
+  {
    "place": "Europe/Sarajevo",
    "name": "サラエヴォ",
    "country": "ボスニア・ヘルツェゴビナ",
@@ -3521,6 +4521,36 @@
    "forecast": true
   },
   {
+   "place": "Europe/Uzhgorod",
+   "name": "ウージュホロド",
+   "country": "ウクライナ",
+   "lat": 48.61667,
+   "lng": 22.3,
+   "tz": "Europe/Kyiv",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Vaduz",
+   "name": "ファドゥーツ",
+   "country": "リヒテンシュタイン",
+   "lat": 47.15,
+   "lng": 9.51667,
+   "tz": "Europe/Vaduz",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Europe/Vatican",
+   "name": "バチカン",
+   "country": "バチカン",
+   "lat": 41.9,
+   "lng": 12.45,
+   "tz": "Europe/Vatican",
+   "icao": "",
+   "forecast": true
+  },
+  {
    "place": "Europe/Vienna",
    "name": "ウィーン",
    "country": "オーストリア",
@@ -3598,7 +4628,7 @@
    "lng": 47.51667,
    "tz": "Indian/Antananarivo",
    "icao": "FMMI",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Indian/Chagos",
@@ -3608,7 +4638,7 @@
    "lng": 72.41667,
    "tz": "Indian/Chagos",
    "icao": "FJDG",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Indian/Christmas",
@@ -3618,7 +4648,7 @@
    "lng": 105.71667,
    "tz": "Indian/Christmas",
    "icao": "YPXM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Indian/Cocos",
@@ -3628,7 +4658,7 @@
    "lng": 96.91667,
    "tz": "Indian/Cocos",
    "icao": "YPCC",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Indian/Comoro",
@@ -3638,7 +4668,27 @@
    "lng": 43.26667,
    "tz": "Indian/Comoro",
    "icao": "FMCH",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Indian/Heard_Island",
+   "name": "ハード島",
+   "country": "ハード島・マクドナルド諸島",
+   "lat": -53.1,
+   "lng": 73.516667,
+   "tz": "Etc/GMT-5",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Indian/Kerguelen",
+   "name": "ケルゲレン諸島",
+   "country": "フランス領南方・南極地域",
+   "lat": -49.35,
+   "lng": 70.21667,
+   "tz": "Indian/Kerguelen",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Indian/Mahe",
@@ -3648,7 +4698,7 @@
    "lng": 55.46667,
    "tz": "Indian/Mahe",
    "icao": "FSIA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Indian/Maldives",
@@ -3658,7 +4708,7 @@
    "lng": 73.5,
    "tz": "Indian/Maldives",
    "icao": "VRMM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Indian/Mauritius",
@@ -3668,7 +4718,7 @@
    "lng": 57.5,
    "tz": "Indian/Mauritius",
    "icao": "FIMP",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Indian/Mayotte",
@@ -3678,7 +4728,7 @@
    "lng": 45.23333,
    "tz": "Indian/Mayotte",
    "icao": "FMCZ",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Indian/Reunion",
@@ -3688,7 +4738,7 @@
    "lng": 55.46667,
    "tz": "Indian/Reunion",
    "icao": "FMEE",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Apia",
@@ -3698,7 +4748,7 @@
    "lng": -171.73333,
    "tz": "Pacific/Apia",
    "icao": "NSFA",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Auckland",
@@ -3708,7 +4758,27 @@
    "lng": 174.76667,
    "tz": "Pacific/Auckland",
    "icao": "NZAA",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Bougainville",
+   "name": "ブーゲンビル島",
+   "country": "パプアニューギニア",
+   "lat": -6.216667,
+   "lng": 155.566667,
+   "tz": "Pacific/Bougainville",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Chatham",
+   "name": "チャタム島",
+   "country": "ニュージーランド",
+   "lat": -43.95,
+   "lng": -176.55,
+   "tz": "Pacific/Chatham",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Pacific/Christchurch",
@@ -3718,7 +4788,7 @@
    "lng": 172.620278,
    "tz": "Pacific/Auckland",
    "icao": "NZCH",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Chuuk",
@@ -3728,7 +4798,17 @@
    "lng": 151.78333,
    "tz": "Pacific/Chuuk",
    "icao": "PTKK",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Clipperton",
+   "name": "クリッパートン島",
+   "country": "クリッパートン島",
+   "lat": 10.3,
+   "lng": -109.216667,
+   "tz": "Etc/GMT+8",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Pacific/Easter",
@@ -3738,7 +4818,37 @@
    "lng": -109.43333,
    "tz": "Pacific/Easter",
    "icao": "SCIP",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Efate",
+   "name": "ポートビラ",
+   "country": "バヌアツ",
+   "lat": -17.66667,
+   "lng": 168.41667,
+   "tz": "Pacific/Efate",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Enderbury",
+   "name": "エンダーベリー島",
+   "country": "キリバス",
+   "lat": -3.13333,
+   "lng": -171.08333,
+   "tz": "Pacific/Enderbury",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Fakaofo",
+   "name": "ファカオフォ島",
+   "country": "トケラウ諸島",
+   "lat": -9.36667,
+   "lng": -171.23333,
+   "tz": "Pacific/Fakaofo",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Pacific/Fiji",
@@ -3748,7 +4858,7 @@
    "lng": 178.41667,
    "tz": "Pacific/Fiji",
    "icao": "NFFN",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Funafuti",
@@ -3758,7 +4868,27 @@
    "lng": 179.21667,
    "tz": "Pacific/Funafuti",
    "icao": "NGFU",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Galapagos",
+   "name": "ガラパゴス諸島",
+   "country": "エクアドル",
+   "lat": -0.9,
+   "lng": -89.6,
+   "tz": "Pacific/Galapagos",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Gambier",
+   "name": "ガンビエ諸島",
+   "country": "フランス領ポリネシア",
+   "lat": -23.13333,
+   "lng": -134.95,
+   "tz": "Pacific/Gambier",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Pacific/Guadalcanal",
@@ -3768,7 +4898,7 @@
    "lng": 160.2,
    "tz": "Pacific/Guadalcanal",
    "icao": "AGGH",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Guam",
@@ -3778,7 +4908,7 @@
    "lng": 144.75,
    "tz": "Pacific/Guam",
    "icao": "PGUM",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Honolulu",
@@ -3788,7 +4918,67 @@
    "lng": -157.85,
    "tz": "Pacific/Honolulu",
    "icao": "PHNL",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Johnston",
+   "name": "ジョンストン島",
+   "country": "合衆国領有小離島",
+   "lat": 16.75,
+   "lng": -169.51667,
+   "tz": "Pacific/Johnston",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Kiritimati",
+   "name": "キリスィマスィ島",
+   "country": "キリバス",
+   "lat": 1.86667,
+   "lng": -157.33333,
+   "tz": "Pacific/Kiritimati",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Kosrae",
+   "name": "コスラエ州",
+   "country": "ミクロネシア連邦",
+   "lat": 5.31667,
+   "lng": 162.98333,
+   "tz": "Pacific/Kosrae",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Kwajalein",
+   "name": "クェゼリン島",
+   "country": "マーシャル諸島",
+   "lat": 8.729731,
+   "lng": 167.738226,
+   "tz": "Pacific/Kwajalein",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Majuro",
+   "name": "マジュロ",
+   "country": "マーシャル諸島",
+   "lat": 7.15,
+   "lng": 171.2,
+   "tz": "Pacific/Majuro",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Marquesas",
+   "name": "マルキーズ諸島",
+   "country": "フランス領ポリネシア",
+   "lat": -9.0,
+   "lng": -139.5,
+   "tz": "Pacific/Marquesas",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Pacific/Maui",
@@ -3798,7 +4988,27 @@
    "lng": -156.4675,
    "tz": "Pacific/Honolulu",
    "icao": "PHOG",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Midway",
+   "name": "ミッドウェー島",
+   "country": "合衆国領有小離島",
+   "lat": 28.21667,
+   "lng": -177.36667,
+   "tz": "Pacific/Midway",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Nauru",
+   "name": "ナウル",
+   "country": "ナウル",
+   "lat": -0.51667,
+   "lng": 166.91667,
+   "tz": "Pacific/Nauru",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Pacific/Niue",
@@ -3808,7 +5018,7 @@
    "lng": -169.91667,
    "tz": "Pacific/Niue",
    "icao": "NIUE",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Norfolk",
@@ -3818,7 +5028,7 @@
    "lng": 167.96667,
    "tz": "Pacific/Norfolk",
    "icao": "YSNF",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Noumea",
@@ -3828,7 +5038,7 @@
    "lng": 166.45,
    "tz": "Pacific/Noumea",
    "icao": "NWWW",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Pago_Pago",
@@ -3838,7 +5048,7 @@
    "lng": -170.7,
    "tz": "Pacific/Pago_Pago",
    "icao": "NSTU",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Palau",
@@ -3848,7 +5058,17 @@
    "lng": 134.48333,
    "tz": "Pacific/Palau",
    "icao": "PTRO",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Pitcairn",
+   "name": "ピトケアン諸島",
+   "country": "ピトケアン諸島",
+   "lat": -25.06667,
+   "lng": -130.08333,
+   "tz": "Pacific/Pitcairn",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Pacific/Pohnpei",
@@ -3858,7 +5078,7 @@
    "lng": 158.21667,
    "tz": "Pacific/Pohnpei",
    "icao": "PTPN",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Port_Moresby",
@@ -3868,7 +5088,7 @@
    "lng": 147.16667,
    "tz": "Pacific/Port_Moresby",
    "icao": "AYPY",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Rarotonga",
@@ -3878,7 +5098,7 @@
    "lng": -159.76667,
    "tz": "Pacific/Rarotonga",
    "icao": "NCRG",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Saipan",
@@ -3888,7 +5108,7 @@
    "lng": 145.75,
    "tz": "Pacific/Saipan",
    "icao": "PGSN",
-   "forecast": false
+   "forecast": true
   },
   {
    "place": "Pacific/Tahiti",
@@ -3898,7 +5118,17 @@
    "lng": -149.56667,
    "tz": "Pacific/Tahiti",
    "icao": "NTAA",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Tarawa",
+   "name": "タラワ環礁",
+   "country": "キリバス",
+   "lat": 1.41667,
+   "lng": 173.0,
+   "tz": "Pacific/Tarawa",
+   "icao": "",
+   "forecast": true
   },
   {
    "place": "Pacific/Tongatapu",
@@ -3908,7 +5138,27 @@
    "lng": -175.16667,
    "tz": "Pacific/Tongatapu",
    "icao": "NFTF",
-   "forecast": false
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Wake",
+   "name": "ウェーク島",
+   "country": "合衆国領有小離島",
+   "lat": 19.28333,
+   "lng": 166.61667,
+   "tz": "Pacific/Wake",
+   "icao": "",
+   "forecast": true
+  },
+  {
+   "place": "Pacific/Wallis",
+   "name": "ウォリス島",
+   "country": "ウォリス・フツナ",
+   "lat": -13.3,
+   "lng": -176.16667,
+   "tz": "Pacific/Wallis",
+   "icao": "",
+   "forecast": true
   }
  ]
 }

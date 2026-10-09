@@ -41,7 +41,8 @@ ECMWF 数値予報の配信、観測データの配布、世界天気の取得�
   `ssh deb2 'cd dev/weather/WeatherStatic && ../.venv/bin/python fetch_world.py'`
 - CORS ヘッダ（`/data/world/*`）は generate.py が `_headers` に書く。
   配信確認: `curl -sI https://weather.time-j.net/data/world/index.json | grep -i access-control`
-- 利用側は www.time-j.net の都市ページ（現在の天気・天気予報）。
+- 利用側は www.time-j.net の都市ページ（現在の天気・天気予報）。予報は日本以外の
+  全都市（515）、日本域は意図的に空（worldtime 側 K12）。全量 1 回 約 4 分
   天気地図（map.json）は 2026-10-09 に廃止
 
 ## 数値予報

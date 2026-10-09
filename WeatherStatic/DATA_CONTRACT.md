@@ -342,7 +342,10 @@ fetch_world.py が生成(2026-07-07 追加)。都市マスターは `master/worl
 公開のたびに消えていた)。www.time-j.net のブラウザが直接 fetch する。
 `master/world_cities.json` は master/ で唯一 git 管理し、sync_to_server.py で deb2 へ送る。
 
-### data/world/forecast/{place}.json(112都市、ソース中立スキーマ)
+### data/world/forecast/{place}.json(日本以外の全都市 515、ソース中立スキーマ)
+
+日本域の都市(東京)は **意図的に予報を出さない**(worldtime 側 K12、2026-10-09。気象業務法の線引き)。
+world_cities.json の forecast=false で表現し、fetch_world.py は見ない。
 
 ```json
 {
@@ -375,7 +378,7 @@ fetch_world.py が生成(2026-07-07 追加)。都市マスターは `master/worl
 
 ### 運用
 
-- cron(deb2、毎時40分): `fetch_world.py`(全量で約2分30秒、met.no 112リクエスト+aviationweather 4リクエスト)。公開は既存の `build_site.py --publish`(10分ごと)が public/data/world/ ごと上げる。行は docs/operations-forecast.md の一覧。
+- cron(deb2、毎時40分): `fetch_world.py`(全量で約4分、met.no 515リクエスト(0.3秒間隔)+aviationweather 4リクエスト)。公開は既存の `build_site.py --publish`(10分ごと)が public/data/world/ ごと上げる。行は docs/operations-forecast.md の一覧。
 - `generate.py --clean` 後は `fetch_world.py --sync-only` で public/ に再同期する。
 
 (data/world/map.json は worldtime の天気地図とともに 2026-10-09 に廃止)

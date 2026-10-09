@@ -2,7 +2,7 @@
 """世界の天気の取得ドライバ。worldtime-web(time-j.net)向けの /data/world/ を生成する。
 
 出力(毎回上書き。増えない):
-    data/world/forecast/{place}.json … met.no 予報(112都市、hourly 48h + daily 8日)
+    data/world/forecast/{place}.json … met.no 予報(日本以外の515都市、hourly 48h + daily 8日)
     data/world/metar/{icao}.json     … METAR 実測(385局。通報の無い局は前回値を残す)
     data/world/index.json            … 提供一覧と更新時刻
     → 最後に public/data/world/ へ同期する(CORS 等のヘッダは generate.py が
