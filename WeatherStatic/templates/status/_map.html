@@ -62,6 +62,7 @@
 <script>
 document.querySelectorAll(".smap-tabs button").forEach(function (b) {
     b.addEventListener("click", function () {
+        try { if (window.kaiseki) window.kaiseki.event("map_tab", { value: b.dataset.smap }); } catch (e) {}
         document.querySelectorAll(".smap-tabs button").forEach(function (o) {
             var on = o === b;
             o.setAttribute("aria-pressed", on ? "true" : "false");

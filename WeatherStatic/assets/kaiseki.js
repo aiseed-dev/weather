@@ -13,10 +13,15 @@
 // any kind, and the views are only counted. kaiseki.forget() deletes the ID
 // and everything kept under it. kaiseki.id() gives the ID to the site's own
 // server, which links it to a signed-in member (POST /v1/link on its side).
+// data-ask="no": no bar and no ID of any kind; views, leave and events are
+// only counted. data-ask-text replaces the bar's question (why it records).
 (function () {
   const me = document.currentScript;
   const TO = (me && me.dataset.to) || "https://analytics.aiseed.dev";
   const OWN = ((me && me.dataset.own) || "").split(/\s+/).filter(Boolean);
+  const NOASK = !!me && me.dataset.ask === "no";
+  const QUESTION = (me && me.dataset.askText) ||
+    "このサイトをよくし、あなたに合った案内を出すために、見たページの記録を残してよいですか。";
   const NAME = "kaiseki_id";
   const CHOICE = "kaiseki_choice";
   const PARAM = "kaiseki_id";
@@ -45,7 +50,7 @@
   }
   function session() {
     let s = "";
-    if (cookie(CHOICE) !== "yes") return "";
+    if (NOASK || cookie(CHOICE) !== "yes") return "";
     try {
       s = sessionStorage.getItem(NAME + "_s") || "";
       if (!UUID.test(s)) {
@@ -54,6 +59,9 @@
       }
     } catch (e) {}
     return s;
+  }
+  function vidNow() {
+    return NOASK ? "" : cookie(NAME);
   }
   function own(host) {
     return OWN.some(function (d) { return host === d || host.endsWith("." + d); });
@@ -68,7 +76,7 @@
     hash.delete(PARAM);
     url.hash = hash.toString();
     history.replaceState(history.state, "", url.toString());
-    if (UUID.test(vid) && cookie(CHOICE) !== "no") {
+    if (!NOASK && UUID.test(vid) && cookie(CHOICE) !== "no") {
       setCookie(CHOICE, "yes", YEAR);
       setCookie(NAME, vid, YEAR);
     }
@@ -93,10 +101,21 @@
       screen: screen.width + "x" + screen.height,
       ua: navigator.userAgent,
       sid: session(),
-      vid: cookie(NAME),
+      vid: vidNow(),
     };
     send("/v1/hit", Object.assign(data, extra || {}));
   }
+
+  // How far down the page was seen, 0 to 100
+  let deepest = 0;
+  function seen() {
+    const el = document.documentElement;
+    const h = el.scrollHeight;
+    const p = h > 0 ? Math.round(Math.min(1, (window.scrollY + window.innerHeight) / h) * 100) : 100;
+    if (p > deepest) deepest = p;
+  }
+  window.addEventListener("scroll", seen, { passive: true });
+  seen();
 
   // Time the page was in view, sent when it is hidden or left
   let shown = document.visibilityState === "visible" ? Date.now() : 0;
@@ -105,7 +124,7 @@
     if (document.visibilityState === "hidden") {
       if (shown) total += Date.now() - shown;
       shown = 0;
-      if (total > 0) record("leave", { seconds: Math.round(total / 1000) });
+      if (total > 0) record("leave", { seconds: Math.round(total / 1000), scroll: deepest });
       total = 0;
     } else {
       shown = Date.now();
@@ -115,7 +134,7 @@
   // Carry the ID on links to our other sites
   document.addEventListener("click", function (e) {
     const a = e.target.closest && e.target.closest("a[href]");
-    const vid = cookie(NAME);
+    const vid = vidNow();
     if (!a || !vid) return;
     let url;
     try {
@@ -132,6 +151,7 @@
   }, true);
 
   function choose(yes) {
+    if (NOASK) return;
     setCookie(CHOICE, yes ? "yes" : "no", YEAR);
     if (yes && !cookie(NAME)) setCookie(NAME, crypto.randomUUID(), YEAR);
     // The page in view counts from here, with the ID
@@ -166,10 +186,11 @@
     bar.id = "kaiseki-bar";
     style();
     bar.innerHTML =
-      "<p>このサイトをよくし、あなたに合った案内を出すために、見たページの記録を残してよいですか。" +
+      "<p><span data-q></span>" +
       "受け入れると、このサイトの Cookie に番号を置き、その番号で記録をまとめます。" +
       ' <a href="/kaiseki/">くわしく</a></p>' +
       '<button type="button" data-yes>受け入れる</button> <button type="button" data-no>受け入れない</button>';
+    bar.querySelector("[data-q]").textContent = QUESTION;
     bar.querySelector("[data-yes]").onclick = function () { choose(true); };
     bar.querySelector("[data-no]").onclick = function () { choose(false); };
     document.body.appendChild(bar);
@@ -178,10 +199,13 @@
   window.kaiseki = {
     choose: choose,
     forget: forget,
-    event: function (name, extra) { record(name, extra); },
-    id: function () { return cookie(NAME); },
+    // A short value, such as a search word: kaiseki.event("search", { value: "..." })
+    event: function (name, extra) {
+      record(name, extra && extra.value != null ? { value: String(extra.value).slice(0, 100) } : {});
+    },
+    id: vidNow,
     to: TO,
   };
   record("view");
-  if (!cookie(CHOICE)) ask();
+  if (!NOASK && !cookie(CHOICE)) ask();
 })();

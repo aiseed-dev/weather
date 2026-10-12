@@ -147,6 +147,11 @@
         root.dataset.theme = dark ? 'light' : 'dark';
         try { localStorage.setItem('theme', root.dataset.theme); } catch (e) {}
     });
+    // サイト内検索の言葉をアクセス解析の出来事に（kaiseki が入っているときだけ。/kaiseki/ に書いてある）
+    document.getElementById('cse-search-box').addEventListener('submit', function () {
+        var q = (this.querySelector('input[name="q"]').value || '').trim();
+        try { if (q && window.kaiseki) window.kaiseki.event('search', { value: q }); } catch (e) {}
+    });
     // ページ遷移したように見せないため、メニューを開いたままの状態を残さない
     document.querySelectorAll('#navbar a').forEach(function (a) {
         a.addEventListener('click', function () {

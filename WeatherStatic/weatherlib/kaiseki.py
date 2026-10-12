@@ -1,4 +1,4 @@
-"""自前のアクセス解析 kaiseki（aiai-pro の koukoku/kaiseki）をページに入れるかどうか。
+"""自前のアクセス解析 kaiseki（aiai-tools の kaiseki/）をページに入れるかどうか。
 
 受け口の URL（例: https://analytics.aiseed.dev）が環境変数 WEATHER_KAISEKI_TO か、設定ファイル
 ~/.config/weather-site/kaiseki.env（WEATHER_KAISEKI_TO=… の 1 行。cron を書き換えずに入れ切りできる）
@@ -6,8 +6,11 @@
 全ページの </head> の前にスクリプトを入れ、/kaiseki.js と知らせのページ /kaiseki/ を置く。
 無ければ何も入れず、前に置いたものは消す。入れるか（公開するか）は運用者が決める。
 
-kaiseki.js は aiai-pro の koukoku/kaiseki/kaiseki.js の写し（assets/kaiseki.js、aiai-pro 9557e06）。
-直すときは aiai-pro 側で直して写し直す。ページを見た人の記録を受け口へ送るので、電気通信事業法の
+kaiseki.js は aiai-tools の kaiseki/kaiseki.js の写し（assets/kaiseki.js、aiai-tools e3e2d58）。
+直すときは aiai-tools 側で直して写し直す。受け口は deb2 の analytics.aiseed.dev。
+ページが送る出来事（kaiseki.event）: mine_add・mine_remove（自分の地点、値はアメダス番号）、search（サイト内検索、
+値は検索の言葉）、notfound（404、値は URL のパス）、stage_save（トップの設定の保存、値は流し方）、
+map_tab（実況の地図の切り替え、値は地図の名前）。値の中身は /kaiseki/ に書く。ページを見た人の記録を受け口へ送るので、電気通信事業法の
 外部送信規律の対象。送る情報・送り先・目的は /kaiseki/（templates/kaiseki.html）に書く。
 """
 from __future__ import annotations

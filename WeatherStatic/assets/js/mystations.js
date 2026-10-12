@@ -23,6 +23,10 @@
             return Array.isArray(v) ? v.filter(function (x) { return typeof x === "string"; }).slice(0, MAX) : [];
         } catch (e) { return []; }
     }
+    // アクセス解析の出来事（kaiseki。入っていなければ何もしない）。値はアメダス番号
+    function ev(name, a) {
+        try { if (window.kaiseki) window.kaiseki.event(name, { value: a }); } catch (e) {}
+    }
     function save(list) {
         try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, MAX))); } catch (e) {}
         mark();
@@ -96,6 +100,7 @@
             b.onclick = function () {
                 var a = b.closest(".mine-card").getAttribute("data-mine");
                 save(load().filter(function (x) { return x !== a; }));
+                ev("mine_remove", a);
                 render();
             };
         });
@@ -143,7 +148,7 @@
             var l = load();
             if (l.indexOf(a) >= 0) { msg.textContent = "もう入っています"; return; }
             if (l.length >= MAX) { msg.textContent = MAX + " 地点まで。どれかを外してから足してください"; return; }
-            l.push(a); save(l); input.value = ""; msg.textContent = ""; render();
+            l.push(a); save(l); ev("mine_add", a); input.value = ""; msg.textContent = ""; render();
         }
         input.addEventListener("change", add);
         box.querySelector(".mine-add").addEventListener("submit", function (e) { e.preventDefault(); add(); });
@@ -153,9 +158,9 @@
         document.querySelectorAll("[data-mine-toggle]").forEach(function (b) {
             b.addEventListener("click", function () {
                 var a = b.getAttribute("data-mine-toggle"), l = load(), i = l.indexOf(a);
-                if (i >= 0) l.splice(i, 1);
+                if (i >= 0) { l.splice(i, 1); ev("mine_remove", a); }
                 else if (l.length >= MAX) { alert(MAX + " 地点まで入れられます。実況のページでどれかを外してください"); return; }
-                else l.push(a);
+                else { l.push(a); ev("mine_add", a); }
                 save(l);
             });
         });

@@ -698,6 +698,9 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('set-save').addEventListener('click', function () {
         try {
             localStorage.setItem(STORE_KEY, JSON.stringify(readSettings()));
+            // アクセス解析の出来事（流し方だけ。kaiseki が入っているときだけ）
+            var st = readSettings();
+            try { if (window.kaiseki) window.kaiseki.event('stage_save', { value: st.mode + ' 地図' + (st.map ? '○' : '×') + ' 都市' + st.cities.length }); } catch (e) {}
             applySettings('保存しました。次に開いたときもこの設定で流します。');
         } catch (e) { applySettings('このブラウザでは保存できませんでした。'); }
     });

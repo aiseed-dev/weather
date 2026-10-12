@@ -2065,7 +2065,11 @@ def build_seo(env: Environment, stations: dict) -> None:
     k = kaiseki.settings()
     write("404.html",
           '<!doctype html><meta charset="utf-8"><title>404</title>'
-          + (f'<script src="/kaiseki.js" data-to="{k["to"]}" data-own="{k["own"]}" defer></script>' if k else "")
+          + (f'<script src="/kaiseki.js" data-to="{k["to"]}" data-own="{k["own"]}" defer></script>'
+             # 見つからなかったページの URL のパスをアクセス解析の出来事に（小文字へ送り直すときは送らない）
+             '<script>addEventListener("load",function(){var p=location.pathname;'
+             'if(p===p.toLowerCase()&&window.kaiseki)kaiseki.event("notfound",{value:p.slice(0,100)})})</script>'
+             if k else "")
           +
           '<script>var p=location.pathname;if(p!==p.toLowerCase())'
           'location.replace(p.toLowerCase()+location.search+location.hash);'
