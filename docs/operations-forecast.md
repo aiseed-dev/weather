@@ -16,8 +16,8 @@ ECMWF 数値予報の配信、観測データの配布、世界天気の取得�
 ```cron
 # 数値予報 00z/12z（日本時間 17:30 / 5:30 目安）
 30 17,5 * * * cd $HOME/dev/weather && \
-  ./.venv/bin/python tools/publish_forecast.py --out $HOME/wxpub --tier core && \
-  ./.venv/bin/python tools/publish_charts.py --out $HOME/wxpub && \
+  ./.venv/bin/python tools/publish_forecast.py --out $HOME/wxpub --tier core --charts && \
+  ./.venv/bin/python tools/publish_charts.py --out $HOME/wxpub --model gfs && \
   ./.venv/bin/cf-publish r2 sync $HOME/wxpub/forecast weather-forecast/forecast --delete && \
   ./.venv/bin/cf-publish r2 sync $HOME/wxpub/charts weather-forecast/charts --delete
 
@@ -52,16 +52,30 @@ ECMWF 数値予報の配信、観測データの配布、世界天気の取得�
 | 置き場所 | 中身 | 保持 |
 |---|---|---|
 | `~/wxpub/grib-cache/{run}/` | publish_forecast の bulk GRIB（150MB × 65） | パック後に削除。core→ext の間だけ最大 約10GB |
-| `~/wxpub/grib-cache-charts/{model}/{run}/` | publish_charts の bulk GRIB・GFS NetCDF・ENS .npy | **ステップを描き終えるたびに削除**、ラン終了時にディレクトリごと削除（2026-10-09 修正。それ以前は 10GB+2GB が残り続け、次のランでも使い回していた） |
+| `~/wxpub/grib-cache-charts/{model}/{run}/` | publish_charts の GFS NetCDF・ENS .npy（`--model ecmwf` で描くときは bulk GRIB も） | **ステップを描き終えるたびに削除**、ラン終了時にディレクトリごと削除（2026-10-09 修正。それ以前は 10GB+2GB が残り続け、次のランでも使い回していた） |
 | `~/wxpub/forecast/`、`~/wxpub/charts/` | 配信する生成物（R2 へ sync） | forecast は `--runs-keep 2`、charts は最新 1 ラン上書き |
 | デスクトップアプリ `~/.cache/aiseed-weather/ecmwf/` | 利用者の端末側のキャッシュ | サーバーには無い |
 
 一時的なピークは publish_forecast の 約10GB。これを下回る空きしか無い環境では
 `--tier core` だけにする（約2.7GB）。
 
-`publish_forecast` と `publish_charts` は grib-cache を別に持つが、参照する
-bulk GRIB は同じ。帯域が気になる場合は charts の `--out` を forecast と
-同じにしてよい（安全）。
+### ECMWF の GRIB は 1 回だけ取る（2026-10-13〜）
+
+律速は ECMWF の bulk GRIB の取得（1 ステップ 149MB）で、回線は速いとき 13MB/s、
+遅い時間帯は 1〜5MB/s（並列にしても合計は増えない）。そこで:
+
+- `publish_forecast --charts` が、パックを作った同じ GRIB で ECMWF のチャート
+  （日本域 10 製品＋海外向けセット）も描く。以前は publish_charts が同じ GRIB を
+  もう一度取っていた（取得量が 2 倍）。GFS と ENS は `publish_charts --model gfs`
+- 取得は 1 本のスレッドで順に進め、decode・書き・描画は別プロセス（`--workers`、既定 3）で
+  並べる。取り終えたステップから処理するので、CPU の時間は取得の陰に隠れる
+- 取得が 30 秒止まったら切り、受け取った所から Range で続きを取る（以前は 300 秒待って
+  最初から取り直し、1 本 388 秒かかった例がある）。取り切れなかった `.part` は消す
+- charts/latest.json は、それぞれが自分の描いたモデルの分だけ書き替える
+  （ecmwf は publish_forecast、gfs と ens は publish_charts）
+
+見込み（1 ラン 65 ステップ、ENS・GFS を除く）: 回線 13MB/s で 約 36 分 → 約 13 分、
+4MB/s で 約 90 分 → 約 40 分。測定の記録は ~/dev/nc4rs-bench の README。
 
 ENS 降水（アンサンブル）は `publish_charts --ens`（既定オン）。
 

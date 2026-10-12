@@ -26,7 +26,7 @@ tools/publish_charts.py                             /Forecast/ ページ
 
 | モデル | 取得元 | 方式 |
 |--------|--------|------|
-| ECMWF IFS 0.25° | GCS ミラー（実測済み・publisher と同じ URL） | bulk GET（150MB/步）。`{out}/grib-cache-charts/{model}/{run}/` にラン別で置き、**そのステップを描き終えたら消す**（`--keep-grib` で残せる）。publish_forecast.py の grib-cache とは別物で共用していない（2026-10-09 まで「共用のため残す」として消しておらず、しかもステップ名だけで置いていたため次のランが前のランの GRIB を使い回していた。修正済み） |
+| ECMWF IFS 0.25° | GCS ミラー（実測済み・publisher と同じ URL） | bulk GET（150MB/步）。`{out}/grib-cache-charts/{model}/{run}/` にラン別で置き、**そのステップを描き終えたら消す**（`--keep-grib` で残せる）。publish_forecast.py の grib-cache とは別物で共用していない（2026-10-09 まで「共用のため残す」として消しておらず、しかもステップ名だけで置いていたため次のランが前のランの GRIB を使い回していた。修正済み）。**運用では `publish_forecast --charts` が、パックを作った同じ GRIB で描く**（`render_step`、2026-10-13〜。取得 1 回） |
 | GFS 0.25° | AWS `noaa-gfs-bdp-pds`（匿名・.idx あり） | `.idx` から必要フィールドの byte range だけ GET（ECMWF で実証済みの手法。必要 8 フィールド ≈ 数 MB/步） |
 
 - ステップ: 3 時間刻み 0–144h ＋ 6 時間刻き 150–240h（両モデル共通で揃える）

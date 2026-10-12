@@ -9,6 +9,11 @@ docs/forecast-distribution.md。アップロードは分離（rclone 等で行�
 
     ./.venv/bin/python tools/publish_forecast.py --out ./publish
     ./.venv/bin/python tools/publish_forecast.py --out ./publish --steps 0,24 --tier core
+    ./.venv/bin/python tools/publish_forecast.py --out ./publish --tier core --charts   # 運用
+
+- --charts を付けると、同じ GRIB で ECMWF のチャートも描く（publish_charts.render_step）。
+  取得は 1 回で済む（律速は取得。1 ステップ 149MB）。
+- 取得はスレッドで先へ進め、decode・書き・描画は --workers 個のプロセスで並べる。
 
 - tier "core" = 定番チャートの組（地上・500/300hPa高度・850hPa気温風・
   700hPa湿数/鉛直流・250hPaジェット）。先に全ステップ分を公開する。
@@ -28,12 +33,15 @@ import argparse
 import hashlib
 import json
 import logging
+import multiprocessing
+import queue
 import shutil
 import sys
-import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -60,26 +68,68 @@ CORE_PL_LEVELS = [250.0, 300.0, 500.0, 700.0, 850.0]
 # 0.25° 全球 1 フィールド ≈ 0.93MB（int16+zlib 実測）なので 16 変数で約 15MB。
 MAX_FIELDS_PER_PART = 16
 
+# 処理（decode・書き・描画）を並べるプロセス数と、それに加えて先に取っておく GRIB の本数
+DEFAULT_WORKERS = 3
+PREFETCH = 1
+
 ATTRIBUTION = "Data: ECMWF Open Data. CC-BY-4.0. https://www.ecmwf.int/en/forecasts/datasets/open-data"
 
 
-def http_get(url: str, target: Path, retries: int = 3) -> None:
-    """1 ファイル取得。503/切断に指数バックオフ（実測で必須と判明済み）。"""
+# 取得が止まったと見なすまでの秒数。GCS からの bulk GRIB は、回線が遅い時間帯に途中で
+# 止まることがある（2026-10-13 実測: 300 秒待ってから取り直して 1 本 388 秒）。
+# 止まったら短く切り、受け取った所から Range で続きを取る。
+READ_TIMEOUT = 30
+
+
+def http_get(url: str, target: Path, retries: int = 8) -> None:
+    """1 ファイル取得。止まり・503・切断には、受け取った所から続きを取る（指数バックオフ）。
+
+    途中までの中身は target の隣の .part に置き、取り終えてから target に替える。
+    取り切れなかったときは .part を消す（150MB の取り残しを作らない）。"""
+    part = target.with_name(target.name + ".part")
+    part.unlink(missing_ok=True)
+    total = None
     delay = 2.0
-    for attempt in range(retries + 1):
-        try:
-            req = urllib.request.Request(url, headers={"User-Agent": "aiseed-weather-publisher"})
-            with urllib.request.urlopen(req, timeout=300) as resp, \
-                    tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as tmp:
-                shutil.copyfileobj(resp, tmp, length=1 << 20)
-                Path(tmp.name).replace(target)
-            return
-        except (urllib.error.URLError, OSError) as exc:
+    try:
+        for attempt in range(retries + 1):
+            have = part.stat().st_size if part.exists() else 0
+            headers = {"User-Agent": "aiseed-weather-publisher"}
+            if have:
+                headers["Range"] = f"bytes={have}-"
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=READ_TIMEOUT) as resp:
+                    if have and resp.status != 206:      # 続きを返さない相手なら最初から
+                        have = 0
+                    if total is None:
+                        length = resp.headers.get("Content-Length")
+                        total = have + int(length) if length else None
+                    # read1 で届いた分ずつ書く（大きな read は、止まると途中まで受けた分も捨てる）
+                    with part.open("ab" if have else "wb") as f:
+                        while chunk := resp.read1(1 << 16):
+                            f.write(chunk)
+                got = part.stat().st_size
+                if total is None or got == total:
+                    part.replace(target)
+                    return
+                raise OSError(f"途中で切れた（{got}/{total} バイト）")
+            except urllib.error.HTTPError as exc:
+                if exc.code == 416 and total and have == total:   # 取り切っていた
+                    part.replace(target)
+                    return
+                if exc.code < 500 and exc.code != 429:
+                    raise
+                err = exc
+            except (urllib.error.URLError, OSError) as exc:
+                err = exc
             if attempt == retries:
-                raise
-            logger.warning("retry %s in %.0fs: %s", url, delay, exc)
+                raise err
+            logger.warning("retry %s in %.0fs (%s バイト受信済み): %s", url.rsplit("/", 1)[-1], delay,
+                           part.stat().st_size if part.exists() else 0, err)
             time.sleep(delay)
-            delay *= 2
+            delay = min(delay * 2, 60.0)
+    finally:
+        part.unlink(missing_ok=True)
 
 
 def url_exists(url: str) -> bool:
@@ -248,8 +298,44 @@ def dump_json(obj, path: Path) -> None:
     tmp.replace(path)
 
 
+def _worker_init() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+
+def process_step(run: datetime, step: int, tier: str, grib: Path, run_dir: Path,
+                 out: Path, charts: bool) -> "dict[str, dict]":
+    """1 ステップ・1 tier 分の仕事（別プロセスで動く）。パックを書き、charts なら同じ GRIB で
+    ECMWF のチャートも描く。manifest に足す {ファイル名: {bytes, sha256}} を返す。"""
+    entries = {}
+    logger.info("step %3dh: decode + pack (%s)", step, tier)
+    for part, ds in split_tiers(grib).items():
+        if part.split("-")[1] != tier:
+            continue
+        fname = f"{step:03d}h-{part}.nc"
+        target = run_dir / fname
+        write_pack(ds, target, run, step)
+        entries[fname] = {"bytes": target.stat().st_size, "sha256": sha256(target)}
+    if charts:
+        from publish_charts import render_step
+        render_step("ecmwf", run, step, {"sfc": grib, "pl": grib}, out)
+    return entries
+
+
+def remove_grib(grib: Path) -> None:
+    grib.unlink(missing_ok=True)
+    for idx in grib.parent.glob(grib.name + ".*.idx"):   # cfgrib が隣に作る索引
+        idx.unlink(missing_ok=True)
+
+
 def publish_run(run: datetime, steps: list[int], tiers: list[str], out: Path,
-                source: str, keep_grib: bool) -> None:
+                source: str, keep_grib: bool, *, charts: bool = False,
+                workers: int = DEFAULT_WORKERS) -> None:
+    """取得は 1 本のスレッドで順に進め、decode・書き・描画は workers 個の別プロセスで並べる。
+
+    律速は回線（bulk GRIB 1 本 149MB）。取得を止めずに、取り終えたステップから処理する
+    （2026-10-13 実測: 1 ステップの CPU はパック 約 3 秒＋チャート 約 10 秒で、取得 11〜36 秒の間に収まる）。
+    先に取っておく GRIB は workers + PREFETCH 本まで（ディスクは 150MB × その本数）。
+    """
     run_name = f"{run:%Y%m%d_%H}z"
     run_dir = out / "forecast" / "runs" / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -263,36 +349,29 @@ def publish_run(run: datetime, steps: list[int], tiers: list[str], out: Path,
     grib_dir.mkdir(parents=True, exist_ok=True)
 
     for tier in tiers:  # core を全ステップ終えてから ext（優先公開）
+        # このステップの tier ファイルが manifest にあれば処理済み
+        # （manifest はステップの全パート書き出し後に更新される）
+        todo = []
         for step in steps:
-            done = manifest["steps"].get(str(step), {})
-            # このステップの tier ファイルが manifest にあれば処理済み
-            # （manifest はステップの全パート書き出し後に更新される）
-            if any(f"-{tier}" in f for f in done):
+            if any(f"-{tier}" in f for f in manifest["steps"].get(str(step), {})):
                 logger.info("step %3dh %s: 済み", step, tier)
-                continue
+            else:
+                todo.append(step)
+        with_charts = charts and tier == tiers[0]
+        # GRIB は最後の tier を処理し終えたステップから消す
+        # （core→ext の 2 パス間で保持しないと 150MB×65 の再取得になる。
+        #   その間 grib-cache が最大 約10GB 育つ点は設計書に記載）
+        drop = not keep_grib and tier == tiers[-1]
 
-            grib = grib_dir / f"{step}h.grib2"
-            if not grib.exists() or grib.stat().st_size == 0:
-                url = _bulk_url(source, run, step)
-                logger.info("step %3dh: GRIB 取得 %s", step, url.rsplit("/", 1)[-1])
-                http_get(url, grib)
-
-            logger.info("step %3dh: decode + pack (%s)", step, tier)
-            for part, ds in split_tiers(grib).items():
-                if part.split("-")[1] != tier:
-                    continue
-                fname = f"{step:03d}h-{part}.nc"
-                target = run_dir / fname
-                write_pack(ds, target, run, step)
-                entry = manifest["steps"].setdefault(str(step), {})
-                entry[fname] = {"bytes": target.stat().st_size, "sha256": sha256(target)}
-
-            # GRIB は最後の tier を処理し終えたステップから消す
-            # （core→ext の 2 パス間で保持しないと 150MB×65 の再取得になる。
-            #   その間 grib-cache が最大 約10GB 育つ点は設計書に記載）
-            if not keep_grib and tier == tiers[-1]:
-                grib.unlink(missing_ok=True)
+        def record(step: int, grib: Path, entries: dict) -> None:
+            manifest["steps"].setdefault(str(step), {}).update(entries)
+            if with_charts and step not in manifest.setdefault("charts", []):
+                manifest["charts"].append(step)
+            if drop:
+                remove_grib(grib)
             dump_json(manifest, manifest_path)
+
+        _pipeline(todo, run, tier, grib_dir, run_dir, out, source, with_charts, workers, record)
 
         # tier 完成 → manifest と latest.json に反映（段階公開）
         manifest["tiers"][tier] = True
@@ -306,6 +385,80 @@ def publish_run(run: datetime, steps: list[int], tiers: list[str], out: Path,
             "tiers": manifest["tiers"],
         }, latest)
         logger.info("tier %s 完成 → latest.json 更新", tier)
+        if with_charts:
+            from publish_charts import model_entry, update_latest
+            update_latest(out, {"ecmwf": model_entry("ecmwf", run, sorted(manifest["charts"]))})
+            logger.info("ECMWF チャート %d ステップ → charts/latest.json 更新", len(manifest["charts"]))
+
+
+def _pipeline(todo: "list[int]", run: datetime, tier: str, grib_dir: Path, run_dir: Path,
+              out: Path, source: str, charts: bool, workers: int, record) -> None:
+    """todo のステップを、取得スレッド → 処理プロセスの流れで片付ける。record は親で順に呼ぶ。"""
+    if not todo:
+        return
+    slots = threading.BoundedSemaphore(workers + PREFETCH)
+    ready: "queue.Queue" = queue.Queue()
+    stop = threading.Event()
+
+    def downloader() -> None:
+        try:
+            for step in todo:
+                slots.acquire()
+                if stop.is_set():
+                    return
+                grib = grib_dir / f"{step}h.grib2"
+                if not grib.exists() or grib.stat().st_size == 0:
+                    url = _bulk_url(source, run, step)
+                    t0 = time.time()
+                    http_get(url, grib)
+                    logger.info("step %3dh: GRIB 取得 %.0f 秒 (%s)", step, time.time() - t0,
+                                url.rsplit("/", 1)[-1])
+                ready.put((step, grib))
+            ready.put(None)
+        except BaseException as exc:  # noqa: BLE001 — 親で投げ直す
+            ready.put(exc)
+
+    # fork はスレッド（取得）が動いている親を複製するので使わない
+    ex = ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"),
+                             initializer=_worker_init)
+    pending: dict = {}
+
+    def collect(block: bool) -> None:
+        done_now = [f for f in pending if f.done()]
+        if block and not done_now and pending:
+            done_now = [next(as_completed(pending))]
+        for fut in done_now:
+            step, grib = pending.pop(fut)
+            record(step, grib, fut.result())
+            slots.release()
+
+    threading.Thread(target=downloader, daemon=True).start()
+    try:
+        fetching = True
+        while fetching or pending:
+            if fetching:
+                try:
+                    item = ready.get(timeout=1.0)
+                except queue.Empty:
+                    collect(block=False)
+                    continue
+                if item is None:
+                    fetching = False
+                elif isinstance(item, BaseException):
+                    raise item
+                else:
+                    step, grib = item
+                    pending[ex.submit(process_step, run, step, tier, grib, run_dir, out, charts)] = (step, grib)
+                collect(block=False)
+            else:
+                collect(block=True)
+    finally:
+        stop.set()
+        try:
+            slots.release()          # 取得スレッドが空きを待っていれば起こして終わらせる
+        except ValueError:
+            pass
+        ex.shutdown(wait=True, cancel_futures=True)
 
 
 def prune_runs(out: Path, keep: int, keep_grib: bool) -> None:
@@ -336,6 +489,11 @@ def main() -> int:
     ap.add_argument("--runs-keep", type=int, default=2)
     ap.add_argument("--keep-grib", action="store_true",
                     help="取得した GRIB を残す（デバッグ用。既定はパック後に削除）")
+    ap.add_argument("--charts", action="store_true",
+                    help="同じ GRIB で ECMWF のチャート（publish_charts と同じ製品）も描く。"
+                         "GFS・ENS は publish_charts --model gfs で別に描く")
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                    help=f"decode・書き・描画のプロセス数（既定 {DEFAULT_WORKERS}）")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -349,7 +507,8 @@ def main() -> int:
 
     steps = parse_steps(args.steps)
     tiers = ["core", "ext"] if args.tier == "both" else [args.tier]
-    publish_run(run, steps, tiers, out, args.source, args.keep_grib)
+    publish_run(run, steps, tiers, out, args.source, args.keep_grib,
+                charts=args.charts, workers=max(1, args.workers))
     prune_runs(out, args.runs_keep, args.keep_grib)
     logger.info("完了。アップロード例: rclone sync %s/forecast r2:<bucket>/forecast", out)
     return 0

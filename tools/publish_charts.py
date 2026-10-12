@@ -246,6 +246,62 @@ def finalize(png: bytes, caption: str, attribution: str) -> bytes:
 
 # ---------------------------------------------------------------- メイン
 
+def render_step(model: str, run: datetime, step: int, path_for: dict, out: Path) -> None:
+    """1 ステップ分の決定論チャート（と海外向けセット）を、取得済みのファイルから描く。
+
+    path_for は kind（sfc / pl）→ ファイル。ECMWF は bulk GRIB 1 本を両方に渡す。
+    publish_forecast --charts も、パックを作った同じ GRIB でこれを呼ぶ（取得は 1 回）。"""
+    from aiseed_weather.figures.render_pool import render_layer
+    from aiseed_weather.figures.regions import JAPAN, ARCTIC
+    from aiseed_weather.products.catalog import field_by_key
+    regions = {"japan": JAPAN, "arctic": ARCTIC}
+    run_id = f"{model.upper()} {run:%Y-%m-%d %H}Z +{step}h"
+    for product, layer, region_key, overlay in DET_PRODUCTS:
+        target = out / "charts" / model / product / f"{step:03d}.png"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        kind = field_by_key(layer).kind
+        png = render_layer(path_for[kind], regions[region_key], run_id=run_id,
+                           layer_key=layer,
+                           msl_overlay_path=path_for["sfc"] if overlay else None)
+        target.write_bytes(finalize(
+            png, f"{product}  {run:%Y-%m-%d %H}Z  T+{step}h", ATTR[model]))
+    if model in WORLD_MODELS and step % WORLD_STEP_HOURS == 0:
+        n_world = render_world(model, run, step, path_for, out, run_id)
+        logger.info("%s step %3dh: 海外向け %d 枚", model, step, n_world)
+    logger.info("%s step %3dh: %d 製品", model, step, len(DET_PRODUCTS))
+
+
+def model_entry(model: str, run: datetime, done: "list[int]") -> dict:
+    """charts/latest.json の 1 モデル分。"""
+    entry = {"run": f"{run:%Y-%m-%dT%H}Z", "steps": done,
+             "products": [p for p, *_ in DET_PRODUCTS], "attribution": ATTR[model]}
+    if model in WORLD_MODELS:
+        entry["world"] = {
+            "regions": list(WORLD_REGIONS),
+            "products": [p for p, *_ in WORLD_PRODUCTS],
+            "steps": [s for s in done if s % WORLD_STEP_HOURS == 0],
+            "path": "charts/{model}/world/{region}/{product}/{step:03d}.png",
+            "blank": "日本の排他的経済水域(重複主張域・共同開発区域を含む)は表示していません",
+            "attribution": f"{ATTR[model]} / {ATTR_EEZ}"}
+    return entry
+
+
+def update_latest(out: Path, models: dict) -> Path:
+    """charts/latest.json のうち、渡したモデルの分だけを書き替える。
+
+    ECMWF は publish_forecast --charts、GFS と ENS は publish_charts、と別々の処理が描くので、
+    それぞれ自分の分だけを書き、相手の分は残す。"""
+    lj = out / "charts" / "latest.json"
+    lj.parent.mkdir(parents=True, exist_ok=True)
+    latest = json.loads(lj.read_text(encoding="utf-8")) if lj.is_file() else {"models": {}}
+    latest.setdefault("models", {}).update(models)
+    latest["generated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    tmp = lj.with_suffix(".tmp")
+    tmp.write_text(json.dumps(latest, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(lj)
+    return lj
+
+
 def render_model(model: str, run: datetime, steps: "list[int]", out: Path,
                  grib_cache: Path, *, keep_grib: bool = False) -> "list[int]":
     """1 モデル分を描く。
@@ -255,11 +311,6 @@ def render_model(model: str, run: datetime, steps: "list[int]", out: Path,
     キャッシュはラン別ディレクトリに置く。以前はステップ名だけで置いていたため、
     次のランが前のランの GRIB をそのまま使い回していた（2026-10-09 修正）。
     """
-
-    from aiseed_weather.figures.render_pool import render_layer
-    from aiseed_weather.figures.regions import JAPAN, ARCTIC
-    from aiseed_weather.products.catalog import field_by_key
-    regions = {"japan": JAPAN, "arctic": ARCTIC}
     done_steps = []
     work = grib_cache / model / f"{run:%Y%m%d%H}"
     work.mkdir(parents=True, exist_ok=True)
@@ -275,21 +326,8 @@ def render_model(model: str, run: datetime, steps: "list[int]", out: Path,
             sfc_nc, pl_nc = fetch_gfs_step(run, step, work)
             path_for = {"sfc": sfc_nc, "pl": pl_nc}
             step_files = [sfc_nc, pl_nc]
-        run_id = f"{model.upper()} {run:%Y-%m-%d %H}Z +{step}h"
-        for product, layer, region_key, overlay in DET_PRODUCTS:
-            target = out / "charts" / model / product / f"{step:03d}.png"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            kind = field_by_key(layer).kind
-            png = render_layer(path_for[kind], regions[region_key], run_id=run_id,
-                               layer_key=layer,
-                               msl_overlay_path=path_for["sfc"] if overlay else None)
-            target.write_bytes(finalize(
-                png, f"{product}  {run:%Y-%m-%d %H}Z  T+{step}h", ATTR[model]))
-        if model in WORLD_MODELS and step % WORLD_STEP_HOURS == 0:
-            n_world = render_world(model, run, step, path_for, out, run_id)
-            logger.info("%s step %3dh: 海外向け %d 枚", model, step, n_world)
+        render_step(model, run, step, path_for, out)
         done_steps.append(step)
-        logger.info("%s step %3dh: %d 製品", model, step, len(DET_PRODUCTS))
         if not keep_grib:
             for f in step_files:
                 f.unlink(missing_ok=True)
@@ -393,8 +431,7 @@ def main() -> int:
     steps = ALL_STEPS if args.steps == "all" else [int(s) for s in args.steps.split(",")]
 
     from publish_forecast import latest_complete_run
-    latest = {"generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-              "models": {}}
+    rendered: dict = {}
     models = {"both": ["ecmwf", "gfs"], "ecmwf": ["ecmwf"],
               "gfs": ["gfs"], "none": []}[args.model]
     for model in models:
@@ -404,17 +441,7 @@ def main() -> int:
             run = latest_complete_run("google") if model == "ecmwf" else latest_gfs_run()
         logger.info("%s ラン: %s", model, f"{run:%Y-%m-%d %H}Z")
         done = render_model(model, run, steps, out, grib_cache, keep_grib=args.keep_grib)
-        latest["models"][model] = {
-            "run": f"{run:%Y-%m-%dT%H}Z", "steps": done,
-            "products": [p for p, *_ in DET_PRODUCTS], "attribution": ATTR[model]}
-        if model in WORLD_MODELS:
-            latest["models"][model]["world"] = {
-                "regions": list(WORLD_REGIONS),
-                "products": [p for p, *_ in WORLD_PRODUCTS],
-                "steps": [s for s in done if s % WORLD_STEP_HOURS == 0],
-                "path": "charts/{model}/world/{region}/{product}/{step:03d}.png",
-                "blank": "日本の排他的経済水域(重複主張域・共同開発区域を含む)は表示していません",
-                "attribution": f"{ATTR[model]} / {ATTR_EEZ}"}
+        rendered[model] = model_entry(model, run, done)
 
     if args.ens:
         if args.run:
@@ -425,17 +452,14 @@ def main() -> int:
         if args.steps != "all":
             windows = [w for w in ENS_STEPS if w <= max(steps)] or [24]
         done = render_ens_products(run, out, grib_cache, windows, keep_grib=args.keep_grib)
-        latest["models"]["ens"] = {
+        rendered["ens"] = {
             "run": f"{run:%Y-%m-%dT%H}Z", "steps": done,
             "products": ENS_PRODUCTS, "attribution": ATTR["ens"]}
 
     if not args.keep_grib:
         shutil.rmtree(grib_cache, ignore_errors=True)   # 取り残しがあっても次のランに持ち越さない
 
-    lj = out / "charts" / "latest.json"
-    lj.parent.mkdir(parents=True, exist_ok=True)
-    lj.write_text(json.dumps(latest, ensure_ascii=False, indent=1), encoding="utf-8")
-    logger.info("完了: %s", lj)
+    logger.info("完了: %s", update_latest(out, rendered))
     return 0
 
 
