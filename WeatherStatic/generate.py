@@ -564,6 +564,9 @@ def build_home(env: Environment, today: dict, meta: dict, fc: dict,
         "temp_anchors": TEMP_ANCHORS, "anom_anchors": ANOM_ANCHORS, "clothes_bands": CLOTHES_BANDS,
         "now_cities": now_cities, "now_default": HOME_CITIES,
         "normals_date": amedas_time.date().isoformat() if amedas_time else None,
+        # 時刻別の平年が自前の都市と、近い都市から借りた推定の都市の数（注記に出す）
+        "n_normals_own": sum(1 for c in now_cities if c.get("ncurve") and c.get("nown")),
+        "n_normals_borrowed": sum(1 for c in now_cities if c.get("ncurve") and not c.get("nown")),
         "fc_night": fc_night, "fc_label": fc_label,
         # 地図の輪郭（make_japan_outline.py が作る。Natural Earth 10m）
         "japan_map": json.loads((BASE / "assets" / "japan_outline.json").read_text(encoding="utf-8")),
