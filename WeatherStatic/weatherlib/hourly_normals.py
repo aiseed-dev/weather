@@ -71,9 +71,10 @@ class HourlyNormals:
         (la1, lo1), (la2, lo2) = self.coords[a], self.coords[b]
         return math.hypot((lo1 - lo2) * math.cos(math.radians(36.0)), la1 - la2)
 
-    def at(self, code: int, when: datetime) -> tuple[int | None, int | None]:
-        """(平年気温 ×10 の整数, 日変化の形を借りた都市)。自前の値なら借り先は code 自身。"""
-        return self._at(code, when.month, when.day, when.hour, when.minute)
+    def at(self, code: int, when: datetime, *, borrow: bool = True) -> tuple[int | None, int | None]:
+        """(平年気温 ×10 の整数, 日変化の形を借りた都市)。自前の値なら借り先は code 自身。
+        borrow=False なら自前の時別の平年値だけ使い、無ければ (None, None)。"""
+        return self._at(code, when.month, when.day, when.hour, when.minute, borrow)
 
     def curve(self, code: int, d: date) -> tuple[list[int] | None, int | None]:
         """その日の 0:00〜24:00 の毎正時の平年（25 値、×10）と借り先。ページ側で時刻に合わせて補間する。"""
@@ -85,14 +86,15 @@ class HourlyNormals:
             vals.append(v)
         return vals, src
 
-    def _at(self, code: int, m: int, d: int, h: int, mi: int) -> tuple[int | None, int | None]:
+    def _at(self, code: int, m: int, d: int, h: int, mi: int,
+            borrow: bool = True) -> tuple[int | None, int | None]:
         if (m, d) == (2, 29):
             d = 28                           # 日別平年値に 2/29 が無いことがある
         if code in self.own:
             v = normal_at(self.own[code], m, d, h, mi)
             if v is not None:
                 return round(v * 10), code
-        if code not in self.coords:
+        if not borrow or code not in self.coords:
             return None, None
         dd = date(LEAP, m, d)
         tavg, tmax, tmin = (self.daily(code, e, dd) for e in ("tavg", "tmax", "tmin"))

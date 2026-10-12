@@ -63,6 +63,8 @@
                    '<div class="mine-sub">この地点の値はいまありません</div></div>';
         }
         var temp = t10(s[3]), lines = [];
+        // s[13] はその時刻の平年（時刻別の平年値。無い地点は null）
+        var anom = (s[3] != null && s[13] != null) ? (s[3] - s[13]) / 10 : null;
         if (s[4] != null || s[6] != null) {
             lines.push("最高 " + (s[4] != null ? t10(s[4]) + "℃" + (s[5] ? "（" + esc(s[5]) + "）" : "") : "-") +
                        "・最低 " + (s[6] != null ? t10(s[6]) + "℃" + (s[7] ? "（" + esc(s[7]) + "）" : "") : "-"));
@@ -77,7 +79,9 @@
                '<div class="mine-head"><a href="' + esc(s[2]) + '"><b>' + esc(s[0]) + '</b><small>' + esc(s[1]) + '</small></a>' +
                (i > 0 ? '<button type="button" class="mine-left" aria-label="前へ">←</button>' : "") +
                '<button type="button" class="mine-x" aria-label="外す">×</button></div>' +
-               '<div class="mine-t">' + (temp != null ? temp + "<small>℃</small>" : '<span class="mine-none">気温の観測なし</span>') + "</div>" +
+               '<div class="mine-t">' + (temp != null ? temp + "<small>℃</small>" : '<span class="mine-none">気温の観測なし</span>') +
+               (anom != null ? '<span class="mine-anom ' + (anom > 0 ? "up" : anom < 0 ? "down" : "") + '">平年より ' +
+                               (anom >= 0 ? "+" : "−") + Math.abs(anom).toFixed(1) + "℃</span>" : "") + "</div>" +
                lines.map(function (l) { return '<div class="mine-sub">' + l + "</div>"; }).join("") + "</div>";
     }
 

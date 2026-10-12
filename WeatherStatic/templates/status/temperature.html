@@ -5,6 +5,7 @@
                 chart(SVG 文字列) / graph_cities / graph_colors / slot_count
   smaps … 地図（status/_map.html、generate_status.py の make_map）
   mine_js_v … 自分の地点のスクリプトの版（status/_mine.html）
+  n_hourly / n_rough … 時刻別の平年で出した地点数・概算の地点数（r.rough が真の行に ※）
 #}
 {% extends "_layout.html" %}
 
@@ -26,6 +27,7 @@
     .st-chart { background: var(--card); border: 1px solid var(--border);
         border-radius: var(--radius); padding: 12px; }
     .st-note { font-size: 12.5px; color: var(--muted); line-height: 1.7; margin: 8px 0 0; }
+    .rough { margin-left: 2px; font-size: 85%; color: var(--muted); }
 </style>
 {% endblock %}
 
@@ -73,7 +75,7 @@
                         <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>
                         <td class="wright"{% if r.diff is not none %} style="background-color: {{ r.diff | bcolor }}"{% endif %}>{{ r.temp | ondo }}</td>
-                        <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% else %}-{% endif %}</td>
+                        <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% if r.rough %}<span class="rough" title="概算（最高と最低の平年の中点との差）">※</span>{% endif %}{% else %}-{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </table>
@@ -90,7 +92,7 @@
                         <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                         <td>{{ r.pref }}</td>
                         <td class="wright"{% if r.diff is not none %} style="background-color: {{ r.diff | bcolor }}"{% endif %}>{{ r.temp | ondo }}</td>
-                        <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% else %}-{% endif %}</td>
+                        <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% if r.rough %}<span class="rough" title="概算（最高と最低の平年の中点との差）">※</span>{% endif %}{% else %}-{% endif %}</td>
                     </tr>
                     {% endfor %}
                 </table>
@@ -98,8 +100,10 @@
         </div>
     </div>
     <p class="st-note">
-        平年差は、その日の最高気温平年値と最低気温平年値の中点を基準にした概算です
-        （時刻別の平年値は公開されていないため）。色分けは旧サイトと同じ基準です。
+        平年差は、その時刻の平年（1991〜2020 年）との差です。気象庁は時刻別の平年値を出していないので、
+        気象庁の日別平年値に、1991〜2020 年の時別値から求めた 1 日の気温の変わり方を重ねて当サイトで作りました
+        （{{ n_hourly }} 地点）。{% if n_rough %}※ の地点（{{ n_rough }} 地点）は時刻別の平年がまだ無いため、
+        その日の最高気温平年値と最低気温平年値の中点との差（概算）です。{% endif %}色分けは旧サイトと同じ基準です。
     </p>
 </div>
 
@@ -120,7 +124,7 @@
                 <td><a href="{{ r.url }}">{{ r.name }}</a></td>
                 <td>{{ r.pref }}</td>
                 <td class="wright"{% if r.diff is not none %} style="background-color: {{ r.diff | bcolor }}"{% endif %}>{{ r.temp | ondo }}</td>
-                <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% else %}-{% endif %}</td>
+                <td class="wright">{% if r.diff is not none %}{{ "%+.1f" | format(r.diff / 10) }}{% if r.rough %}<span class="rough" title="概算（最高と最低の平年の中点との差）">※</span>{% endif %}{% else %}-{% endif %}</td>
             </tr>
             {% endfor %}
         </table>

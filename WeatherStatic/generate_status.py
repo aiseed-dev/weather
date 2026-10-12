@@ -33,6 +33,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from weatherlib.filters import FILTERS
 from weatherlib import kaiseki, pointstore, siteurl, stationmap
+from weatherlib.hourly_normals import HourlyNormals
 from weatherlib.svgchart import intraday_svg, trend_svg
 # 平年値の読み方（daily は月キー・日は月内添字）は generate.py に正しい実装がある
 from generate import normal_daily, climate_targets, station_slug, load_today
@@ -147,6 +148,18 @@ def make_map(map_id: str, label: str, rows: list[dict], value, colour, legend: d
             "legend": legend, "note": note}
 
 
+_HOURLY: HourlyNormals | None = None
+
+
+def hourly_normals() -> HourlyNormals:
+    """時刻別の平年値（master/normals_hourly/。build_hourly_normals.py --source obs）。1 回だけ読む。
+    ここでは自前の値だけ使う（近い都市から借りた推定は使わない）。"""
+    global _HOURLY
+    if _HOURLY is None:
+        _HOURLY = HourlyNormals(MASTER / "normals_hourly", lambda *a: None, {})
+    return _HOURLY
+
+
 def normal_tmax_tmin(code: int, d: date) -> tuple[int | None, int | None]:
     """その日の最高・最低の平年値。daily は月ごとのキーで日は月内の添字。"""
     return normal_daily(code, "tmax", d), normal_daily(code, "tmin", d)
@@ -175,15 +188,19 @@ def build_temperature(env: Environment, stations: dict) -> None:
         if rec is None:
             continue
         t = int(round(float(e[0]) * 10))
-        n_max, n_min = normal_tmax_tmin(int(code), now.date())
-        # 平年差は「その時刻の平年値」が無いので、最高と最低の中点を基準にする
-        mid = (n_max + n_min) // 2 if n_max is not None and n_min is not None else None
+        # 平年差は、その時刻の平年（時刻別の平年値）との差。まだ無い地点は最高と最低の平年の中点との差（概算）
+        hourly, _src = hourly_normals().at(int(code), obs_time, borrow=False)
+        if hourly is None:
+            n_max, n_min = normal_tmax_tmin(int(code), now.date())
+            base = (n_max + n_min) // 2 if n_max is not None and n_min is not None else None
+        else:
+            base = hourly
         rows.append({
             "code": int(code), "amedas": amedas, "name": rec["name"],
             "pref": rec.get("pref") or "", "region": region_of(
                 (rec.get("etrn") or {}).get("prec_no")),
-            "temp": t, "normal_mid": mid,
-            "diff": (t - mid) if mid is not None else None,
+            "temp": t, "normal_mid": base, "rough": hourly is None and base is not None,
+            "diff": (t - base) if base is not None else None,
             "url": station_url(stations, rec, amedas),
             "lat": rec.get("lat"), "lon": rec.get("lon"),
         })
@@ -214,7 +231,9 @@ def build_temperature(env: Environment, stations: dict) -> None:
         highs=rows[:RANK_N], lows=list(reversed(rows[-RANK_N:])), rows=rows,
         region_filters=[(k, n) for k, n, _, _ in REGIONS],
         chart=chart, graph_cities=[c[0] for c in GRAPH_CITIES],
-        graph_colors=GRAPH_COLORS, slot_count=len(slots), smaps=smaps)
+        graph_colors=GRAPH_COLORS, slot_count=len(slots), smaps=smaps,
+        n_hourly=sum(1 for r in rows if r["diff"] is not None and not r["rough"]),
+        n_rough=sum(1 for r in rows if r["rough"]))
     out = PUBLIC / "Status" / "Temperature" / "index.html"
     put(out, html)
     log(f"Status/Temperature/index.html ({len(html):,} bytes) "
@@ -741,6 +760,7 @@ def build_latest_json(stations: dict) -> None:
             return int(round(float(e[0]) * mul))
         return None
 
+    slot_time = datetime(*map(int, (latest[:4], latest[4:6], latest[6:8], latest[8:10], latest[10:12])))
     out = {}
     for code, rec in stations["stations"].items():
         amedas = str(rec.get("amedas") or "")
@@ -748,15 +768,17 @@ def build_latest_json(stations: dict) -> None:
             continue
         e, t = snap.get(amedas), today.get(amedas, {})
         wd = val(e, "windDirection", 1)
+        tnorm, _src = hourly_normals().at(int(code), slot_time, borrow=False)
         out[amedas] = [rec["name"], rec.get("pref") or "", station_url(stations, rec, amedas),
                        val(e, "temp", 10), t.get("tmax"), t.get("tmax_at") or "",
                        t.get("tmin"), t.get("tmin_at") or "",
                        wd, val(e, "wind", 10), val(e, "precipitation1h", 10),
-                       val(e, "precipitation24h", 10), val(snow_snap.get(amedas), "snow", 1)]
+                       val(e, "precipitation24h", 10), val(snow_snap.get(amedas), "snow", 1), tnorm]
     body = {"time": f"{latest[:4]}-{latest[4:6]}-{latest[6:8]}T{latest[8:10]}:{latest[10:12]}",
             "fields": ["name", "pref", "url", "temp", "tmax", "tmax_at", "tmin", "tmin_at",
-                       "wdir", "wind", "precip1h", "precip24h", "snow"],
-            "units": "気温・風速・降水量は 10 倍の整数、積雪は cm。風向は 0=静穏、1=北北東 … 16=北",
+                       "wdir", "wind", "precip1h", "precip24h", "snow", "tnorm"],
+            "units": ("気温・風速・降水量は 10 倍の整数、積雪は cm。風向は 0=静穏、1=北北東 … 16=北。"
+                      "tnorm はその時刻の平年気温（時刻別の平年値、10 倍の整数。無い地点は null）"),
             "attribution": "出典: 気象庁ホームページ（編集・加工: AIseed）",
             "stations": out}
     dst = PUBLIC / "data" / "amedas-latest.json"
