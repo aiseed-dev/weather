@@ -95,6 +95,7 @@ DEFAULT_CACHE = DATA / "etrn_hourly"          # .gitignore 済み（WeatherStati
 DEFAULT_OUT = MASTER / "normals_hourly"       # .gitignore 済み（WeatherStatic/master/）
 OBS_DIR = DATA / "hourly_obs"                 # fetch_hourly_obs.py の出力（全地点 1991〜2020 年の時別値）
 OBS_FILL = -32768
+OBS_CHUNKS = 5                                # fetch_hourly_obs.py の CHUNKS の数（1991〜2020 年を 6 年ずつ）
 
 # generate.py の HOME_CITIES と同じ（generate.py は import が重いので写している。
 # 札幌, 仙台, 東京, 名古屋, 大阪, 広島, 高松, 福岡, 鹿児島, 那覇）
@@ -158,7 +159,11 @@ def resolve_stations(spec: str, source: str = "etrn") -> list[int]:
     if spec == "all":
         if source != "obs":
             raise SystemExit("--stations all は --source obs のとき（全地点の時別値は fetch_hourly_obs.py が取る）")
-        return sorted(int(p.name) for p in OBS_DIR.iterdir() if p.is_dir() and p.name.isdigit()) if OBS_DIR.is_dir() else []
+        # 30 年分（6 年 × 5 回）がそろった地点だけ。取得の途中の地点は作らない
+        if not OBS_DIR.is_dir():
+            return []
+        return sorted(int(p.name) for p in OBS_DIR.iterdir()
+                      if p.is_dir() and p.name.isdigit() and len(list(p.glob("*-*.npz"))) >= OBS_CHUNKS)
     codes = [int(x) for x in spec.split(",") if x.strip()]
     for c in codes:
         if c not in BY_CODE and (source != "obs" or str(c) not in all_stations()):
