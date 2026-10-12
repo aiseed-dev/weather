@@ -59,6 +59,9 @@
  * ----------------------------------------
  * 時別の平年値の材料。下の etrn() を参照。R2 では etrn/ の下に置く。
  *
+ * POST /obsdl（Bearer TOKEN）
+ *   過去の気象データ・ダウンロードの中継。地点の一覧と気温の時別値だけ。下の obsdl() を参照。
+ *
  * デプロイ（ユーザー実行。合言葉は環境変数から読まれ、表示されない）:
  *   TOKEN=... cf-publish worker deploy . --secret TOKEN --workers-dev
  */
@@ -69,6 +72,11 @@ const ETRN = "https://www.data.jma.go.jp/stats/etrn/view/";
 const ETRN_PAGE = /^(hourly_s1|hourly_a1|daily_s1|daily_a1|nml_sfc_d)\.php\?[A-Za-z0-9_=&.-]{1,200}$/;
 const ETRN_KEY = /^[A-Za-z0-9_\/.-]{1,160}$/;
 const UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)";
+// 過去の気象データ・ダウンロード（obsdl）。/obsdl で中継するのは、地点の一覧（府県ごと）と
+// 気温の時別値（1 地点、暦年の範囲）だけ。依頼の書式はここで組み立てるので、ほかの物は取れない
+const OBSDL = "https://www.data.jma.go.jp/risk/obsdl/";
+const OBSDL_STID = /^[sa]\d{4,5}$/;
+const OBSDL_MAX_YEARS = 22;    // 1 回の上限はおよそ 20 万時間（地点 × 項目 × 時間）
 const CONCURRENCY = 6;      // Workers の同時接続上限に合わせる
 const MAX_STATIONS = 49;    // fetch N + put 1 ≤ 50
 
@@ -156,6 +164,54 @@ async function handle(env, name, stations, day, hour) {
  *
  * サブリクエストは fetch 1 ＋ put 1。
  */
+/**
+ * 過去の気象データ・ダウンロードの中継（時別の平年値の材料。気象庁へは Cloudflare から行く）。
+ *   {kind: "station", pd: 府県番号}            → 地点の一覧（JSON）
+ *   {kind: "hourly", stid: "s47412", from, to} → その地点の from 年 1 月 1 日〜to 年 12 月 31 日の気温の時別値（CSV）
+ * 本文は受け取ったまま流す（R2 には置かない。全地点で数 GB になるため）。X-Status は気象庁の状態。
+ */
+async function obsdl(request) {
+  let body;
+  try {
+    body = await request.json();
+  } catch (_) {
+    return new Response("bad request", { status: 400 });
+  }
+  const { kind, pd, stid, from, to } = body || {};
+  let path, form;
+  if (kind === "station" && Number.isInteger(pd) && pd >= 1 && pd <= 99) {
+    path = "top/station";
+    form = { pd: String(pd), format: "json" };
+  } else if (kind === "hourly" && OBSDL_STID.test(stid || "") && Number.isInteger(from) && Number.isInteger(to)
+             && from >= 1961 && to >= from && to - from + 1 <= OBSDL_MAX_YEARS && to <= 2100) {
+    path = "show/table";
+    form = {
+      stationNumList: JSON.stringify([stid]), aggrgPeriod: "9", elementNumList: JSON.stringify([["201", ""]]),
+      interAnnualType: "1", ymdList: JSON.stringify([String(from), String(to), "1", "12", "1", "31"]),
+      option: JSON.stringify({ list: ["obs"], nyear: 0 }), downloadFlag: "true", rmkFlag: "1",
+      disconnectFlag: "1", youbiFlag: "0", fukenFlag: "0", kijiFlag: "0", csvFlag: "1",
+      jikantaiFlag: "0", jikantaiList: "[1,24]", ymdLiteral: "1",
+    };
+  } else {
+    return new Response("kind が station（pd）か hourly（stid・from・to）で要る", { status: 400 });
+  }
+  let res;
+  try {
+    res = await fetch(OBSDL + path, {
+      method: "POST", body: new URLSearchParams(form),
+      headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded" },
+    });
+  } catch (e) {
+    return new Response(String(e), { status: 502, headers: { "X-Status": "0" } });
+  }
+  return new Response(res.body, {
+    status: res.status === 200 ? 200 : 502,
+    headers: { "Content-Type": res.headers.get("Content-Type") || "application/octet-stream",
+               "Content-Disposition": res.headers.get("Content-Disposition") || "",
+               "X-Status": String(res.status) },
+  });
+}
+
 async function etrn(request, env) {
   let body;
   try {
@@ -203,13 +259,14 @@ export default {
    */
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
-    if (request.method !== "POST" || (path !== "/fetch" && path !== "/etrn")) {
+    if (request.method !== "POST" || !["/fetch", "/etrn", "/obsdl"].includes(path)) {
       return new Response("not found", { status: 404 });
     }
     if (!env.TOKEN || request.headers.get("Authorization") !== `Bearer ${env.TOKEN}`) {
       return new Response("forbidden", { status: 403 });
     }
     if (path === "/etrn") return etrn(request, env);
+    if (path === "/obsdl") return obsdl(request);
     let body;
     try {
       body = await request.json();

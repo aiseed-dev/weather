@@ -1,4 +1,5 @@
-"""過去の気象データ（etrn）のページを、Cloudflare の Worker（amedas-point の POST /etrn）経由で取る。
+"""気象庁の過去の気象データ（etrn のページ・ダウンロード）を、Cloudflare の Worker（amedas-point の
+POST /etrn・/obsdl）経由で取る。
 
 気象庁へは Cloudflare から行くので、まとまった数のページを取っても、deb2 の定常の取得
 （実況・予報）が気象庁に止められる心配がない。Worker は取ったページを R2 の etrn/{key} にも置く。
@@ -50,6 +51,25 @@ def fetch(url: str, key: str, base: str, token: str, *,
     req = urllib.request.Request(base + "/etrn", data=data, method="POST", headers={
         "Content-Type": "application/json", "Authorization": f"Bearer {token}",
         "User-Agent": user_agent})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            return int(res.headers.get("X-Status", res.status)), res.read()
+    except urllib.error.HTTPError as e:
+        st = e.headers.get("X-Status") if e.headers else None
+        return (int(st) if st and st.isdigit() else e.code), None
+    except Exception:
+        return 0, None
+
+
+def obsdl(body: dict, base: str, token: str, *, user_agent: str = jma.USER_AGENT,
+          timeout: float = 600) -> tuple[int, bytes | None]:
+    """過去の気象データ・ダウンロードを Worker（POST /obsdl）経由で使う。
+
+    body は {"kind": "station", "pd": 府県番号} か
+    {"kind": "hourly", "stid": "s47412", "from": 年, "to": 年}（気温の時別値。22 年まで）。
+    戻り値は (気象庁の HTTP ステータス, 本文)。通信できなければ (0, None)。"""
+    req = urllib.request.Request(base + "/obsdl", data=json.dumps(body).encode(), method="POST", headers={
+        "Content-Type": "application/json", "Authorization": f"Bearer {token}", "User-Agent": user_agent})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
             return int(res.headers.get("X-Status", res.status)), res.read()
