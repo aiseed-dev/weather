@@ -169,6 +169,24 @@ setsid nohup ../.venv/bin/python build_hourly_normals.py fetch --via-worker --wi
 
 2026-10-07 03:30 に取り終えた（10,799 ページ、失敗 0）。build して master/normals_hourly/ に 10 都市 × 366 日を置き、トップに平年差の地図が出た。
 
+### 全地点の時別値の取得と、時刻別の平年値の作り直し（cron ではない 1 回きりの処理。2026-10-12〜）
+
+911 地点 × 1991〜2020 年の気温の時別値を、23:00〜06:00 に 15 秒以上の間隔で Worker 経由で取る
+（docs/data-acquisition.md §7）。3 晩ほどで取り終えて止まる。並行して `logs/hourly_normals_build.sh` が
+毎朝 6:10 に、30 年分そろった地点の時刻別の平年値を作り直し、取得が終わったら最後に 1 回作って止まる。
+
+```bash
+cd ~/dev/weather/WeatherStatic
+tail data/hourly_obs.log                                   # 進み具合（10 回ごと）
+../.venv/bin/python fetch_hourly_obs.py plan               # 残りの回数
+tail ~/dev/weather/logs/hourly_normals_build.log           # 毎朝の作り直し
+ps -eo pid,args | grep "[f]etch_hourly_obs\|[h]ourly_normals_build"
+# deb2 を再起動したら同じコマンドで続きから
+setsid nohup ../.venv/bin/python fetch_hourly_obs.py fetch --window 23:00-06:00 --stations all \
+    >> data/hourly_obs.log 2>&1 < /dev/null &
+../.venv/bin/python build_hourly_normals.py build --source obs --stations all   # 手で作り直すとき
+```
+
 ## 公開先（Cloudflare Pages）と切り替え
 
 **サイトは静的ファイル（`public/`）だけでできていて、本番は Cloudflare Pages。**
