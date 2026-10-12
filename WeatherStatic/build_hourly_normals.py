@@ -93,6 +93,8 @@ DATA = BASE / "data"
 MASTER = BASE / "master"
 DEFAULT_CACHE = DATA / "etrn_hourly"          # .gitignore 済み（WeatherStatic/data/）
 DEFAULT_OUT = MASTER / "normals_hourly"       # .gitignore 済み（WeatherStatic/master/）
+OBS_DIR = DATA / "hourly_obs"                 # fetch_hourly_obs.py の出力（全地点 1991〜2020 年の時別値）
+OBS_FILL = -32768
 
 # generate.py の HOME_CITIES と同じ（generate.py は import が重いので写している。
 # 札幌, 仙台, 東京, 名古屋, 大阪, 広島, 高松, 福岡, 鹿児島, 那覇）
@@ -133,15 +135,34 @@ def doy(month: int, day: int) -> int:
 
 # ---------------------------------------------------------------- 地点
 
-def resolve_stations(spec: str) -> list[int]:
+_ALL_STATIONS: dict | None = None
+
+
+def all_stations() -> dict:
+    """master/stations.json の地点（地点番号の文字列 → 記録）。"""
+    global _ALL_STATIONS
+    if _ALL_STATIONS is None:
+        _ALL_STATIONS = json.loads((MASTER / "stations.json").read_text(encoding="utf-8"))["stations"]
+    return _ALL_STATIONS
+
+
+def station_name(code: int) -> str:
+    return (BY_CODE.get(code) or all_stations().get(str(code)) or {}).get("name", str(code))
+
+
+def resolve_stations(spec: str, source: str = "etrn") -> list[int]:
     if spec in ("home", ""):
         return list(HOME_CITIES)
     if spec == "main":
         return [s["code"] for s in MAIN_STATIONS]
+    if spec == "all":
+        if source != "obs":
+            raise SystemExit("--stations all は --source obs のとき（全地点の時別値は fetch_hourly_obs.py が取る）")
+        return sorted(int(p.name) for p in OBS_DIR.iterdir() if p.is_dir() and p.name.isdigit()) if OBS_DIR.is_dir() else []
     codes = [int(x) for x in spec.split(",") if x.strip()]
     for c in codes:
-        if c not in BY_CODE:
-            raise SystemExit(f"主要 57 都市にない地点: {c}")
+        if c not in BY_CODE and (source != "obs" or str(c) not in all_stations()):
+            raise SystemExit(f"地点がありません: {c}")
     return codes
 
 
@@ -631,6 +652,32 @@ def load_samples(cache: Path, code: int, months: list[int]):
     return out, n_bad
 
 
+def load_samples_obs(code: int, months: list[int]):
+    """fetch_hourly_obs.py の時別値 → [(date, np.array(24) ×10)]。24 値すべて正常（品質 5 以上）の日だけ。
+
+    ファイルの並びは 開始年 1 月 1 日 1 時 から 1 時間ごとなので、24 個ずつがその日の 1〜24 時になる。
+    戻り値の 3 つ目は使った期間の均質番号（移転・測器の変更の印）。"""
+    out, n_bad, homogs = [], 0, set()
+    for p in sorted((OBS_DIR / str(code)).glob("*.npz")):
+        y0 = int(p.stem.split("-")[0])
+        d = np.load(p)
+        temp, q = d["temp"], d["quality"]
+        n_days = len(temp) // 24
+        ok = ((q >= 5) & (temp != OBS_FILL))[: n_days * 24].reshape(n_days, 24).all(axis=1)
+        vals = temp[: n_days * 24].reshape(n_days, 24)
+        homogs |= {int(h) for h in np.unique(d["homog"]) if h >= 0}
+        day0 = date(y0, 1, 1)
+        for k in range(n_days):
+            dd = day0 + timedelta(days=k)
+            if dd.month not in months:
+                continue
+            if ok[k]:
+                out.append((dd, vals[k].astype(float)))
+            else:
+                n_bad += 1
+    return out, n_bad, sorted(homogs)
+
+
 def round_to_sum(vals: np.ndarray, target: int) -> list[int]:
     """最大剰余法で整数化し、合計を target に厳密に合わせる。"""
     fl = np.floor(vals).astype(int)
@@ -645,14 +692,24 @@ def build_station(code: int, args) -> dict | None:
     cache = Path(args.cache_dir)
     months = parse_months(args.months)
     nml = load_daily_normals(code, args)
-    samples, n_bad = load_samples(cache, code, months)
+    homogs: list[int] = []
+    if args.source == "obs":
+        samples, n_bad, homogs = load_samples_obs(code, months)
+    else:
+        samples, n_bad = load_samples(cache, code, months)
     if not samples:
         log(f"{code}: 標本なし（fetch を先に）")
         return None
     planned = defaultdict(int)
-    for t in make_tasks(args, hourly_only=True):
-        if t.code == code:
-            planned[int(t.key[4:6])] += 1
+    if args.source == "obs":
+        d = date(NORMAL_YEARS[0], 1, 1)
+        while d.year <= NORMAL_YEARS[1]:
+            planned[d.month] += 1
+            d += timedelta(days=1)
+    else:
+        for t in make_tasks(args, hourly_only=True):
+            if t.code == code:
+                planned[int(t.key[4:6])] += 1
     got = defaultdict(int)
     for d, _ in samples:
         got[d.month] += 1
@@ -719,7 +776,7 @@ def build_station(code: int, args) -> dict | None:
         }
     return {
         "code": code,
-        "name": BY_CODE[code]["name"],
+        "name": station_name(code),
         "method": METHOD,
         "method_note": ("平年(h,d) = 日別平年値の日平均気温(d) + 日変化の偏差(h,d)。偏差 = 標本日の"
                         "(時別値 − その日の 24 時間平均) を暦日方向にガウス平滑(σ=sigma_days)して加重平均、"
@@ -727,15 +784,18 @@ def build_station(code: int, args) -> dict | None:
                         "日最高気温の平年より低い（時別値は瞬時値で、最高の時刻が日ごとにずれるため）"),
         "period": "1991-2020",
         "period_note": ("日平均は気象庁 1991-2020 年平年値そのもの。日変化の形は"
-                        "sample.years の標本日の時別値から推定（plan=full なら 1991-2020 の全日）"),
+                        + ("1991-2020 年の全日の時別値（過去の気象データ・ダウンロード）から推定"
+                           if args.source == "obs" else
+                           "sample.years の標本日の時別値から推定（plan=full なら 1991-2020 の全日）")),
         "hours": ("気象庁 etrn の時別値の「時」(1..24)。配列 index i (0..23) = 「i+1 時」 = 当日 (i+1):00 JST の"
                   "毎正時の気温（瞬時値）。index 23 は翌日 0:00 の値。当日 0:00 の値は前日の index 23。"),
         "unit": "0.1 degC (integer)",
         "daily": daily,
         "daily_note": 'daily["月"]["temp"][日-1] = 24 値のリスト。標本が足りない日は null',
         "sample": {
-            "plan": args.plan,
-            "years": (list(range(NORMAL_YEARS[0], NORMAL_YEARS[1] + 1)) if args.plan == "full"
+            "plan": "obs-all-days" if args.source == "obs" else args.plan,
+            "homogeneity_numbers": homogs,
+            "years": (list(range(NORMAL_YEARS[0], NORMAL_YEARS[1] + 1)) if args.plan == "full" or args.source == "obs"
                       else ([int(y) for y in args.years.split(",")] if args.years
                             else DEFAULT_SAMPLE_YEARS)),
             "sigma_days": sigma,
@@ -757,7 +817,7 @@ def cmd_build(args) -> int:
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     rc = 0
-    for code in resolve_stations(args.stations):
+    for code in resolve_stations(args.stations, args.source):
         obj = build_station(code, args)
         if obj is None:
             rc = 1
@@ -789,7 +849,7 @@ def cmd_build(args) -> int:
 
 
 def cmd_show(args) -> int:
-    code = resolve_stations(args.stations)[0]
+    code = resolve_stations(args.stations, "obs")[0]
     p = Path(args.out_dir) / f"{code}.json"
     obj = json.loads(p.read_text(encoding="utf-8"))
     m, d = (int(x) for x in args.date.split("-"))
@@ -842,6 +902,8 @@ def main() -> int:
     ap.add_argument("--months", default="", help="対象月（カンマ区切り。既定 全部）")
     ap.add_argument("--seed", default="hourly-normals-1")
     ap.add_argument("--normals", choices=["master", "etrn"], default="master")
+    ap.add_argument("--source", choices=["etrn", "obs"], default="etrn",
+                    help="build: 時別値の出どころ。etrn=標本日のページ（fetch）／obs=全地点 30 年分（fetch_hourly_obs.py）")
     ap.add_argument("--window", default="", help="通信してよい時間帯 HH:MM-HH:MM（JST）例 23:00-06:00")
     ap.add_argument("--interval", type=float, default=DEFAULT_INTERVAL, help="リクエスト間隔（秒、1.0 以上）")
     ap.add_argument("--max-requests", type=int, default=0,
