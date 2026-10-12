@@ -66,7 +66,7 @@ def obsdl(body: dict, base: str, token: str, *, user_agent: str = jma.USER_AGENT
     """過去の気象データ・ダウンロードを Worker（POST /obsdl）経由で使う。
 
     body は {"kind": "station", "pd": 府県番号} か
-    {"kind": "hourly", "stid": "s47412", "from": 年, "to": 年}（気温の時別値。22 年まで）。
+    {"kind": "hourly", "stid": "s47412", "from": 年, "to": 年}（気温の時別値。7 年まで）。
     戻り値は (気象庁の HTTP ステータス, 本文)。通信できなければ (0, None)。"""
     req = urllib.request.Request(base + "/obsdl", data=json.dumps(body).encode(), method="POST", headers={
         "Content-Type": "application/json", "Authorization": f"Bearer {token}", "User-Agent": user_agent})

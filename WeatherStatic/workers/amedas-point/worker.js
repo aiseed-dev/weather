@@ -76,7 +76,7 @@ const UA = "WeatherStaticFetcher/0.1 (site migration; contact: saki@yniji.net)";
 // 気温の時別値（1 地点、暦年の範囲）だけ。依頼の書式はここで組み立てるので、ほかの物は取れない
 const OBSDL = "https://www.data.jma.go.jp/risk/obsdl/";
 const OBSDL_STID = /^[sa]\d{4,5}$/;
-const OBSDL_MAX_YEARS = 22;    // 1 回の上限はおよそ 20 万時間（地点 × 項目 × 時間）
+const OBSDL_MAX_YEARS = 7;     // 1 回の上限はおよそ 20 万の値。品質・均質番号の列も数えられ、時別値は 7 年まで
 const CONCURRENCY = 6;      // Workers の同時接続上限に合わせる
 const MAX_STATIONS = 49;    // fetch N + put 1 ≤ 50
 

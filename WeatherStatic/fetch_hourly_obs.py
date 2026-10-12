@@ -5,8 +5,9 @@
     気象庁は時別の平年値を出していない。トップの地図と「気温の状況」の平年差を「その時刻の平年」との
     差にするため、地点ごとに 30 年分の時別値から作る（docs/data-acquisition.md §7）。
     日ごとのページ（etrn、1 ページ＝1 地点 1 日）で取ると約 1,000 万ページになるので、
-    「過去の気象データ・ダウンロード」でまとめて取る。1 回の上限はおよそ 20 万時間なので、
-    1 地点を 15 年ずつ 2 回（1991〜2005 年・2006〜2020 年）に分ける。
+    「過去の気象データ・ダウンロード」でまとめて取る。1 回の上限はおよそ 20 万の値で、品質と均質番号の
+    列も数えられるため時別値なら 7 年まで（2026-10-12 に確かめた。8 年は HTTP 500）。1 地点を 6 年ずつ
+    5 回（1991〜1996、1997〜2002、2003〜2008、2009〜2014、2015〜2020 年）に分ける。1 回は 1〜2 秒。
 
 気象庁への配慮
     気象庁へは Cloudflare の Worker（amedas-point の POST /obsdl）から行く。Worker が取れるのは
@@ -48,7 +49,7 @@ from weatherlib import etrn_worker, jma
 BASE = Path(__file__).resolve().parent
 OUT = BASE / "data" / "hourly_obs"
 MASTER = BASE / "master"
-CHUNKS = [(1991, 2005), (2006, 2020)]
+CHUNKS = [(1991, 1996), (1997, 2002), (2003, 2008), (2009, 2014), (2015, 2020)]
 MIN_INTERVAL = 10.0
 USER_AGENT = jma.USER_AGENT + " fetch_hourly_obs"
 JST = timezone(timedelta(hours=9))
@@ -144,8 +145,9 @@ def cmd_plan(args) -> int:
     todo = [(c, ch) for c, _ in ts for ch in CHUNKS if not out_path(c, ch).is_file()]
     log(f"地点 {len(ts)}（官署 {sum(1 for _, r in ts if r.get('intl'))}）× {len(CHUNKS)} 回 = "
         f"{len(ts) * len(CHUNKS)} 回 / 残り {len(todo)} 回")
-    log(f"1 回 1〜2 分・待ちを同じだけとして、残りは約 {len(todo) * 3 / 60:.0f} 時間"
-        f"（23:00〜06:00 の 7 時間/晩で約 {len(todo) * 3 / 60 / 7:.1f} 晩）")
+    sec = len(todo) * (args.interval + 2)
+    log(f"1 回 1〜2 秒・間隔 {args.interval:.0f} 秒として、残りは約 {sec / 3600:.1f} 時間"
+        f"（23:00〜06:00 の 7 時間/晩で約 {sec / 3600 / 7:.1f} 晩）")
     return 0
 
 
@@ -235,7 +237,7 @@ def main() -> int:
     ap.add_argument("cmd", choices=["plan", "fetch", "show"])
     ap.add_argument("--stations", default="all", help="main10 | kansho | amedas | all | 番号,番号")
     ap.add_argument("--window", help="通信してよい時間帯（JST）HH:MM-HH:MM")
-    ap.add_argument("--interval", type=float, default=30.0, help="次の依頼までの最低の秒数（10 以上）")
+    ap.add_argument("--interval", type=float, default=15.0, help="次の依頼までの最低の秒数（10 以上）")
     ap.add_argument("--limit", type=int, default=0, help="今回の依頼数の上限")
     ap.add_argument("--max-attempts", type=int, default=3, help="同じ依頼を失敗してよい回数")
     args = ap.parse_args()
