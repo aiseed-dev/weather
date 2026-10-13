@@ -32,6 +32,10 @@ GpuField(
 風は int16 の 0.01 m/s、線は float32 の (経度, 緯度) で切れ目は NaN）。
 時刻は `GpuFrame` を足していき、`step` を変えるだけで切り替える。
 
+値が階級（レーダーの降水強度など）のときは `sampling="nearest"` で補間せずに塗り、
+`classes=["", "〜1", "1〜5", …]` で読み取りに階級の名前を出す。風の無い量は
+`show_particles=False, particles=0`。
+
 ## 実行環境
 
 自作の部品は Flet の出来合いの実行環境では表示されない。リポジトリの

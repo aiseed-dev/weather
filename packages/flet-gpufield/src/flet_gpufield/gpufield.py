@@ -104,6 +104,14 @@ class GpuField(ft.LayoutControl):
     unit: str = ""
     """読み取りに出す量の名前と単位。"""
 
+    sampling: str = "bilinear"
+    """"bilinear"（双一次補間）か "nearest"（最寄りの格子点）。階級のような値は "nearest" に
+    する（階級の間を補間すると、観測されていない値の縁ができる）。"""
+
+    classes: list[str] = field(default_factory=list)
+    """値が階級の番号（0, 1, 2, …）のときの、番号ごとの名前。読み取りに数値の代わりに出す
+    （空の名前は出さない）。"""
+
     frames: list[GpuFrame] = field(default_factory=list)
     """時刻ごとのデータ。"""
 

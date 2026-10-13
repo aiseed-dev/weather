@@ -107,6 +107,12 @@ never build a time that the index did not list.
   precipitation map). Do not invent a new scale; users recognise JMA's
 - Areas outside radar coverage look the same as "no echo" (the `hrpns_nd`
   tiles were 404 when checked)
+- 動く地図 (`services/gpu_radar.py`, `components/radar_gpu_panel.py`): every
+  frame of the past 1 or 3 hours and the forecast, on the GPU map. The whole
+  country uses z=4 (~8 km, the tiles JMA's own nationwide animation shows),
+  the regions (北日本・東日本・西日本・南西諸島) z=6 (~2 km); 4 – 9 tiles a
+  frame, fetched latest observation → forecast → past and shown as they
+  arrive. Classes are drawn with nearest sampling, never interpolated
 
 ## AMeDAS (地上気象観測)
 

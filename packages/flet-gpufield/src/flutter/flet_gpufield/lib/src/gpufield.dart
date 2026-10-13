@@ -3,10 +3,10 @@
 //
 // 気象の格子データを GPU で描く部品。
 //
-// 色の場はシェーダー（shaders/field.frag）が画面の画素ごとに投影を逆にたどって双一次補間・配色し、
-// 風の粒子は Dart で動かして細い三角形の列で描く。時刻ごとのデータは子の GpuFrame で受け取り、
-// step（番号）を変えるだけで切り替える。Python から来るのはデータと表示の決まりだけで、
-// 拡大・移動・粒子の動きはここで完結する。
+// 色の場はシェーダー（shaders/field.frag）が画面の画素ごとに投影を逆にたどって双一次補間
+// （階級のような値は最寄りの格子点）して配色し、風の粒子は Dart で動かして細い三角形の列で描く。
+// 時刻ごとのデータは子の GpuFrame で受け取り、step（番号）を変えるだけで切り替える。
+// Python から来るのはデータと表示の決まりだけで、拡大・移動・粒子の動きはここで完結する。
 
 import 'dart:async';
 import 'dart:math' as math;
@@ -86,6 +86,13 @@ double _bilinear(_Grid g, double fi, double fj, double Function(int k) at) {
   final r0 = j0 * g.nx, r1 = (j0 + 1) * g.nx;
   return (at(r0 + i0) * (1 - fx) + at(r0 + i1) * fx) * (1 - fy) +
       (at(r1 + i0) * (1 - fx) + at(r1 + i1) * fx) * fy;
+}
+
+/// 最寄りの格子点の番号（階級のような値は補間しない）。
+int _nearestIndex(_Grid g, double fi, double fj) {
+  var i = fi.round();
+  i = g.periodic ? i % g.nx : math.min(i, g.nx - 1);
+  return math.min(fj.round(), g.ny - 1) * g.nx + i;
 }
 
 /// 投影と表示の位置。0: 正距円筒、1: 北極の正距方位、2: 南極の正距方位。
@@ -265,6 +272,10 @@ class _GpuFieldState extends State<GpuFieldControl>
   Int32List _vcol = Int32List(0);
   bool _showParticles = true;
 
+  // 値が階級のとき: 最寄りの格子点で塗り、読み取りには階級の名前を出す
+  bool _nearest = false;
+  List<String> _classes = const [];
+
   // 海岸線・等値線（経緯度の並び。切れ目は NaN）と、描いた線の置き場
   Float32List? _coast;
   Path? _coastPath;
@@ -385,6 +396,9 @@ class _GpuFieldState extends State<GpuFieldControl>
     }
 
     _showParticles = c.getBool("show_particles", true)!;
+    _nearest = c.getString("sampling", "bilinear") == "nearest";
+    final classes = c.get("classes");
+    _classes = classes is List ? [for (final x in classes) "$x"] : const [];
     final n = c.getInt("particles", 10000)!;
     if (n != _n) _initParticles(n);
 
@@ -924,7 +938,7 @@ class _Painter extends CustomPainter {
         ..setFloat(12, proj.mode.toDouble())
         ..setFloat(13, grid.periodic ? 1 : 0)
         ..setFloat(14, base != null ? 1 : 0)
-        ..setFloat(15, 0)
+        ..setFloat(15, s._nearest ? 1 : 0)
         ..setImageSampler(0, tex)
         ..setImageSampler(1, lutImg)
         ..setImageSampler(2, base ?? lutImg, filterQuality: FilterQuality.low);
@@ -958,12 +972,21 @@ class _Painter extends CustomPainter {
     if (h != null && grid != null && proj != null && frame != null) {
       if (proj.toLonLat(h.dx, h.dy, size, s._ll) && grid.locate(s._ll[0], s._ll[1], s._ij)) {
         final vmin = c.getDouble("vmin", 0.0)!, vmax = c.getDouble("vmax", 1.0)!;
-        final q = _bilinear(grid, s._ij[0], s._ij[1], frame.q);
+        final q = s._nearest
+            ? frame.q(_nearestIndex(grid, s._ij[0], s._ij[1]))
+            : _bilinear(grid, s._ij[0], s._ij[1], frame.q);
+        final label = c.getString("label", "")!;
         final unit = c.getString("unit", "")!;
         final parts = <String>[_lonlat(s._ll[0], s._ll[1])];
         if (!q.isNaN) {
           final v = vmin + q * (vmax - vmin);
-          parts.add("${c.getString("label", "")!} ${v.toStringAsFixed(1)}$unit");
+          if (s._classes.isEmpty) {
+            parts.add("$label ${v.toStringAsFixed(1)}$unit");
+          } else {
+            final i = v.round();
+            final name = i >= 0 && i < s._classes.length ? s._classes[i] : "";
+            if (name.isNotEmpty) parts.add("$label $name $unit");
+          }
         }
         if (frame.u != null) {
           final u = _bilinear(grid, s._ij[0], s._ij[1], (k) => frame.u![k] * 0.01);

@@ -45,6 +45,11 @@ product) and 動く地図, drawn on the GPU by the `flet-gpufield` extension
 - Flet does not send properties left at their default, so the Dart side's
   defaults must equal the Python field defaults (a -1 vs 0 mismatch once hid
   step 0).
+- The nowcast tab has its own 動く地図 (`components/radar_gpu_panel.py`, data
+  from `services/gpu_radar.py`). Radar intensities are classes, so it uses
+  `sampling="nearest"` and class names in the readout: interpolating between
+  classes would draw intensities that were never observed. The same applies
+  to any categorical field.
 
 See `docs/gpu-map.md` for the architecture and the measured costs.
 

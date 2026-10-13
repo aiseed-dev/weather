@@ -33,10 +33,11 @@ FRAME = "#585c64"
 AXIS_FG = "#202428"
 _COAST_PATH = Path(__file__).parent / "_japan_coastline.npz"
 
-# 気象庁の降水量・降水強度の配色（mm、mm/h）
+# 気象庁の降水量・降水強度の配色（mm、mm/h）と、凡例での各段の書き方
 JMA_PRECIP_BOUNDS = (0.0, 1.0, 5.0, 10.0, 20.0, 30.0, 50.0, 80.0, 1000.0)
 JMA_PRECIP_COLOURS = ("#f2f2ff", "#a0d2ff", "#218cff", "#0041ff",
                       "#faf500", "#ff9900", "#ff2800", "#b40068")
+JMA_PRECIP_LABELS = ("〜1", "1〜5", "5〜10", "10〜20", "20〜30", "30〜50", "50〜80", "80〜")
 
 
 def _load_outline() -> tuple[list[np.ndarray], np.ndarray] | None:
@@ -50,6 +51,11 @@ def _load_outline() -> tuple[list[np.ndarray], np.ndarray] | None:
 
 
 _OUTLINE = _load_outline()
+
+
+def outline() -> tuple[list[np.ndarray], np.ndarray] | None:
+    """(land rings, coastline) as (lon, lat) vertices; the coastline breaks at NaN rows."""
+    return _OUTLINE
 
 
 def rgb01(c) -> tuple[float, float, float]:

@@ -7,6 +7,8 @@
 // 画像の補間（filterQuality）は使わない。16 bit を 2 つの 8 bit に分けているので、
 // 上位と下位を別々に補間すると繰り上がりが壊れる。格子点の中心を 4 点読んで自分で補間する。
 // 配色表は透明度も持つ（降水の「降っていない」所は地色が透ける）。
+// 値が階級（レーダーの降水強度など）のときは補間せず、最寄りの格子点の値で塗る
+// （階級の間を補間すると、観測されていない強さの縁ができる）。
 #version 460 core
 #include <flutter/runtime_effect.glsl>
 
@@ -17,7 +19,8 @@ uniform vec4 uView;      // 正距円筒: 左端の経度、上端の緯度、1 
                          // 極:       極の画面位置 x・y、1 画素あたりの度（余緯度）、真下に来る経度
 uniform vec4 uGrid;      // 最初の格子点の経度・緯度、経度・緯度の間隔
 uniform vec2 uGridN;     // 格子の列数・行数
-uniform vec4 uMode;      // 投影（0 正距円筒・1 北極・2 南極）、経度方向につながるか、地色の有無、未使用
+uniform vec4 uMode;      // 投影（0 正距円筒・1 北極・2 南極）、経度方向につながるか、地色の有無、
+                         // 最寄りの格子点で塗るか
 uniform sampler2D uField;
 uniform sampler2D uLut;  // 256 × 1、RGBA
 uniform sampler2D uBase; // 陸海（R が陸の割合）
@@ -67,6 +70,26 @@ void main() {
         fragColor = vec4(OUTSIDE, 1.0);
         return;
     }
+    vec3 base = SEA;
+    if (uMode.z > 0.5) {
+        // 陸海は画像の双一次補間で読む（0/1 の境が滑らかになり、海岸がぎざぎざにならない）
+        float land = texture(uBase, vec2((fi + 0.5) / uGridN.x, (fj + 0.5) / uGridN.y)).r;
+        base = mix(SEA, LAND, land);
+    }
+
+    if (uMode.w > 0.5) {
+        float ni = floor(fi + 0.5);
+        ni = periodic ? mod(ni, uGridN.x) : min(ni, uGridN.x - 1.0);
+        float v = cell(ni, min(floor(fj + 0.5), uGridN.y - 1.0));
+        if (v < 0.0) {
+            fragColor = vec4(base, 1.0);
+            return;
+        }
+        vec4 c1 = texture(uLut, vec2(clamp(v, 0.0, 1.0) * (255.0 / 256.0) + 0.5 / 256.0, 0.5));
+        fragColor = vec4(mix(base, c1.rgb, c1.a), 1.0);
+        return;
+    }
+
     float j0 = min(floor(fj), uGridN.y - 2.0);
     float i0 = periodic ? floor(fi) : min(floor(fi), uGridN.x - 2.0);
     float i1 = periodic ? mod(i0 + 1.0, uGridN.x) : i0 + 1.0;
@@ -76,13 +99,6 @@ void main() {
         fx = fi - i0;
     }
     float fy = fj - j0;
-
-    vec3 base = SEA;
-    if (uMode.z > 0.5) {
-        // 陸海は画像の双一次補間で読む（0/1 の境が滑らかになり、海岸がぎざぎざにならない）
-        float land = texture(uBase, vec2((fi + 0.5) / uGridN.x, (fj + 0.5) / uGridN.y)).r;
-        base = mix(SEA, LAND, land);
-    }
 
     float a = cell(i0, j0);
     float b = cell(i1, j0);

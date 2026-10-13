@@ -200,9 +200,10 @@ class JmaRadarService:
         self._cache_dir = data_dir / "jma" / "radar"
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._meta_path = self._cache_dir / "_latest_meta.json"
-        # One frame at a time, so a quick second request cannot double the
-        # rate JMA sees.
+        # One frame at a time, and one pace for all of them, so frames
+        # fetched back to back (the moving map) never exceed the rate.
         self._tile_lock = asyncio.Lock()
+        self._pacer = _RequestPacer(MAX_REQUESTS_PER_SECOND)
 
     # ── time index ──────────────────────────────────────────────
 
@@ -288,7 +289,6 @@ class JmaRadarService:
                 on_progress(done, len(coords))
             if todo:
                 logger.info("Fetching %d radar tiles for %s (z%d)", len(todo), frame.key, zoom)
-                pacer = _RequestPacer(MAX_REQUESTS_PER_SECOND)
                 slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
                 headers = {"User-Agent": jma_endpoints.USER_AGENT}
                 async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
@@ -300,7 +300,7 @@ class JmaRadarService:
                             element=jma_endpoints.RADAR_ELEMENT, z=zoom, x=x, y=y,
                         )
                         async with slots:
-                            await pacer.wait()
+                            await self._pacer.wait()
                             try:
                                 resp = await client.get(url)
                                 resp.raise_for_status()

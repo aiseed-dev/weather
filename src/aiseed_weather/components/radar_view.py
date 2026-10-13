@@ -3,11 +3,17 @@
 
 """降水ナウキャスト / Nowcast — JMA's high-resolution precipitation nowcast.
 
-Stays idle on mount; fetches only when the user presses 取得 / Fetch or
-picks another time (a parameter change — see the `user-action-fetch`
-skill). A frame is the 36 tiles covering Japan at zoom 6 (~2 km). JMA is
-asked for at most four tiles a second, so a frame not on disk yet takes
-about nine seconds; one already fetched shows at once.
+Stays idle on mount; fetches only when the user presses 取得 / Fetch, picks
+another time, or switches 図 / 動く地図 (parameter changes — see the
+`user-action-fetch` skill). JMA is asked for at most four tiles a second.
+
+- 図: one frame as the exportable figure, from the 36 zoom-6 tiles (~2 km)
+  covering Japan — about nine seconds for a frame not on disk yet.
+- 動く地図: every frame of the past hour (or three) and the hour ahead on
+  the GPU (``radar_gpu_panel``): the whole country from zoom-4 tiles
+  (~8 km, the ones JMA's nationwide animation uses) or a region from
+  zoom-6 tiles (~2 km), 4 – 9 tiles a frame. Frames appear as they
+  arrive, the latest observation first; play steps through them.
 """
 
 from __future__ import annotations
@@ -15,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, timedelta
 
 import flet as ft
 
@@ -27,11 +33,12 @@ from aiseed_weather.components.observation_common import (
     dropdown,
     fetch_buttons,
 )
+from aiseed_weather.components.radar_gpu_panel import RadarGpuPanel
 from aiseed_weather.figures._japan_map import EXTENT
 from aiseed_weather.figures.observation_chart import Provenance
 from aiseed_weather.figures.radar_map import render_radar_map
 from aiseed_weather.models.user_settings import UserSettings, resolved_data_dir
-from aiseed_weather.services import jma_endpoints
+from aiseed_weather.services import gpu_radar, jma_endpoints
 from aiseed_weather.services.jma_radar_service import (
     JmaRadarService,
     RadarFrame,
@@ -43,6 +50,8 @@ logger = logging.getLogger(__name__)
 
 ZOOM = 6
 SCREEN_DPI = 100
+PLAY_INTERVAL_SEC = 0.5
+PAST_HOURS = (("1", "過去 1 時間"), ("3", "過去 3 時間"))
 
 
 @dataclass(frozen=True, eq=False)
@@ -68,12 +77,29 @@ def _frame_label(f: RadarFrame) -> str:
     return f"{jst:%H:%M} 予測 +{f.lead_minutes} 分" if f.is_forecast else f"{jst:%H:%M} 観測"
 
 
-def _fetched_line(f: RadarFrame, times: RadarTimes) -> str:
+def _valid_line(f: RadarFrame) -> str:
     valid = f"{f.valid.astimezone(JST):%Y-%m-%d %H:%M} JST（{f.valid.astimezone(UTC):%H:%M} UTC）"
-    head = (f"予測 +{f.lead_minutes} 分 {valid} · 初期時刻 {f.base.astimezone(JST):%H:%M} JST"
-            if f.is_forecast else f"観測 {valid}")
-    return (f"{head} · 時刻一覧の取得 {times.fetched_at.astimezone(JST):%H:%M} JST"
+    if f.is_forecast:
+        return f"予測 +{f.lead_minutes} 分 {valid} · 初期時刻 {f.base.astimezone(JST):%H:%M} JST"
+    return f"観測 {valid}"
+
+
+def _fetched_line(f: RadarFrame, times: RadarTimes) -> str:
+    return (f"{_valid_line(f)} · 時刻一覧の取得 {times.fetched_at.astimezone(JST):%H:%M} JST"
             f" · {jma_endpoints.ATTRIBUTION}")
+
+
+def _moving_frames(times: RadarTimes, past_hours: int) -> list[RadarFrame]:
+    """The moving map's frames by time: observations of the past hours, then the forecast."""
+    start = times.latest_observation.valid - timedelta(hours=past_hours)
+    return [f for f in times.frames if f.is_forecast or f.valid >= start]
+
+
+def _load_order(frames: list[RadarFrame]) -> list[RadarFrame]:
+    """Latest observation, the forecast forward, then the past backward."""
+    obs = [f for f in frames if not f.is_forecast]
+    forecast = [f for f in frames if f.is_forecast]
+    return obs[-1:] + forecast + obs[-2::-1]
 
 
 @ft.component
@@ -84,7 +110,14 @@ def RadarView(settings: UserSettings):
     times, set_times = ft.use_state(None)          # RadarTimes
     frame_key, set_frame_key = ft.use_state(None)
     result, set_result = ft.use_state(None)
-    # One service for the view's lifetime: it serialises tile fetches.
+    mode, set_mode = ft.use_state("figure")        # figure | gpu
+    past_hours, set_past_hours = ft.use_state(1)
+    area_key, set_area_key = ft.use_state(gpu_radar.AREAS[0].key)
+    packed, set_packed = ft.use_state({})          # moving map: "area|frame key" → field bytes
+    failed, set_failed = ft.use_state(frozenset())
+    gpu_loading, set_gpu_loading = ft.use_state(False)
+    playing, set_playing = ft.use_state(False)
+    # One service for the view's lifetime: it paces and serialises tile fetches.
     service = ft.use_memo(lambda: JmaRadarService(data_dir=resolved_data_dir(settings)), [])
 
     async def show(frame: RadarFrame, t: RadarTimes):
@@ -115,18 +148,18 @@ def RadarView(settings: UserSettings):
             frame = t.latest_observation
             set_times(t)
             set_frame_key(frame.key)
-            await show(frame, t)
+            if mode == "figure":
+                await show(frame, t)
             set_state("ready")
         except Exception as e:
             logger.exception("Radar view failed to fetch the JMA nowcast")
             set_error(f"{type(e).__name__}: {e}")
             set_state("error")
 
-    async def pick(key: str):
+    async def show_figure(key: str):
         frame = times.find(key) if times else None
         if frame is None:
             return
-        set_frame_key(key)
         set_state("loading")
         set_error(None)
         try:
@@ -137,34 +170,159 @@ def RadarView(settings: UserSettings):
             set_error(f"{type(e).__name__}: {e}")
             set_state("error")
 
-    frames = times.frames if times else ()
+    # ── moving map: fetch every frame once, newest first ──────────────
+
+    moving = _moving_frames(times, past_hours) if times else []
+    times_key = times.fetched_at.isoformat() if times else ""
+
+    area = gpu_radar.area(area_key)
+
+    def packed_key(f: RadarFrame) -> str:
+        return f"{area.key}|{f.key}"
+
+    def start_moving_map():
+        if mode != "gpu" or times is None:
+            return None
+        wanted = {packed_key(f) for f in moving}
+        set_packed(lambda cur: {k: v for k, v in cur.items() if k in wanted})
+        set_failed(frozenset())
+        grid = area.grid
+        order = [f for f in _load_order(moving) if packed_key(f) not in packed]
+
+        async def fetch_frames():
+            set_gpu_loading(True)
+            try:
+                for f in order:
+                    try:
+                        m = await service.mosaic(f, area.extent, area.zoom)
+                        data = await asyncio.to_thread(gpu_radar.pack_frame, m.classes,
+                                                       m.lons(), m.lats(), grid)
+                    except Exception:
+                        logger.exception("Moving-map nowcast frame %s failed", f.key)
+                        set_failed(lambda cur, k=f.key: cur | {k})
+                        continue
+                    set_packed(lambda cur, k=packed_key(f), d=data: {**cur, k: d})
+            finally:
+                set_gpu_loading(False)
+
+        task = asyncio.get_running_loop().create_task(fetch_frames())
+        return task.cancel
+
+    ft.use_effect(start_moving_map, [mode, times_key, past_hours, area_key])
+
+    loaded = [f.key for f in moving if packed_key(f) in packed]
+
+    def start_playing():
+        if not playing or mode != "gpu" or len(loaded) < 2:
+            return None
+
+        async def advance():
+            while True:
+                await asyncio.sleep(PLAY_INTERVAL_SEC)
+                set_frame_key(lambda cur: loaded[(loaded.index(cur) + 1) % len(loaded)]
+                              if cur in loaded else loaded[0])
+
+        task = asyncio.get_running_loop().create_task(advance())
+        return task.cancel
+
+    ft.use_effect(start_playing, [playing, mode, len(loaded)])
+
+    # ── controls ──────────────────────────────────────────────────────
+
+    frames = moving if mode == "gpu" else (list(times.frames) if times else [])
     keys = [f.key for f in frames]
     at = keys.index(frame_key) if frame_key in keys else -1
     busy = state == "loading"
 
-    def step(delta: int):
-        if 0 <= at + delta < len(keys):
-            ft.context.page.run_task(pick, keys[at + delta])
+    def go_to(key: str):
+        set_playing(False)
+        set_frame_key(key)
+        if mode == "figure":
+            ft.context.page.run_task(show_figure, key)
+
+    def on_mode(value: str):
+        set_mode(value)
+        set_playing(False)
+        if value == "figure" and times is not None and frame_key:
+            ft.context.page.run_task(show_figure, frame_key)
+
+    def on_past_hours(value: str):
+        set_past_hours(int(value))
+        if times and frame_key not in [f.key for f in _moving_frames(times, int(value))]:
+            set_frame_key(times.latest_observation.key)
 
     time_controls = [
         dropdown("時刻（JST）", frame_key or "", [(f.key, _frame_label(f)) for f in frames],
-                 lambda k: ft.context.page.run_task(pick, k), width=190),
+                 go_to, width=210),
         ft.IconButton(ft.Icons.CHEVRON_LEFT, tooltip="5 分前",
-                      disabled=busy or at <= 0, on_click=lambda _: step(-1)),
+                      disabled=busy or at <= 0, on_click=lambda _: go_to(keys[at - 1])),
+        *([ft.IconButton(ft.Icons.PAUSE if playing else ft.Icons.PLAY_ARROW,
+                         tooltip="止める" if playing else "再生",
+                         disabled=len(loaded) < 2,
+                         on_click=lambda _: set_playing(not playing))] if mode == "gpu" else []),
         ft.IconButton(ft.Icons.CHEVRON_RIGHT, tooltip="5 分後",
-                      disabled=busy or not 0 <= at < len(keys) - 1, on_click=lambda _: step(1)),
+                      disabled=busy or not 0 <= at < len(keys) - 1,
+                      on_click=lambda _: go_to(keys[at + 1])),
     ] if frames else []
+    mode_row = ft.Row(controls=[
+        ft.SegmentedButton(
+            segments=[ft.Segment(value="figure", label=ft.Text("図")),
+                      ft.Segment(value="gpu", label=ft.Text("動く地図"))],
+            selected=[mode],
+            on_change=lambda e: on_mode(e.control.selected[0]),
+        ),
+    ])
+    controls_row = ft.Row(wrap=True, spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                          controls=[
+        *([dropdown("地域", area_key, [(a.key, a.label) for a in gpu_radar.AREAS],
+                    lambda k: set_area_key(k), width=190),
+           dropdown("範囲", str(past_hours), PAST_HOURS, on_past_hours, width=160)]
+          if mode == "gpu" else []),
+        *time_controls,
+        fetch_buttons(state, load),
+    ])
+    idle_text = ("気象庁の高解像度降水ナウキャストを日本全体の図にします。最新の観測のほか、"
+                 "過去 3 時間（5 分ごと）と 1 時間先までの予測を選べます。"
+                 if mode == "figure" else
+                 "過去の観測と 1 時間先までの予測を、動く地図でコマ送り・再生します。"
+                 "全国は約 8 km、地方は約 2 km のタイルで、1 コマ 4〜9 枚を取得します。")
+    footer = ft.Text(f"{jma_endpoints.ATTRIBUTION}。高解像度降水ナウキャストの地図タイルを"
+                     "取得して編集・加工しています。", size=10, color=ft.Colors.GREY)
+    header = ft.Text("降水ナウキャスト / Nowcast (JMA)", size=18, weight=ft.FontWeight.BOLD)
 
-    return ft.Container(padding=16, content=ft.Column(
-        scroll=ft.ScrollMode.AUTO, expand=True, spacing=12, controls=[
-            ft.Text("降水ナウキャスト / Nowcast (JMA)", size=18, weight=ft.FontWeight.BOLD),
-            ft.Row(wrap=True, spacing=10, controls=[*time_controls, fetch_buttons(state, load)]),
-            StatusArea(state, progress, error,
-                       "気象庁の高解像度降水ナウキャストを日本全体の図にします。最新の観測のほか、"
-                       "過去 3 時間（5 分ごと）と 1 時間先までの予測を選べます。"),
-            ResultArea(result) if state == "ready" and result else ft.Container(height=0),
-            ft.Text(f"{jma_endpoints.ATTRIBUTION}。高解像度降水ナウキャストの地図タイルを"
-                    "取得して編集・加工しています。",
-                    size=10, color=ft.Colors.GREY),
-        ],
+    if mode == "gpu" and state == "ready" and times is not None:
+        frame = times.find(frame_key) if frame_key else None
+        if frame is not None and packed_key(frame) in packed:
+            status_text = ""
+        elif frame_key in failed:
+            status_text = "この時刻は取得できませんでした"
+        else:
+            status_text = f"読み込み中…（{len(loaded)}/{len(moving)} コマ）"
+        fetched = (f"{len(loaded)}/{len(moving)} コマ" + (" 取得中" if gpu_loading else "")
+                   + (f" · {len(failed)} コマ取得できず" if failed else ""))
+        body = ft.Column(expand=True, spacing=10, controls=[
+            controls_row,
+            ft.Text(f"{_valid_line(frame) if frame else ''} · {fetched} · "
+                    "拡大はホイール、移動はドラッグ。マウスを置くと強さを読める",
+                    size=11, color=ft.Colors.GREY),
+            ft.Container(expand=True, content=RadarGpuPanel(
+                area_key=area.key,
+                frames=tuple((i, packed_key(f), packed[packed_key(f)])
+                             for i, f in enumerate(moving) if packed_key(f) in packed),
+                step=at if at >= 0 else 0,
+                status_text=status_text,
+            )),
+            footer,
+        ])
+    else:
+        body = ft.Column(scroll=ft.ScrollMode.AUTO, expand=True, spacing=12, controls=[
+            controls_row,
+            StatusArea(state, progress, error, idle_text),
+            ResultArea(result) if mode == "figure" and state == "ready" and result
+            else ft.Container(height=0),
+            footer,
+        ])
+    # The header and the 図 / 動く地図 switch stay put while the figure scrolls.
+    return ft.Container(padding=16, expand=True, content=ft.Column(
+        expand=True, spacing=10, controls=[header, mode_row, body],
     ))
