@@ -46,6 +46,8 @@ def hits(vals: np.ndarray, kind: str) -> np.ndarray:
         return vals < thr if below else vals >= thr
 FIRST_YEAR = 2010            # 旧サイトの集計が始まる年（月の表の列）
 MAX_RUN = 200                # 連続日数を数える上限（遡る日数）
+# 大晦日の連続日数をその年のファイルだけで決める（_carry）には、上限が 1 年より短いことが要る
+assert MAX_RUN < 365
 # 日ごとのページ（その日の地点・月の日ごとの地点数）に入れない地点: 南鳥島（47991）と
 # 富士山（47639）。離島と山頂は平地の暑さ・寒さの比較に入れない（旧サイトも南鳥島は無い）。
 # 月平均のランキングと夏・冬のページには入れる
@@ -64,7 +66,8 @@ class YearData:
         import netCDF4
         with netCDF4.Dataset(path) as ds:
             self.year = year
-            self.codes = [int(c) for c in ds["station_code"][:]]
+            # tolist でまとめて取り出す（MaskedArray を 1 つずつ回すと地点数ぶん遅い呼び出しになる）
+            self.codes = [int(c) for c in np.ma.getdata(ds["station_code"][:]).tolist()]
             self.first = date(1870, 1, 1) + timedelta(days=int(ds["time"][0]))
             self.n_days = ds.dimensions["time"].size
             self.vals, self.short = {}, {}
@@ -165,11 +168,21 @@ def _station(code: int, info: dict, slugs: dict) -> dict:
 
 @lru_cache(maxsize=None)
 def _carry(year: int, kind: str, mtime: float) -> np.ndarray | None:
-    """year の大晦日までの連続日数（翌年へ持ち越す分）。年のファイルが無ければ None。"""
+    """year の大晦日までの連続日数（翌年へ持ち越す分）。年のファイルが無ければ None。
+
+    その年のファイルだけで決まる。MAX_RUN は 1 年より短いので、大晦日まで条件を満たし
+    続けた日数は、年の途中で途切れていればその後の日数、1 年じゅう続いていれば MAX_RUN で
+    頭打ちになり、どちらも前の年に左右されない。以前は前の年の連続日数から数えたため、
+    1 回の生成で 1880 年まで 147 年をさかのぼり、年のファイルを 1,040 回開いていた
+    （generate.py 40 秒のうち 33 秒。2026-10-13 実測）。"""
     yd = year_data(year)
     if yd is None:
         return None
-    return year_runs(yd, kind)[:, -1]
+    hit = hits(yd.day_vals(KINDS[kind][0]), kind)
+    n_days = hit.shape[1]
+    # 最後に条件を満たさなかった日（無ければ -1）から大晦日までの日数
+    last_miss = np.where(~hit, np.arange(n_days), -1).max(axis=1)
+    return np.minimum(n_days - 1 - last_miss, MAX_RUN).astype(np.int16)
 
 
 def year_runs(yd: YearData, kind: str) -> np.ndarray:

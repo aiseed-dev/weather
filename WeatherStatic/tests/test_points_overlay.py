@@ -32,7 +32,7 @@ def put_block(day: str, block: str, series: dict) -> None:
     d = pointstore.POINT / day / block
     d.mkdir(parents=True, exist_ok=True)
     (d / "test.json").write_text(json.dumps(series), encoding="utf-8")
-    pointstore._load.cache_clear()
+    pointstore.clear_caches()
 
 
 def entry(tmax, tmax_utc, tmin, tmin_utc, flag=0):

@@ -51,7 +51,7 @@ def main() -> int:
         area.mkdir(parents=True)
         (area / "011000.json").write_text(json.dumps(
             {"11001": {f"{SLOT}00": {"temp": [16.0, 0], "prefNumber": 11}}}), encoding="utf-8")
-        pointstore._load.cache_clear()
+        pointstore.clear_caches()
         view = pointstore.slot_view(SLOT)
         good = view == {"11001": {"temp": [16.0, 0]}}
         print(f"  {'OK' if good else 'NG'} 地点別の値を採り、観測要素でない prefNumber を除く")

@@ -81,10 +81,20 @@ def area_files(day: date, hour: str | None = None) -> list[Path]:
     return out
 
 
-@lru_cache(maxsize=64)
+# エリア束は 1 ブロック（3 時間）に 72 本ある（2026-10 時点）。以前の maxsize=64 では、ブロックを
+# 頭から読むたびに先頭が押し出されて毎回全部を読み直し、generate_status 1 回で JSON の解析が
+# 23,000 回（84 秒）になっていた。1 ブロック分と、時刻ごとの補完分（extra）が収まる大きさにする。
+@lru_cache(maxsize=160)
 def _load(path_str: str, mtime: float) -> dict:
     """エリア束を読む。mtime を鍵に含めるので、更新されれば読み直す。"""
     return json.loads(Path(path_str).read_bytes())
+
+
+def clear_caches() -> None:
+    """覚えた読み込み結果を捨てる（試験でファイルを書き換えたとき）。"""
+    _load.cache_clear()
+    _slots_of.cache_clear()
+    _slot_view.cache_clear()
 
 
 def load_area(path: Path) -> dict:
@@ -104,14 +114,32 @@ def available_slots(day: date) -> list[str]:
 
     map 時代の load_slots() と同じ戻り値の形にしてある。
     地点別が無ければ map ミラーを見る（移行中の退避路）。
+    ファイルが変わっていなければ前回の答えを使う（generate_status は 1 回の生成で
+    区画ごとに 8 回呼ぶ。毎回その日の全エリア束を読み直していた）。
     """
+    files = area_files(day)
+    sig = []
+    for p in files:
+        try:
+            sig.append((str(p), p.stat().st_mtime))
+        except OSError:
+            continue
+    return list(_slots_of(day, tuple(sig)))
+
+
+@lru_cache(maxsize=8)
+def _slots_of(day: date, sig: tuple) -> tuple[str, ...]:
     seen: set[str] = set()
-    for p in area_files(day):
-        for _amedas, series in load_area(p).items():
+    for path_str, mtime in sig:
+        try:
+            area = _load(path_str, mtime)
+        except Exception:
+            continue
+        for _amedas, series in area.items():
             seen.update(ts[:12] for ts in series)
     if not seen:
         seen = {p.stem[:12] for p in map_files(day)}
-    return sorted(seen)
+    return tuple(sorted(seen))
 
 
 def load_extra(ts: str) -> dict[str, dict]:
@@ -131,33 +159,65 @@ def slot_view(ts: str) -> dict[str, dict]:
     ts は "YYYYMMDDHHMM"（12 桁）。地点別 JSON の鍵は 14 桁なので秒を補う。
     地点別に無い要素は map 由来のもので補う（合流はここだけで済ませ、
     消費側には「map と同じ形」だけを見せる）。
+
+    組み立てた結果は覚えておき、元のファイルが変わるまで使い回す（generate_status は
+    区画ごとに今日の全時刻をたどる。毎回組み立て直していた）。**返す dict は共有なので、
+    呼ぶ側で書き換えないこと。**
     """
     key = ts + "00" if len(ts) == 12 else ts
     day = date(int(key[:4]), int(key[4:6]), int(key[6:8]))
-    out: dict[str, dict] = {}
+    sig = []
     for p in area_files(day, block_of(int(key[8:10]))):
-        for amedas, series in load_area(p).items():
+        try:
+            sig.append((str(p), p.stat().st_mtime))
+        except OSError:
+            continue
+    extra = EXTRA / key[:8] / f"{key[:12]}.json"
+    fallback = MAP / f"{key}.json"
+    return _slot_view(key, tuple(sig), _mtime(extra), _mtime(fallback))
+
+
+def _mtime(p: Path) -> float | None:
+    try:
+        return p.stat().st_mtime
+    except OSError:
+        return None
+
+
+@lru_cache(maxsize=160)          # 1 日 144 スロットが収まる
+def _slot_view(key: str, sig: tuple, extra_mtime: float | None,
+               fallback_mtime: float | None) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for path_str, mtime in sig:
+        try:
+            area = _load(path_str, mtime)
+        except Exception:
+            continue
+        for amedas, series in area.items():
             entry = series.get(key)
             if entry:
                 out[amedas] = {k: v for k, v in entry.items() if k not in NOT_ELEMENTS}
 
-    if not out:
+    if not out and fallback_mtime is not None:
         # 退避路: 地点別がまだ無い期間は従来の map ミラーをそのまま使う。
         # ミラーのファイル名は秒まで入った 14 桁（fetch_amedas_mirror.slot_name）
-        p = MAP / f"{key}.json"
-        if p.is_file():
-            try:
-                out = {a: {k: v for k, v in e.items() if k not in NOT_ELEMENTS}
-                       for a, e in _load(str(p), p.stat().st_mtime).items()}
-            except Exception:
-                out = {}
+        try:
+            out = {a: {k: v for k, v in e.items() if k not in NOT_ELEMENTS}
+                   for a, e in _load(str(MAP / f"{key}.json"), fallback_mtime).items()}
+        except Exception:
+            out = {}
 
     # map 由来を重ねる。地点別に既にある要素は上書きしない（地点別が主）。
     # 地点別が 404 等で丸ごと欠けた地点も、map だけで拾えるようにする。
-    for amedas, extra in load_extra(key).items():
-        entry = out.setdefault(amedas, {})
-        for k, v in extra.items():
-            entry.setdefault(k, v)
+    if extra_mtime is not None:
+        try:
+            extras = _load(str(EXTRA / key[:8] / f"{key[:12]}.json"), extra_mtime)
+        except Exception:
+            extras = {}
+        for amedas, extra in extras.items():
+            entry = out.setdefault(amedas, {})
+            for k, v in extra.items():
+                entry.setdefault(k, v)
     return out
 
 

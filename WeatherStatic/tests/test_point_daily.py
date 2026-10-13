@@ -30,7 +30,7 @@ def put(day: str, block: str, data: dict) -> None:
     d = pointstore.POINT / day / block
     d.mkdir(parents=True, exist_ok=True)
     (d / "44.json").write_text(json.dumps(data), encoding="utf-8")
-    pointstore._load.cache_clear()
+    pointstore.clear_caches()
 
 
 def main() -> int:
