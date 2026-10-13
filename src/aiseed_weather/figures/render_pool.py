@@ -39,6 +39,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def layer_kind(layer_key: str) -> str:
+    """Which decoded dataset (``sfc`` / ``pl`` / ``sol``) a layer reads."""
+    from aiseed_weather.products.catalog import field_by_key
+
+    try:
+        return field_by_key(layer_key).kind
+    except KeyError:
+        # Unknown layer key — fall back to surface so msl-like layers
+        # still render rather than erroring out before the renderer
+        # gets a chance to produce a 'no data' placeholder.
+        return "sfc"
+
+
 def render_layer(
     grib_path: Path,
     region: "Region",
@@ -54,93 +67,107 @@ def render_layer(
     fast renderers (msl) take ~200 ms which is fine on the event
     loop; slower ones (t2m/tp/wind still on matplotlib) freeze the UI
     until migrated.
+
+    Each call decodes the file again (~0.2 s per cfgrib open of a bulk
+    GRIB). Callers drawing many layers from the same step should decode
+    once and use :func:`render_dataset`.
     """
     # The cached file is the bulk per-step oper-fc.grib2, which mixes
     # surface / pressure / soil hypercubes. A plain xr.open_dataset
     # raises on it. Route through decode_kind, which picks (and for
     # surface, merges) the right subset based on layer_key's kind.
-    from aiseed_weather.products.catalog import field_by_key
     from aiseed_weather.services.forecast_service import decode_kind
 
-    try:
-        kind = field_by_key(layer_key).kind
-    except KeyError:
-        # Unknown layer key — fall back to surface so msl-like layers
-        # still render rather than erroring out before the renderer
-        # gets a chance to produce a 'no data' placeholder.
-        kind = "sfc"
-
-    ds = decode_kind(grib_path, kind)
+    ds = decode_kind(grib_path, layer_kind(layer_key))
     # MSL overlay is always surface.
     msl_overlay_ds = decode_kind(msl_overlay_path, "sfc") if msl_overlay_path else None
     try:
-        if layer_key == "msl":
-            from aiseed_weather.figures.msl_chart import render_msl
-            return render_msl(ds, region=region, run_id=run_id)
-        if layer_key == "t2m":
-            from aiseed_weather.figures.t2m_chart import render_t2m
-            return render_t2m(
-                ds, region=region, run_id=run_id,
-                msl_overlay_ds=msl_overlay_ds,
-            )
-        if layer_key == "tp":
-            from aiseed_weather.figures.tp_chart import render_tp
-            return render_tp(
-                ds, region=region, run_id=run_id,
-                msl_overlay_ds=msl_overlay_ds,
-            )
-        if layer_key.startswith("wind"):
-            # wind10m → surface 10 m; wind100m → surface 100 m;
-            # wind250 / wind500 / ... → pressure-level wind at that
-            # hPa. The wind renderer reads u and v from the multi-
-            # band GRIB and draws speed shading + direction arrows at
-            # any level.
-            from aiseed_weather.figures.wind_chart import render_wind
-            from aiseed_weather.products.catalog import field_by_key
-            try:
-                fld = field_by_key(layer_key)
-                level = fld.level
-                # ecmwf_param is "<u>/<v>"; the GRIB short names from
-                # cfgrib can be either ECMWF-style ("10u", "100u") or
-                # xarray-friendly ("u10", "u100"), so we try both.
-                u_p, v_p = fld.ecmwf_param.split("/")
-                _SURFACE_U = {
-                    "10u":  ("10u", "u10"),
-                    "100u": ("100u", "u100"),
-                }
-                _SURFACE_V = {
-                    "10v":  ("10v", "v10"),
-                    "100v": ("100v", "v100"),
-                }
-                if level is None:
-                    u_names = _SURFACE_U.get(u_p, (u_p,))
-                    v_names = _SURFACE_V.get(v_p, (v_p,))
-                else:
-                    u_names = ("u",)
-                    v_names = ("v",)
-            except (KeyError, ValueError):
-                level = None
-                u_names = ("10u", "u10")
-                v_names = ("10v", "v10")
-            return render_wind(
-                ds, region=region, run_id=run_id, level=level,
-                u_names=u_names, v_names=v_names, layer_key=layer_key,
-                msl_overlay_ds=msl_overlay_ds,
-            )
-        # Generic scalar layers (dewpoint, snow depth, total cloud
-        # cover, skin temperature, ...). Each one is a config entry
-        # in _scalar_chart.CONFIGS — no per-layer module needed.
-        from aiseed_weather.figures._scalar_chart import CONFIGS, render_scalar
-        if layer_key in CONFIGS:
-            return render_scalar(
-                ds, region=region, run_id=run_id,
-                config=CONFIGS[layer_key],
-            )
-        raise ValueError(f"No renderer wired for layer {layer_key!r}")
+        return render_dataset(ds, region, run_id, layer_key, msl_overlay_ds=msl_overlay_ds)
     finally:
         ds.close()
         if msl_overlay_ds is not None:
             msl_overlay_ds.close()
+
+
+def render_dataset(
+    ds: "xr.Dataset",
+    region: "Region",
+    run_id: str,
+    layer_key: str = "msl",
+    *,
+    msl_overlay_ds: "xr.Dataset | None" = None,
+) -> bytes:
+    """Render from datasets already returned by ``decode_kind`` → PNG bytes.
+
+    ``ds`` must be the kind ``layer_kind(layer_key)`` names; the MSL
+    overlay is the surface dataset. The caller owns both and closes
+    them, so one decode can serve every layer and region of a step
+    (the publisher draws 31 charts per step from one bulk GRIB).
+    Same datasets, region and layer → same bytes as ``render_layer``.
+    """
+    if layer_key == "msl":
+        from aiseed_weather.figures.msl_chart import render_msl
+        return render_msl(ds, region=region, run_id=run_id)
+    if layer_key == "t2m":
+        from aiseed_weather.figures.t2m_chart import render_t2m
+        return render_t2m(
+            ds, region=region, run_id=run_id,
+            msl_overlay_ds=msl_overlay_ds,
+        )
+    if layer_key == "tp":
+        from aiseed_weather.figures.tp_chart import render_tp
+        return render_tp(
+            ds, region=region, run_id=run_id,
+            msl_overlay_ds=msl_overlay_ds,
+        )
+    if layer_key.startswith("wind"):
+        # wind10m → surface 10 m; wind100m → surface 100 m;
+        # wind250 / wind500 / ... → pressure-level wind at that
+        # hPa. The wind renderer reads u and v from the multi-
+        # band GRIB and draws speed shading + direction arrows at
+        # any level.
+        from aiseed_weather.figures.wind_chart import render_wind
+        from aiseed_weather.products.catalog import field_by_key
+        try:
+            fld = field_by_key(layer_key)
+            level = fld.level
+            # ecmwf_param is "<u>/<v>"; the GRIB short names from
+            # cfgrib can be either ECMWF-style ("10u", "100u") or
+            # xarray-friendly ("u10", "u100"), so we try both.
+            u_p, v_p = fld.ecmwf_param.split("/")
+            _SURFACE_U = {
+                "10u":  ("10u", "u10"),
+                "100u": ("100u", "u100"),
+            }
+            _SURFACE_V = {
+                "10v":  ("10v", "v10"),
+                "100v": ("100v", "v100"),
+            }
+            if level is None:
+                u_names = _SURFACE_U.get(u_p, (u_p,))
+                v_names = _SURFACE_V.get(v_p, (v_p,))
+            else:
+                u_names = ("u",)
+                v_names = ("v",)
+        except (KeyError, ValueError):
+            level = None
+            u_names = ("10u", "u10")
+            v_names = ("10v", "v10")
+        return render_wind(
+            ds, region=region, run_id=run_id, level=level,
+            u_names=u_names, v_names=v_names, layer_key=layer_key,
+            msl_overlay_ds=msl_overlay_ds,
+        )
+    # Generic scalar layers (dewpoint, snow depth, total cloud
+    # cover, skin temperature, ...). Each one is a config entry
+    # in _scalar_chart.CONFIGS — no per-layer module needed.
+    from aiseed_weather.figures._scalar_chart import CONFIGS, render_scalar
+    if layer_key in CONFIGS:
+        return render_scalar(
+            ds, region=region, run_id=run_id,
+            config=CONFIGS[layer_key],
+        )
+    raise ValueError(f"No renderer wired for layer {layer_key!r}")
 
 
 async def render_layer_async(

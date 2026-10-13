@@ -74,6 +74,10 @@ ECMWF 数値予報の配信、観測データの配布、世界天気の取得�
   下回る接続は繋ぎ直す。取り切れなかった `.part` は消す
 - charts/latest.json は、それぞれが自分の描いたモデルの分だけ書き替える
   （ecmwf は publish_forecast、gfs と ens は publish_charts）
+- GRIB を開くのも 1 ステップ 1 回。パック用に開いた Dataset でチャート 31 枚を描く
+  （`render_pool.render_dataset`）。以前は図 1 枚ごとに開き直していて（47 回）、
+  1 ステップの CPU がパック 約 3 秒＋チャート 約 10 秒 → 合わせて 約 4.5 秒になった。
+  出力（パックの値・PNG のバイト列）は変わらない
 
 見込み（1 ラン 65 ステップ、ENS・GFS を除く）: 回線 13MB/s で 約 36 分 → 約 13 分、
 4MB/s で 約 90 分 → 約 40 分。測定の記録は ~/dev/nc4rs-bench の README。

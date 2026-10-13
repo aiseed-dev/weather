@@ -246,28 +246,66 @@ def finalize(png: bytes, caption: str, attribution: str) -> bytes:
 
 # ---------------------------------------------------------------- メイン
 
-def render_step(model: str, run: datetime, step: int, path_for: dict, out: Path) -> None:
+class StepData:
+    """1 ステップ分の decode 済みデータ。kind（sfc / pl）ごとに 1 回だけ開いて、全製品で使い回す。
+
+    以前は図 1 枚ごとに GRIB を開き直していた（1 ステップ 31 枚で 47 回、描画 10 秒のうち
+    7.8 秒が decode。2026-10-13 実測）。"""
+
+    def __init__(self, path_for: dict, decoded: "dict | None" = None):
+        # decoded: 呼び手が decode_kind と同じ形で開いた分（publish_forecast がパック用に開いた
+        # Dataset を渡す）。閉じるのは呼び手
+        self.path_for = path_for
+        self._given = dict(decoded or {})
+        self._datasets: dict = {}
+
+    def __getitem__(self, kind: str):
+        if kind in self._given:
+            return self._given[kind]
+        if kind not in self._datasets:
+            from aiseed_weather.services.forecast_service import decode_kind
+            self._datasets[kind] = decode_kind(self.path_for[kind], kind)
+        return self._datasets[kind]
+
+    def close(self) -> None:
+        for ds in self._datasets.values():
+            ds.close()
+        self._datasets.clear()
+
+    def __enter__(self) -> "StepData":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+
+def render_step(model: str, run: datetime, step: int, path_for: dict, out: Path,
+                *, data: "StepData | None" = None) -> None:
     """1 ステップ分の決定論チャート（と海外向けセット）を、取得済みのファイルから描く。
 
     path_for は kind（sfc / pl）→ ファイル。ECMWF は bulk GRIB 1 本を両方に渡す。
-    publish_forecast --charts も、パックを作った同じ GRIB でこれを呼ぶ（取得は 1 回）。"""
-    from aiseed_weather.figures.render_pool import render_layer
+    publish_forecast --charts は、パックを作るために開いた Dataset ごと data で渡す
+    （取得も GRIB を開くのも 1 回）。"""
+    from aiseed_weather.figures.render_pool import layer_kind, render_dataset
     from aiseed_weather.figures.regions import JAPAN, ARCTIC
-    from aiseed_weather.products.catalog import field_by_key
     regions = {"japan": JAPAN, "arctic": ARCTIC}
     run_id = f"{model.upper()} {run:%Y-%m-%d %H}Z +{step}h"
-    for product, layer, region_key, overlay in DET_PRODUCTS:
-        target = out / "charts" / model / product / f"{step:03d}.png"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        kind = field_by_key(layer).kind
-        png = render_layer(path_for[kind], regions[region_key], run_id=run_id,
-                           layer_key=layer,
-                           msl_overlay_path=path_for["sfc"] if overlay else None)
-        target.write_bytes(finalize(
-            png, f"{product}  {run:%Y-%m-%d %H}Z  T+{step}h", ATTR[model]))
-    if model in WORLD_MODELS and step % WORLD_STEP_HOURS == 0:
-        n_world = render_world(model, run, step, path_for, out, run_id)
-        logger.info("%s step %3dh: 海外向け %d 枚", model, step, n_world)
+    own = data is None
+    data = data or StepData(path_for)
+    try:
+        for product, layer, region_key, overlay in DET_PRODUCTS:
+            target = out / "charts" / model / product / f"{step:03d}.png"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            png = render_dataset(data[layer_kind(layer)], regions[region_key], run_id=run_id,
+                                 layer_key=layer, msl_overlay_ds=data["sfc"] if overlay else None)
+            target.write_bytes(finalize(
+                png, f"{product}  {run:%Y-%m-%d %H}Z  T+{step}h", ATTR[model]))
+        if model in WORLD_MODELS and step % WORLD_STEP_HOURS == 0:
+            n_world = render_world(model, run, step, data, out, run_id)
+            logger.info("%s step %3dh: 海外向け %d 枚", model, step, n_world)
+    finally:
+        if own:
+            data.close()
     logger.info("%s step %3dh: %d 製品", model, step, len(DET_PRODUCTS))
 
 
@@ -336,7 +374,7 @@ def render_model(model: str, run: datetime, steps: "list[int]", out: Path,
     return done_steps
 
 
-def render_world(model: str, run: datetime, step: int, path_for: dict, out: Path,
+def render_world(model: str, run: datetime, step: int, data: StepData, out: Path,
                  run_id: str) -> int:
     """海外向けセットを 1 ステップ分描く。日本の EEZ を空白にする。
 
@@ -345,8 +383,7 @@ def render_world(model: str, run: datetime, step: int, path_for: dict, out: Path
     """
     from aiseed_weather.figures._blank import blanking, has_mask
     from aiseed_weather.figures.regions import by_key
-    from aiseed_weather.figures.render_pool import render_layer
-    from aiseed_weather.products.catalog import field_by_key
+    from aiseed_weather.figures.render_pool import layer_kind, render_dataset
 
     for region_key in WORLD_REGIONS:
         if not has_mask(WORLD_BLANK, region_key):
@@ -360,9 +397,8 @@ def render_world(model: str, run: datetime, step: int, path_for: dict, out: Path
             for product, layer, overlay in WORLD_PRODUCTS:
                 target = out / "charts" / model / "world" / region_key / product / f"{step:03d}.png"
                 target.parent.mkdir(parents=True, exist_ok=True)
-                kind = field_by_key(layer).kind
-                png = render_layer(path_for[kind], region, run_id=run_id, layer_key=layer,
-                                   msl_overlay_path=path_for["sfc"] if overlay else None)
+                png = render_dataset(data[layer_kind(layer)], region, run_id=run_id, layer_key=layer,
+                                     msl_overlay_ds=data["sfc"] if overlay else None)
                 target.write_bytes(finalize(
                     png,
                     f"{region.label.split(' / ')[-1]}  {product}  {run:%Y-%m-%d %H}Z  "

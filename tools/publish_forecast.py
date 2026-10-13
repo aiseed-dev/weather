@@ -250,13 +250,12 @@ def split_datasets(sfc: "xr.Dataset | None", pl: "xr.Dataset | None",
     return out
 
 
-def split_tiers(path: Path) -> "dict[str, xr.Dataset]":
-    """bulk GRIB を {ファイル名部: Dataset} に分割する。
+def open_kinds(path: Path) -> "tuple[xr.Dataset | None, xr.Dataset | None, xr.Dataset | None]":
+    """bulk GRIB を 1 回だけ開いて (sfc, pl, sol) に分ける。
 
     cfgrib.open_datasets（150MB の decode。ここが一番重い）は 1 回だけ呼び、
     kind への振り分けは forecast_service._decode_kind と同じ規則で行う。
-    パックには cfgrib 名（t2m 等）だけを入れる。GRIB native 名（2t）の
-    alias 復元は表示側が decode 後に行う。
+    sfc は cfgrib 名（t2m 等）のまま。GRIB native 名（2t）の alias 復元は表示側が行う。
     """
     import cfgrib
 
@@ -273,7 +272,12 @@ def split_tiers(path: Path) -> "dict[str, xr.Dataset]":
             sfc_parts.append(d)
 
     sfc = xr.merge(sfc_parts, compat="override") if sfc_parts else None
-    return split_datasets(sfc, pl, sol)
+    return sfc, pl, sol
+
+
+def split_tiers(path: Path) -> "dict[str, xr.Dataset]":
+    """bulk GRIB を {ファイル名部: Dataset} に分割する。パックには cfgrib 名だけを入れる。"""
+    return split_datasets(*open_kinds(path))
 
 
 def write_pack(ds: xr.Dataset, target: Path, run: datetime, step: int) -> None:
@@ -320,7 +324,9 @@ def process_step(run: datetime, step: int, tier: str, grib: Path, run_dir: Path,
     ECMWF のチャートも描く。manifest に足す {ファイル名: {bytes, sha256}} を返す。"""
     entries = {}
     logger.info("step %3dh: decode + pack (%s)", step, tier)
-    for part, ds in split_tiers(grib).items():
+    # GRIB を開くのは 1 回。パックもチャートも同じ Dataset から作る
+    sfc, pl, sol = open_kinds(grib)
+    for part, ds in split_datasets(sfc, pl, sol).items():
         if part.split("-")[1] != tier:
             continue
         fname = f"{step:03d}h-{part}.nc"
@@ -328,8 +334,14 @@ def process_step(run: datetime, step: int, tier: str, grib: Path, run_dir: Path,
         write_pack(ds, target, run, step)
         entries[fname] = {"bytes": target.stat().st_size, "sha256": sha256(target)}
     if charts:
-        from publish_charts import render_step
-        render_step("ecmwf", run, step, {"sfc": grib, "pl": grib}, out)
+        from publish_charts import StepData, render_step
+        from aiseed_weather.services.forecast_service import _restore_grib_shortnames
+        decoded = {"sfc": _restore_grib_shortnames(sfc), "pl": pl}   # decode_kind と同じ形
+        with StepData({"sfc": grib, "pl": grib}, decoded=decoded) as data:
+            render_step("ecmwf", run, step, data.path_for, out, data=data)
+    for d in (sfc, pl, sol):
+        if d is not None:
+            d.close()
     return entries
 
 
