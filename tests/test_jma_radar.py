@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from aiseed_weather.figures._japan_map import EXTENT
-from aiseed_weather.figures.radar_map import render_radar_map, resample_to_frame
+from aiseed_weather.figures._japan_map import EXTENT, area
+from aiseed_weather.figures.radar_map import no_data_mask, render_radar_map, resample_to_frame
 from aiseed_weather.services import jma_radar_service as jr
 
 JMA_RGB = [(242, 242, 255), (160, 210, 255), (33, 140, 255), (0, 65, 255),
@@ -89,6 +89,15 @@ def _client_factory(monkeypatch, handler):
     monkeypatch.setattr(jr.httpx, "AsyncClient", lambda **kw: real(transport=transport, **kw))
 
 
+NO_DATA_DOC = {"type": "FeatureCollection", "features": [{
+    "type": "Feature", "properties": {"level": "NoData"},
+    "geometry": {"type": "Polygon", "coordinates": [
+        [[-45, -85], [315, -85], [315, 85], [-45, 85], [-45, -85]],
+        [[118, 20], [150, 20], [150, 48], [118, 48], [118, 20]],
+    ]},
+}]}
+
+
 def test_mosaic_fetches_once_and_caches(tmp_path, monkeypatch):
     monkeypatch.setattr(jr, "MAX_REQUESTS_PER_SECOND", 1000)
     seen = []
@@ -98,6 +107,8 @@ def test_mosaic_fetches_once_and_caches(tmp_path, monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.url.path)
         assert request.headers["user-agent"].startswith("AIseed Weather")
+        if request.url.path.endswith("/hrpns_nd/data.geojson"):
+            return httpx.Response(200, json=NO_DATA_DOC)
         if request.url.path.endswith("/57/25.png"):
             return httpx.Response(404)
         return httpx.Response(200, content=_palette_tile(tile))
@@ -110,13 +121,16 @@ def test_mosaic_fetches_once_and_caches(tmp_path, monkeypatch):
     m = asyncio.run(svc.mosaic(frame, extent, 6, on_progress=lambda d, n: progress.append((d, n))))
     assert (m.x0, m.y0, m.classes.shape, m.tiles, m.missing) == (56, 24, (512, 512), 4, 1)
     assert progress[-1] == (4, 4)
-    assert all("/hrpns/6/" in p and "/20991231235500/none/20991231235500/" in p for p in seen)
+    assert all("/20991231235500/none/20991231235500/surf/hrpns" in p for p in seen)
+    assert sum("/hrpns/6/" in p for p in seen) == 4 and len(seen) == 5
+    assert len(m.no_data) == 1 and [len(r) for r in m.no_data[0]] == [5, 5]
     assert m.classes[100:110, 100:110].min() == 7          # tile (56, 24), top left
     assert m.classes[100:110, 356:366].min() == 7          # tile (57, 24), top right
     assert m.classes[356:366, 356:366].max() == 0          # tile (57, 25) was a 404
     n = len(seen)
-    asyncio.run(svc.mosaic(frame, extent, 6))
-    assert len(seen) == n + 1                               # only the missing tile again
+    again = asyncio.run(svc.mosaic(frame, extent, 6))
+    assert len(seen) == n + 1                    # only the missing tile; the no-data area is kept
+    assert len(again.no_data[0]) == 2
     with pytest.raises(ValueError):
         asyncio.run(svc.mosaic(frame, extent, 5))
 
@@ -164,6 +178,19 @@ def test_resample_keeps_the_strongest_pixel_and_fills_upsampling():
     assert (up == 8).sum() == 16 and (up == 2).sum() == 16   # 4 × 4 per source pixel, no gaps
 
 
+def test_parse_no_data_and_mask():
+    polygons = jr.parse_no_data(NO_DATA_DOC)
+    mask = no_data_mask(polygons, (110.0, 130.0, 10.0, 30.0), 20, 20)
+    # West of 118°E or south of 20°N lies outside the observed hole (checked a cell
+    # away from the edge, which PIL may put on either side).
+    assert mask[:, :7].all() and mask[11:, :].all()
+    assert not mask[:9, 9:].any()
+    multi = {"features": [{"geometry": {"type": "MultiPolygon", "coordinates": [
+        [[[0, 0], [1, 0], [1, 1], [0, 0]]], [[[2, 2], [3, 2], [3, 3], [2, 2]]]]}},
+        {"geometry": {"type": "Point", "coordinates": [0, 0]}}]}
+    assert len(jr.parse_no_data(multi)) == 2
+
+
 def test_render_radar_map_png(tmp_path):
     lons = np.linspace(120, 150, 600)
     lats = np.linspace(48, 22, 520)
@@ -174,5 +201,12 @@ def test_render_radar_map_png(tmp_path):
                            base=datetime(2026, 10, 13, 7, 0, tzinfo=UTC),
                            attribution="出典: 気象庁ホームページ", note="test", dpi=60)
     im = Image.open(io.BytesIO(png))
-    assert im.format == "PNG" and im.size == (480, 516)
+    assert im.format == "PNG" and im.size[0] == 480 and 480 < im.size[1] < 530
     assert "2026-10-13T07:30Z" in im.info["Description"]
+    west = area("west")
+    png = render_radar_map(classes, lons, lats, valid=datetime(2026, 10, 13, 7, 30, tzinfo=UTC),
+                           base=datetime(2026, 10, 13, 7, 30, tzinfo=UTC),
+                           attribution="出典: 気象庁ホームページ", extent=west.extent,
+                           area_name=west.name, no_data=jr.parse_no_data(NO_DATA_DOC), dpi=60)
+    im = Image.open(io.BytesIO(png))
+    assert im.size[0] == 480 and im.size[1] < 480        # a region wider than tall

@@ -6,12 +6,14 @@
 The radar arrives as Web-Mercator tiles (``jma_radar_service``) and the
 GPU view draws a regular latitude/longitude grid, so each frame is
 resampled onto one, keeping the strongest class where several radar
-pixels meet a cell (the same rule as the PNG figure). The classes 0 … 8
-are the field's value and are drawn with nearest sampling: they are
-categories, and interpolating between them would draw intensities that
-were never observed.
+pixels meet a cell (the same rule as the PNG figure). The field's value
+is the class — 0 no echo, 1 … 8 JMA's bins, 9 no data (outside the
+radars' range, or a radar down) — and is drawn with nearest sampling:
+classes are categories, and interpolating between them would draw
+intensities that were never observed.
 
-The whole country uses zoom-4 tiles (~8 km), the ones JMA's own
+Areas and their tile zooms are ``_japan_map.AREAS`` (``moving_zoom``):
+the whole country uses zoom-4 tiles (~8 km), the ones JMA's own
 nationwide animation shows; a region uses zoom-6 tiles (~2 km). Either
 way a frame is 4 – 9 tiles, so the past hour and the hour ahead
 (25 frames) arrive in under a minute at the four requests a second JMA
@@ -29,16 +31,17 @@ from matplotlib.colors import to_rgb
 from PIL import Image, ImageDraw
 
 from aiseed_weather.figures._japan_map import (
-    EXTENT,
     JMA_PRECIP_COLOURS,
     JMA_PRECIP_LABELS,
+    JapanArea,
     outline,
 )
-from aiseed_weather.figures.radar_map import resample_to_frame
+from aiseed_weather.figures.radar_map import NO_DATA_RGBA, no_data_mask, resample_to_frame
 
-N_CLASSES = 8
-# Readout names by class; class 0 (no echo) shows no value.
-CLASS_LABELS = ("", *JMA_PRECIP_LABELS)
+NO_DATA = 9
+N_LEVELS = NO_DATA          # values 0 … 9 span the field's range
+# Readout by class: nothing for "no echo", JMA's bin, or the reason for no value.
+CLASS_LABELS = ("", *(f"降水強度 {b} mm/h" for b in JMA_PRECIP_LABELS), "観測範囲外・欠測")
 
 
 @dataclass(frozen=True)
@@ -76,38 +79,20 @@ def grid_for(extent: tuple[float, float, float, float], zoom: int) -> RadarGrid:
                      ny=round((extent[3] - extent[2]) / (px * math.cos(mid))))
 
 
-@dataclass(frozen=True)
-class RadarArea:
-    key: str
-    label: str
-    extent: tuple[float, float, float, float]
-    zoom: int
-
-    @property
-    def grid(self) -> RadarGrid:
-        return grid_for(self.extent, self.zoom)
-
-
-# Regions stay inside the Japan frame, whose outline the land mask and
-# coastline come from.
-AREAS = (
-    RadarArea("japan", "全国（約 8 km）", EXTENT, 4),
-    RadarArea("north", "北日本（約 2 km）", (138.5, 146.5, 38.5, 45.8), 6),
-    RadarArea("east", "東日本（約 2 km）", (135.0, 142.5, 33.8, 39.5), 6),
-    RadarArea("west", "西日本（約 2 km）", (129.0, 136.4, 31.0, 36.5), 6),
-    RadarArea("southwest", "南西諸島（約 2 km）", (122.5, 131.0, 24.0, 30.5), 6),
-)
-
-
-def area(key: str) -> RadarArea:
-    return next((a for a in AREAS if a.key == key), AREAS[0])
+def area_grid(area: JapanArea) -> RadarGrid:
+    return grid_for(area.extent, area.moving_zoom)
 
 
 def pack_frame(classes: np.ndarray, lons: np.ndarray, lats: np.ndarray,
-               grid: RadarGrid) -> bytes:
-    """One frame as the field's RGBA: class k is k / 8 of the 16-bit range."""
+               grid: RadarGrid, no_data=None) -> bytes:
+    """One frame as the field's RGBA: value k is k / 9 of the 16-bit range.
+
+    ``no_data`` is JMA's no-data area (polygons of (lon, lat) rings), or None.
+    """
     cells = resample_to_frame(classes, lons, lats, grid.extent, grid.nx, grid.ny)
-    q = cells.astype(np.uint32) * 65535 // N_CLASSES
+    if no_data is not None:
+        cells[no_data_mask(no_data, grid.extent, grid.nx, grid.ny)] = NO_DATA
+    q = cells.astype(np.uint32) * 65535 // N_LEVELS
     rgba = np.zeros(cells.shape + (4,), np.uint8)
     rgba[..., 0] = q >> 8
     rgba[..., 1] = q & 255
@@ -116,17 +101,18 @@ def pack_frame(classes: np.ndarray, lons: np.ndarray, lats: np.ndarray,
 
 
 def lut_rgba() -> bytes:
-    """256 × RGBA: JMA's colour for classes 1 … 8, transparent for 0 (no echo)."""
-    cls = np.rint(np.linspace(0, N_CLASSES, 256)).astype(int)
+    """256 × RGBA: transparent for no echo, JMA's colours, then the no-data veil."""
+    level = np.rint(np.linspace(0, N_LEVELS, 256)).astype(int)
     colours = np.array([[round(c * 255) for c in to_rgb(h)] for h in JMA_PRECIP_COLOURS])
     rgba = np.zeros((256, 4), np.uint8)
-    echo = cls > 0
-    rgba[echo, :3] = colours[cls[echo] - 1]
+    echo = (level > 0) & (level < NO_DATA)
+    rgba[echo, :3] = colours[level[echo] - 1]
     rgba[echo, 3] = 255
+    rgba[level == NO_DATA] = [round(c * 255) for c in NO_DATA_RGBA]
     return rgba.tobytes()
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
 def land_mask(grid: RadarGrid) -> bytes:
     """1 byte per cell, 1 on land (Natural Earth 10m, the AMeDAS map's outline)."""
     img = Image.new("L", (grid.nx, grid.ny), 0)

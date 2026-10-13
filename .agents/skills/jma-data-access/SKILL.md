@@ -88,31 +88,48 @@ JMA publishes radar composites as map tiles plus index files.
 All URLs are in `services/jma_endpoints.py`. Pick frames from the index;
 never build a time that the index did not list.
 
+### No-data area (`hrpns_nd`, checked 2026-10-13)
+- Tiles cannot tell "no echo" from "not observed". JMA publishes the
+  no-data area per frame as **GeoJSON**, not tiles:
+  `.../jmatile/data/nowc/<basetime>/none/<validtime>/surf/hrpns_nd/data.geojson`
+  (found in `bosai/nowc/table/nowc.properties__*.xml`, `imageType
+  id="hrpns_nd" type="geojson"`; JMA's map veils it with a gray texture)
+- One Polygon: the world as the exterior, the observed area as the hole.
+  Served gzipped (~170 KB for an observation, ~40 KB for +60 min)
+- Observation frames share one shape unless a radar goes down; the forecast
+  shape changes with lead time, so it is fetched per frame like the tiles
+
 ### Implementation (`services/jma_radar_service.py`, `figures/radar_map.py`, `components/radar_view.py`)
-- The view shows Japan (`_japan_map.EXTENT`) at **z=6** (~2 km): 36 tiles a
-  frame. Requests are paced to **4 per second** with at most 4 in flight,
-  so a new frame takes about 9 s; one already on disk shows at once
+- Areas: the whole country or a region (北日本・東日本・西日本・南西諸島),
+  `_japan_map.AREAS`, shared by 図 and 動く地図. Each area names the tile
+  zoom per mode (`figure_zoom`, `moving_zoom`)
+- 図: z=6 (~2 km, 36 tiles) for the whole country, z=8 (~0.5 km, 30 – 56
+  tiles) for a region. The figure is sized to the area and keeps the
+  AMeDAS map's frame, land and coastline (`japan_axes(extent=…)`)
+- Requests are paced to **4 per second** across frames, at most 4 in
+  flight; a new figure frame takes 8 – 14 s, one on disk shows at once
 - The user picks the latest observation (取得), any frame of the past 3 h,
   or the forecast; each pick fetches one frame and nothing else
 - Tiles are decoded to intensity classes 0 (no echo) and 1 … 8 (JMA bins)
   by nearest legend colour; a colour far from the legend is logged as a
   palette change
-- Tiles are cached at `<data_dir>/jma/radar/<basetime>/<validtime>/<z>/<x>/<y>.png`
-  (immutable) and deleted once their basetime is 2 hours old
-- The figure resamples the Mercator mosaic onto the same lat/lon frame as
-  the AMeDAS map (`figures/_japan_map.py`), keeping the strongest class per
-  figure pixel so small heavy-rain cores survive the national scale. The
-  coastline is drawn over the radar
+- Each frame also brings its no-data polygons; both modes veil those cells
+  in light gray (`NO_DATA_RGBA`) so "not observed" never reads as "no rain".
+  On the GPU map they are class 9, read out as 観測範囲外・欠測
+- Cache: tiles at `<data_dir>/jma/radar/<basetime>/<validtime>/<z>/<x>/<y>.png`,
+  the no-data GeoJSON (gzipped) at `.../<basetime>/<validtime>/hrpns_nd.geojson.gz`;
+  both immutable, deleted once their basetime is 2 hours old
+- The figure resamples the Mercator mosaic onto the lat/lon frame, keeping
+  the strongest class per figure pixel so small heavy-rain cores survive.
+  The coastline is drawn over the radar
 - Colours are JMA's (`JMA_PRECIP_COLOURS`, shared with the AMeDAS
   precipitation map). Do not invent a new scale; users recognise JMA's
-- Areas outside radar coverage look the same as "no echo" (the `hrpns_nd`
-  tiles were 404 when checked)
 - 動く地図 (`services/gpu_radar.py`, `components/radar_gpu_panel.py`): every
   frame of the past 1 or 3 hours and the forecast, on the GPU map. The whole
   country uses z=4 (~8 km, the tiles JMA's own nationwide animation shows),
-  the regions (北日本・東日本・西日本・南西諸島) z=6 (~2 km); 4 – 9 tiles a
-  frame, fetched latest observation → forecast → past and shown as they
-  arrive. Classes are drawn with nearest sampling, never interpolated
+  a region z=6 (~2 km); 4 – 9 tiles a frame plus its no-data GeoJSON,
+  fetched latest observation → forecast → past and shown as they arrive.
+  Classes are drawn with nearest sampling, never interpolated
 
 ## AMeDAS (地上気象観測)
 
@@ -184,7 +201,8 @@ to south; the latest day is reported for a repeated extreme.
 
 - Radar: `<data_dir>/jma/radar/_latest_meta.json` holds the time index
   (10-minute window); tiles at
-  `<data_dir>/jma/radar/<basetime>/<validtime>/<z>/<x>/<y>.png` (2 hours)
+  `<data_dir>/jma/radar/<basetime>/<validtime>/<z>/<x>/<y>.png` and the
+  frame's no-data area `.../hrpns_nd.geojson.gz` (2 hours)
 - AMeDAS latest snapshot: `<data_dir>/jma/amedas/_latest_snapshot.json`
   (10-minute window)
 - AMeDAS station metadata: `<data_dir>/jma/amedas/amedastable.json`

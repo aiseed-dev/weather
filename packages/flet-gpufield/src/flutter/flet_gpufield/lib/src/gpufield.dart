@@ -985,7 +985,9 @@ class _Painter extends CustomPainter {
           } else {
             final i = v.round();
             final name = i >= 0 && i < s._classes.length ? s._classes[i] : "";
-            if (name.isNotEmpty) parts.add("$label $name $unit");
+            if (name.isNotEmpty) {
+              parts.add([label, name, unit].where((x) => x.isNotEmpty).join(" "));
+            }
           }
         }
         if (frame.u != null) {

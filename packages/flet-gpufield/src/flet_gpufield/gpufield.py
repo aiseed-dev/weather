@@ -110,7 +110,7 @@ class GpuField(ft.LayoutControl):
 
     classes: list[str] = field(default_factory=list)
     """値が階級の番号（0, 1, 2, …）のときの、番号ごとの名前。読み取りに数値の代わりに出す
-    （空の名前は出さない）。"""
+    （空の名前は出さない。label・unit が空なら名前だけを出す）。"""
 
     frames: list[GpuFrame] = field(default_factory=list)
     """時刻ごとのデータ。"""

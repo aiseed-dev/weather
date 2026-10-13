@@ -50,6 +50,9 @@ product) and 動く地図, drawn on the GPU by the `flet-gpufield` extension
   `sampling="nearest"` and class names in the readout: interpolating between
   classes would draw intensities that were never observed. The same applies
   to any categorical field.
+- Where an observation has no data (radar out of range or down), veil the
+  map rather than leave it blank, in the figure and on the GPU alike:
+  "not observed" must never read as "nothing there".
 
 See `docs/gpu-map.md` for the architecture and the measured costs.
 

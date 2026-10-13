@@ -12,12 +12,15 @@ The product comes as 256 px Web-Mercator tiles drawn in JMA's eight
 precipitation-intensity colours (``jma_endpoints``). ``mosaic()`` turns
 the tiles covering an area into one array of intensity classes:
 0 = no echo, 1 … 8 = JMA's bins (〜1, 1〜5, 5〜10, 10〜20, 20〜30,
-30〜50, 50〜80, 80〜 mm/h).
+30〜50, 50〜80, 80〜 mm/h). The tiles cannot tell "no echo" from "not
+observed", so each frame also brings JMA's no-data polygons (outside the
+radars' range, or a radar down), which never change for a frame either.
 """
 
 from __future__ import annotations
 
 import asyncio
+import gzip
 import io
 import json
 import logging
@@ -114,6 +117,9 @@ class RadarMosaic:
     tiles: int
     missing: int            # tiles JMA did not deliver (drawn as no echo)
     fetched_at: datetime
+    # JMA's no-data area: polygons, each (exterior, hole, …) as (lon, lat)
+    # arrays. None when JMA did not deliver it.
+    no_data: tuple[tuple[np.ndarray, ...], ...] | None = None
 
     def lons(self) -> np.ndarray:
         """Longitude of each column's pixel centre."""
@@ -166,6 +172,22 @@ def decode_tile(data: bytes) -> np.ndarray:
         colours, inverse = np.unique(packed[echo], return_inverse=True)
         out[echo] = _classify(colours)[inverse]
     return out
+
+
+def parse_no_data(doc: dict) -> tuple[tuple[np.ndarray, ...], ...]:
+    """GeoJSON Polygon / MultiPolygon features → polygons of (lon, lat) rings."""
+    polygons = []
+    for feature in doc.get("features", ()):
+        geometry = feature.get("geometry") or {}
+        if geometry.get("type") == "Polygon":
+            parts = [geometry["coordinates"]]
+        elif geometry.get("type") == "MultiPolygon":
+            parts = geometry["coordinates"]
+        else:
+            continue
+        for rings in parts:
+            polygons.append(tuple(np.asarray(r, dtype=np.float64)[:, :2] for r in rings if len(r) >= 3))
+    return tuple(polygons)
 
 
 def _assemble(blobs: dict[tuple[int, int], bytes | None],
@@ -309,7 +331,7 @@ class JmaRadarService:
                                 blobs[(x, y)] = None
                             else:
                                 blobs[(x, y)] = resp.content
-                                self._save_tile(frame_dir / str(x) / f"{y}.png", resp.content)
+                                self._save(frame_dir / str(x) / f"{y}.png", resp.content)
                         done += 1
                         if on_progress:
                             on_progress(done, len(coords))
@@ -319,19 +341,47 @@ class JmaRadarService:
             if missing == len(coords):
                 raise RuntimeError(f"JMA delivered none of the {len(coords)} radar tiles "
                                    f"for {frame.validtime} UTC")
-            classes = await asyncio.to_thread(_assemble, blobs, x0, x1, y0, y1)
+            no_data_doc = await self._no_data_doc(frame)
+            classes, no_data = await asyncio.to_thread(
+                lambda: (_assemble(blobs, x0, x1, y0, y1),
+                         parse_no_data(no_data_doc) if no_data_doc is not None else None))
         return RadarMosaic(frame=frame, zoom=zoom, x0=x0, y0=y0, classes=classes,
-                           tiles=len(coords), missing=missing, fetched_at=datetime.now(UTC))
+                           tiles=len(coords), missing=missing, fetched_at=datetime.now(UTC),
+                           no_data=no_data)
+
+    async def _no_data_doc(self, frame: RadarFrame) -> dict | None:
+        """The frame's no-data GeoJSON, from disk or JMA (kept gzipped, like JMA serves it)."""
+        path = self._cache_dir / frame.basetime / frame.validtime / "hrpns_nd.geojson.gz"
+        if path.exists():
+            try:
+                return json.loads(gzip.decompress(path.read_bytes()))
+            except (OSError, ValueError):
+                logger.exception("Cached no-data area %s unreadable; re-downloading", path)
+        url = jma_endpoints.RADAR_NODATA_TEMPLATE.format(
+            basetime=frame.basetime, validtime=frame.validtime,
+            element=jma_endpoints.RADAR_ELEMENT)
+        await self._pacer.wait()
+        try:
+            async with httpx.AsyncClient(timeout=30.0, headers={
+                    "User-Agent": jma_endpoints.USER_AGENT}) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+            doc = resp.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            logger.warning("No-data area %s failed: %s", url, exc)
+            return None
+        self._save(path, gzip.compress(resp.content))
+        return doc
 
     @staticmethod
-    def _save_tile(path: Path, data: bytes) -> None:
+    def _save(path: Path, data: bytes) -> None:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(".part")
             tmp.write_bytes(data)
             tmp.replace(path)
         except OSError:
-            logger.exception("Could not cache radar tile %s", path)
+            logger.exception("Could not cache %s", path)
 
     def _prune(self) -> None:
         """Delete the tiles of basetimes older than TILE_RETENTION."""

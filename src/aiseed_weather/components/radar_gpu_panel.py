@@ -16,7 +16,9 @@ import asyncio
 
 import flet as ft
 
-from aiseed_weather.figures._japan_map import JMA_PRECIP_COLOURS, JMA_PRECIP_LABELS
+from aiseed_weather.figures._basemap import SEA_RGB
+from aiseed_weather.figures._japan_map import JMA_PRECIP_COLOURS, JMA_PRECIP_LABELS, area
+from aiseed_weather.figures.radar_map import NO_DATA_RGBA
 from aiseed_weather.services import gpu_radar, jma_endpoints
 
 READY_TIMEOUT_SEC = 4.0
@@ -36,17 +38,27 @@ def _message(text: str, *, icon=ft.Icons.INFO_OUTLINE) -> ft.Control:
     )
 
 
+def _veiled_sea() -> str:
+    """The no-data veil over the sea colour, as the map shows it."""
+    r, g, b, a = NO_DATA_RGBA
+    mixed = [int(round(float(base) * (1 - a) + c * 255 * a)) for base, c in zip(SEA_RGB, (r, g, b))]
+    return "#%02x%02x%02x" % tuple(mixed)
+
+
+def _chip(colour: str, label: str, width: int = 46) -> ft.Control:
+    return ft.Column(spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER, controls=[
+        ft.Container(width=width, height=10, bgcolor=colour,
+                     border=ft.Border.all(width=0.5, color=ft.Colors.BLACK_26)),
+        ft.Text(label, size=10, color=ft.Colors.GREY),
+    ])
+
+
 def _legend() -> ft.Control:
-    chips = [
-        ft.Column(spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER, controls=[
-            ft.Container(width=46, height=10, bgcolor=colour,
-                         border=ft.Border.all(width=0.5, color=ft.Colors.BLACK_26)),
-            ft.Text(label, size=10, color=ft.Colors.GREY),
-        ])
-        for colour, label in zip(JMA_PRECIP_COLOURS, JMA_PRECIP_LABELS)
-    ]
     return ft.Row(spacing=2, wrap=True, vertical_alignment=ft.CrossAxisAlignment.START, controls=[
-        ft.Text("降水強度（mm/h）", size=11, color=ft.Colors.GREY), *chips,
+        ft.Text("降水強度（mm/h）", size=11, color=ft.Colors.GREY),
+        *[_chip(colour, label) for colour, label in zip(JMA_PRECIP_COLOURS, JMA_PRECIP_LABELS)],
+        ft.Container(width=12),
+        _chip(_veiled_sea(), "観測範囲外・欠測", width=60),
     ])
 
 
@@ -60,7 +72,7 @@ def RadarGpuPanel(area_key: str, frames: tuple, step: int, status_text: str):
                         "pip install -e packages/flet-gpufield を実行してください。",
                         icon=ft.Icons.ERROR_OUTLINE)
 
-    grid = ft.use_memo(lambda: gpu_radar.area(area_key).grid, [area_key])
+    grid = ft.use_memo(lambda: gpu_radar.area_grid(area(area_key)), [area_key])
     static = ft.use_memo(lambda: {"lut": gpu_radar.lut_rgba(), "base": gpu_radar.land_mask(grid),
                                   "coast": gpu_radar.coastline()}, [area_key])
     ready, set_ready = ft.use_state(False)
@@ -82,9 +94,8 @@ def RadarGpuPanel(area_key: str, frames: tuple, step: int, status_text: str):
         projection="plate_carree",
         center_lon=(lon_min + lon_max) / 2, center_lat=(lat_min + lat_max) / 2,
         px_per_deg=1100.0 / (lon_max - lon_min),
-        vmin=0.0, vmax=float(gpu_radar.N_CLASSES), lut=static["lut"],
+        vmin=0.0, vmax=float(gpu_radar.N_LEVELS), lut=static["lut"],
         base=static["base"], coast=static["coast"],
-        label="降水強度", unit="mm/h",
         sampling="nearest", classes=list(gpu_radar.CLASS_LABELS),
         frames=[GpuFrame(key=key, index=i, scalar=data) for i, key, data in frames],
         step=step,

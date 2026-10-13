@@ -31,6 +31,14 @@ RADAR_TILE_TEMPLATE = (
     "https://www.jma.go.jp/bosai/jmatile/data/nowc/"
     "{basetime}/none/{validtime}/surf/{element}/{z}/{x}/{y}.png"
 )
+# Where the frame has no data (outside the radars' range, or a radar
+# down): GeoJSON of one polygon, the world with the observed area as its
+# hole. JMA's viewer reads it per frame (nowc.properties.xml, imageType
+# hrpns_nd type="geojson").
+RADAR_NODATA_TEMPLATE = (
+    "https://www.jma.go.jp/bosai/jmatile/data/nowc/"
+    "{basetime}/none/{validtime}/surf/{element}_nd/data.geojson"
+)
 
 # AMeDAS observations
 AMEDAS_STATION_TABLE = "https://www.jma.go.jp/bosai/amedas/const/amedastable.json"
