@@ -31,8 +31,19 @@ def serve(behaviour):
             self.send_response(206 if rng else 200)
             self.send_header("Content-Length", str(len(BODY) - start))
             self.end_headers()
-            self.wfile.write(chunk)
-            self.wfile.flush()
+            if chunk is not None and not isinstance(chunk, bytes):     # 細々と送る
+                pos = start
+                try:
+                    while pos < len(BODY):
+                        self.wfile.write(BODY[pos:pos + 1024])
+                        self.wfile.flush()
+                        pos += 1024
+                        threading.Event().wait(0.02)
+                except (BrokenPipeError, ConnectionResetError):
+                    return
+            else:
+                self.wfile.write(chunk)
+                self.wfile.flush()
             if stall:
                 threading.Event().wait(stall)
             if cut:
@@ -72,6 +83,29 @@ def test_resumes_after_stall(tmp_path):
         publish_forecast.http_get(url, target)
         assert target.read_bytes() == BODY
         assert reqs[0] == 0 and reqs[1] > 0
+    finally:
+        srv.shutdown()
+
+
+def test_reconnects_when_too_slow(tmp_path, monkeypatch):
+    # 1 回目は 1KB ずつ細々と送る（止まりはしない）。遅すぎると見て繋ぎ直し、続きを取る
+    monkeypatch.setattr(publish_forecast, "SLOW_WINDOW", 0.3)
+    monkeypatch.setattr(publish_forecast, "SLOW_BYTES_PER_S", 100_000)
+
+    class Trickle:
+        pass
+
+    def behaviour(n, start):
+        if n == 1:
+            return Trickle, True, 0
+        return BODY[start:], False, 0
+
+    srv, url, reqs = serve(behaviour)
+    try:
+        target = tmp_path / "d.grib2"
+        publish_forecast.http_get(url, target)
+        assert target.read_bytes() == BODY
+        assert len(reqs) == 2 and reqs[1] > 0
     finally:
         srv.shutdown()
 

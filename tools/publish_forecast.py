@@ -79,6 +79,11 @@ ATTRIBUTION = "Data: ECMWF Open Data. CC-BY-4.0. https://www.ecmwf.int/en/foreca
 # 止まることがある（2026-10-13 実測: 300 秒待ってから取り直して 1 本 388 秒）。
 # 止まったら短く切り、受け取った所から Range で続きを取る。
 READ_TIMEOUT = 30
+# 止まりはしないが細々としか来ない接続も、繋ぎ直す。SLOW_WINDOW 秒の平均が SLOW_BYTES_PER_S を
+# 下回ったら切って続きから取る（回線全体が遅い時間帯でも 1MB/s は出るので、これを下回るのは
+# その接続だけの不調と見る）
+SLOW_WINDOW = 60
+SLOW_BYTES_PER_S = 200_000
 
 
 def http_get(url: str, target: Path, retries: int = 8) -> None:
@@ -106,8 +111,15 @@ def http_get(url: str, target: Path, retries: int = 8) -> None:
                         total = have + int(length) if length else None
                     # read1 で届いた分ずつ書く（大きな read は、止まると途中まで受けた分も捨てる）
                     with part.open("ab" if have else "wb") as f:
+                        window_start, window_bytes = time.monotonic(), 0
                         while chunk := resp.read1(1 << 16):
                             f.write(chunk)
+                            window_bytes += len(chunk)
+                            elapsed = time.monotonic() - window_start
+                            if elapsed >= SLOW_WINDOW:
+                                if window_bytes / elapsed < SLOW_BYTES_PER_S:
+                                    raise OSError(f"遅すぎる（{window_bytes / elapsed / 1000:.0f} KB/s）")
+                                window_start, window_bytes = time.monotonic(), 0
                 got = part.stat().st_size
                 if total is None or got == total:
                     part.replace(target)
