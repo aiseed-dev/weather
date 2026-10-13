@@ -21,6 +21,7 @@ import logging
 
 import flet as ft
 
+from aiseed_weather.components.task_effect import use_task_effect
 from aiseed_weather.services import gpu_frames
 from aiseed_weather.services.forecast_service import grib_cache_path, is_grib_cached
 
@@ -127,19 +128,15 @@ def GpuMapPanel(settings, plan: tuple, region, layer_key: str, step_hours: int,
                 set_frames(lambda cur, i=i, frame=frame: {**cur, i: frame})
             set_finished(True)
 
-        task = asyncio.get_running_loop().create_task(load())
-        return task.cancel
+        return load()
 
-    ft.use_effect(start_loading, [load_key, plan_key])
+    use_task_effect(start_loading, [load_key, plan_key])
 
-    def start_ready_timer():
-        async def wait():
-            await asyncio.sleep(READY_TIMEOUT_SEC)
-            set_timed_out(True)
-        task = asyncio.get_running_loop().create_task(wait())
-        return task.cancel
+    async def wait_for_ready():
+        await asyncio.sleep(READY_TIMEOUT_SEC)
+        set_timed_out(True)
 
-    ft.use_effect(start_ready_timer, [])
+    use_task_effect(wait_for_ready, [])
 
     if layer is None:
         return _message("この層は動く地図ではまだ描けません。「図」に切り替えてください。")

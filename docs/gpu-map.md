@@ -41,7 +41,7 @@
 |---|---|---|
 | データ作り | `src/aiseed_weather/services/gpu_radar.py` | メルカトルのタイルを緯度経度の格子に描き直す（1 セルに複数の画素が入るときは最も強い階級）。地域ごとの格子、配色、陸海、海岸線 |
 | 画面の部品 | `src/aiseed_weather/components/radar_gpu_panel.py` | `GpuField` と凡例。取得はしない |
-| 取得・再生 | `src/aiseed_weather/components/radar_view.py` | 最新の観測 → 予測 → 過去の順にコマを取り、届いたものから渡す。再生は 0.5 秒ごとに番号を進めるだけ |
+| 取得・再生 | `src/aiseed_weather/components/radar_view.py` | 最新の観測 → 予測 → 過去の順にコマを取り、届いたものから渡す。再生は番号を進めるだけ（間隔は 1・0.5・0.25 秒から選ぶ。最後のコマは 3 倍止める）。取得と再生のタスクは `use_task_effect` で、切り替えや「止める」で必ず止める |
 
 - 値は強さの階級（0 = エコーなし、1〜8 = 気象庁の凡例、9 = 観測範囲外・欠測）。階級の間を
   補間すると観測されていない強さの縁ができるので、`sampling="nearest"` で最寄りの格子点の値を

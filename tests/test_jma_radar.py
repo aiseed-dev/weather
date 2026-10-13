@@ -74,6 +74,13 @@ def test_time_index_orders_observations_then_forecast():
     t = jr.JmaRadarService._times_from({"fetched_at": "2026-10-13T07:24:00+00:00",
                                         "observations": obs, "forecasts": fcst})
     assert [f.validtime[-6:-2] for f in t.frames] == ["0710", "0715", "0720", "0725", "0730"]
+    # A forecast index one run behind: its frames up to the latest observation go.
+    late = [{"basetime": "20261013071500", "validtime": v, "elements": ["hrpns"]}
+            for v in ("20261013072000", "20261013072500")]
+    t = jr.JmaRadarService._times_from({"fetched_at": "2026-10-13T07:24:00+00:00",
+                                        "observations": obs, "forecasts": late})
+    assert [(f.validtime[-6:-2], f.is_forecast) for f in t.frames] == [
+        ("0710", False), ("0715", False), ("0720", False), ("0725", True)]
     assert t.latest_observation.validtime == "20261013072000"
     f = t.frames[-1]
     assert f.is_forecast and f.lead_minutes == 10

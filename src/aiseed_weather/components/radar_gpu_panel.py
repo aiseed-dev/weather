@@ -16,6 +16,7 @@ import asyncio
 
 import flet as ft
 
+from aiseed_weather.components.task_effect import use_task_effect
 from aiseed_weather.figures._basemap import SEA_RGB
 from aiseed_weather.figures._japan_map import JMA_PRECIP_COLOURS, JMA_PRECIP_LABELS, area
 from aiseed_weather.figures.radar_map import NO_DATA_RGBA
@@ -78,14 +79,11 @@ def RadarGpuPanel(area_key: str, frames: tuple, step: int, status_text: str):
     ready, set_ready = ft.use_state(False)
     timed_out, set_timed_out = ft.use_state(False)
 
-    def start_ready_timer():
-        async def wait():
-            await asyncio.sleep(READY_TIMEOUT_SEC)
-            set_timed_out(True)
-        task = asyncio.get_running_loop().create_task(wait())
-        return task.cancel
+    async def wait_for_ready():
+        await asyncio.sleep(READY_TIMEOUT_SEC)
+        set_timed_out(True)
 
-    ft.use_effect(start_ready_timer, [])
+    use_task_effect(wait_for_ready, [])
 
     lon_min, lon_max, lat_min, lat_max = grid.extent
     gpu = GpuField(

@@ -260,6 +260,21 @@ What stays out of a ref:
 - Direct control mutation: `control.value = x`, `dialog.open = True`,
   `nav.selected_index = i` — always derive from state instead
 
+## Effects that start work
+
+Flet 1.0.4's `ft.use_effect(setup, dependencies, cleanup)` resets the
+hook's cleanup from its `cleanup` argument on every render, so a cleanup
+*returned* by `setup` never runs — not on a dependency change, not on
+unmount. A task started that way keeps going: a play loop kept stepping
+after 止める, and each restart added another loop.
+
+Pass the cleanup as the third argument, or use
+`components/task_effect.use_task_effect(start, dependencies)`: it runs the
+coroutine `start()` returns (or nothing, if it returns None) and cancels
+it when a dependency changes or the component unmounts.
+`tests/test_effect_cleanups.py` fails if a component returns its cleanup
+from an effect again.
+
 ## Flet version drift
 
 Flet renames and removes names between releases. 1.0 removed

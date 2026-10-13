@@ -312,9 +312,15 @@ class JmaRadarService:
             if element in entry.get("elements", ()):
                 f = RadarFrame(entry["basetime"], entry["validtime"])
                 frames[f.key] = f
-        if not any(not f.is_forecast for f in frames.values()):
+        observed = [f.validtime for f in frames.values() if not f.is_forecast]
+        if not observed:
             raise ValueError(f"JMA's nowcast index lists no {element} observation")
-        ordered = tuple(sorted(frames.values(), key=lambda f: (f.validtime, f.basetime)))
+        # The forecast index can lag the observation index by a run; its frames
+        # up to the latest observation would interleave with the observations.
+        latest = max(observed)
+        ordered = tuple(sorted((f for f in frames.values()
+                                if not f.is_forecast or f.validtime > latest),
+                               key=lambda f: (f.validtime, f.basetime)))
         return RadarTimes(frames=ordered, fetched_at=datetime.fromisoformat(raw["fetched_at"]))
 
     # ── tiles ───────────────────────────────────────────────────

@@ -45,6 +45,7 @@ from aiseed_weather.components.observation_common import (
     fetch_buttons,
 )
 from aiseed_weather.components.radar_gpu_panel import RadarGpuPanel
+from aiseed_weather.components.task_effect import use_task_effect
 from aiseed_weather.figures._japan_map import AREAS, JapanArea, area, tile_km
 from aiseed_weather.figures.observation_chart import Provenance
 from aiseed_weather.figures.radar_map import render_radar_map
@@ -63,7 +64,9 @@ logger = logging.getLogger(__name__)
 # about one figure pixel at 200 dpi; at 100 dpi two would merge into their
 # maximum, on top of the maximum JMA already took.
 SCREEN_DPI = 200
-PLAY_INTERVAL_SEC = 0.5
+# Seconds per frame when playing; the last frame is held three times as long
+# so the end of the loop reads as the end.
+PLAY_INTERVALS = (("1", "1 秒ごと"), ("0.5", "0.5 秒ごと"), ("0.25", "0.25 秒ごと"))
 PAST_HOURS = (("1", "過去 1 時間"), ("3", "過去 3 時間"))
 
 
@@ -142,6 +145,7 @@ def RadarView(settings: UserSettings):
     failed, set_failed = ft.use_state(frozenset())
     gpu_loading, set_gpu_loading = ft.use_state(False)
     playing, set_playing = ft.use_state(False)
+    interval, set_interval = ft.use_state(PLAY_INTERVALS[0][0])
     # One service for the view's lifetime: it paces and serialises tile fetches.
     service = ft.use_memo(lambda: JmaRadarService(data_dir=resolved_data_dir(settings)), [])
 
@@ -205,7 +209,7 @@ def RadarView(settings: UserSettings):
     def packed_key(f: RadarFrame) -> str:
         return f"{current_area.key}|{f.key}"
 
-    def start_moving_map():
+    def load_moving_map():
         if mode != "gpu" or times is None:
             return None
         wanted = {packed_key(f) for f in moving}
@@ -231,27 +235,28 @@ def RadarView(settings: UserSettings):
             finally:
                 set_gpu_loading(False)
 
-        task = asyncio.get_running_loop().create_task(fetch_frames())
-        return task.cancel
+        return fetch_frames()
 
-    ft.use_effect(start_moving_map, [mode, times_key, past_hours, area_key])
+    use_task_effect(load_moving_map, [mode, times_key, past_hours, area_key])
 
     loaded = [f.key for f in moving if packed_key(f) in packed]
 
-    def start_playing():
+    def play():
         if not playing or mode != "gpu" or len(loaded) < 2:
             return None
+        order = list(loaded)
+        seconds = float(interval)
 
         async def advance():
+            i = order.index(frame_key) if frame_key in order else -1
             while True:
-                await asyncio.sleep(PLAY_INTERVAL_SEC)
-                set_frame_key(lambda cur: loaded[(loaded.index(cur) + 1) % len(loaded)]
-                              if cur in loaded else loaded[0])
+                await asyncio.sleep(seconds * (3 if i == len(order) - 1 else 1))
+                i = (i + 1) % len(order)
+                set_frame_key(order[i])
 
-        task = asyncio.get_running_loop().create_task(advance())
-        return task.cancel
+        return advance()
 
-    ft.use_effect(start_playing, [playing, mode, len(loaded)])
+    use_task_effect(play, [playing, mode, len(loaded), interval])
 
     # ── controls ──────────────────────────────────────────────────────
 
@@ -294,6 +299,8 @@ def RadarView(settings: UserSettings):
         ft.IconButton(ft.Icons.CHEVRON_RIGHT, tooltip="5 分後",
                       disabled=busy or not 0 <= at < len(keys) - 1,
                       on_click=lambda _: go_to(keys[at + 1])),
+        *([dropdown("再生の間隔", interval, PLAY_INTERVALS, set_interval, width=150)]
+          if mode == "gpu" else []),
     ] if frames else []
     mode_row = ft.Row(controls=[
         ft.SegmentedButton(
