@@ -260,7 +260,7 @@ WSL (Windows Subsystem for Linux) は本アプリには推奨しません。WSL 
 
 ## ライセンス
 
-- コード: **AGPL-3.0-or-later**
+- コード: **AGPL-3.0-or-later**（GPU で描く部品 `packages/flet-gpufield/` だけは MIT）
 - ECMWF データ: CC-BY-4.0
 - Open-Meteo データ: CC-BY-4.0
 - 気象庁データ: 出典: 気象庁ホームページ ― 合成データ (レーダー重ね描き、

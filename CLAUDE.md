@@ -90,7 +90,7 @@ of truth for development.
 
 ## License
 
-- Code: AGPL-3.0-or-later
+- Code: AGPL-3.0-or-later (the GPU map component `packages/flet-gpufield/` is MIT)
 - Data attribution (must appear in UI and every exported figure):
   - ECMWF data → CC-BY-4.0
   - Open-Meteo data → CC-BY-4.0

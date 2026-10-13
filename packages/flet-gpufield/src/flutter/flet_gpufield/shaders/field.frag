@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Yasuhiro / AIseed
 //
 // 等緯度経度の格子を、画面の画素ごとに投影を逆にたどって経緯度を求め、双一次補間して配色する。

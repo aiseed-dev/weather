@@ -252,7 +252,7 @@ Japanese input.
 
 ## License
 
-- Code: **AGPL-3.0-or-later**
+- Code: **AGPL-3.0-or-later** (the GPU map component `packages/flet-gpufield/` is MIT)
 - ECMWF data: CC-BY-4.0
 - Open-Meteo data: CC-BY-4.0
 - JMA data: 出典: 気象庁ホームページ — processed-data notice appears on

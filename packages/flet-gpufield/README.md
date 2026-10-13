@@ -45,3 +45,9 @@ GpuField(
 部品（Dart・シェーダー）を変えたら作り直す。
 
 Linux（Intel 内蔵 GPU）で 57〜59 fps（粒子 10,000、等値線・海岸線あり）。Web でも描ける。
+
+## ライセンス
+
+MIT（[LICENSE](LICENSE)）。AIseed Weather の本体は AGPL-3.0-or-later だが、この部品は
+ほかのアプリでも使えるように MIT にした（2026-10-14）。aiai-tools に移し、地図とグラフを描ける
+`flet-gpumap` に広げる予定（[DESIGN.md](DESIGN.md)）。

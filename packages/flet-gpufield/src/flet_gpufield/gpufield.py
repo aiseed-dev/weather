@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: AGPL-3.0-or-later
+# SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Yasuhiro / AIseed
 
 """気象の格子データを GPU で描く Flet の部品。

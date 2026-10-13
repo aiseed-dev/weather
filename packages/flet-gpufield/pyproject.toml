@@ -5,7 +5,7 @@ description = "気象の格子データを GPU で描く Flet の部品（試作
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Yasuhiro" }]
-license = "AGPL-3.0-or-later"
+license = "MIT"
 dependencies = [
     "flet>=1.0.4",
 ]
