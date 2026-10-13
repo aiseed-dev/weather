@@ -16,13 +16,20 @@ from __future__ import annotations
 
 USER_AGENT = "AIseed Weather/0.1 (+https://aiseed.dev)"
 
-# Rainfall nowcast (高解像度降水ナウキャスト)
+# Rainfall nowcast (高解像度降水ナウキャスト). N1 lists the observations of
+# the past 3 hours (basetime == validtime), N2 the forecasts from the
+# latest basetime (+5 … +60 min). Each entry names the elements it has.
 RADAR_TARGET_TIMES = "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json"
-# Tile URL template; fill in basetime, validtime, z, x, y.
-# Verify the path structure (`surf/hrpns/...`) against current JMA convention.
+RADAR_TARGET_TIMES_FORECAST = (
+    "https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N2.json"
+)
+RADAR_ELEMENT = "hrpns"
+# 256 px Web-Mercator XYZ tiles; times are UTC (YYYYmmddHHMMSS). Checked
+# 2026-10-13: only even z carry data — an odd z, or z ≥ 12, returns a
+# blank tile.
 RADAR_TILE_TEMPLATE = (
     "https://www.jma.go.jp/bosai/jmatile/data/nowc/"
-    "{basetime}/none/{validtime}/surf/hrpns/{z}/{x}/{y}.png"
+    "{basetime}/none/{validtime}/surf/{element}/{z}/{x}/{y}.png"
 )
 
 # AMeDAS observations
@@ -50,4 +57,8 @@ ATTRIBUTION = "出典: 気象庁ホームページ (https://www.jma.go.jp/)"
 ATTRIBUTION_PROCESSED = (
     "出典: 気象庁ホームページ\n"
     "編集・加工を行った旨と編集責任が利用者にあります"
+)
+# The same on one line, for figure footers.
+ATTRIBUTION_PROCESSED_INLINE = (
+    "出典: 気象庁ホームページ（編集・加工を行った旨と編集責任が利用者にあります）"
 )

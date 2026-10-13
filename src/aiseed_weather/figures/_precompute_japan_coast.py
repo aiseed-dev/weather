@@ -6,7 +6,7 @@
 The 0.25° masks in ``_coastline_masks.npz`` match the ECMWF grid but are
 far coarser than AMeDAS station spacing (~17 km), so the station map
 gets its own outline of the archipelago: Natural Earth 10m coastline and
-land, clipped to ``amedas_map.EXTENT`` and simplified to ~500 m. The
+land, clipped to ``_japan_map.EXTENT`` and simplified to ~500 m. The
 result is a few hundred kB of (lon, lat) vertices in
 ``_japan_coastline.npz``; the render path draws them with matplotlib and
 never imports cartopy.
@@ -53,7 +53,7 @@ def build() -> Path:
     from cartopy.io.shapereader import Reader, natural_earth
     from shapely.geometry import box
 
-    from aiseed_weather.figures.amedas_map import EXTENT
+    from aiseed_weather.figures._japan_map import EXTENT
 
     lon0, lon1, lat0, lat1 = EXTENT
     frame = box(lon0 - 0.5, lat0 - 0.5, lon1 + 0.5, lat1 + 0.5)

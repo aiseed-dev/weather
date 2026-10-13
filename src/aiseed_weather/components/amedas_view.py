@@ -33,7 +33,7 @@ from aiseed_weather.services.jma_amedas_service import JmaAmedasService
 
 logger = logging.getLogger(__name__)
 
-ATTRIBUTION = "出典: 気象庁ホームページ（編集・加工を行った旨と編集責任が利用者にあります）"
+ATTRIBUTION = jma_endpoints.ATTRIBUTION_PROCESSED_INLINE
 
 
 def _result(snapshot, stations, element: str, descending: bool) -> Result:

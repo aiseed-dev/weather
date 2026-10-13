@@ -71,36 +71,42 @@ good citizen:
 JMA publishes radar composites as map tiles plus index files.
 
 ### Update cadence
-- New observation every **5 minutes** (10 minutes for the "high resolution"
-  product depending on layer); the latest run is published with a small lag
-- This app refreshes at most every **10 minutes** to stay comfortably below
-  publisher cadence
+- New observation every **5 minutes**, published a few minutes late
+- The time index is reused for **10 minutes** (再取得 bypasses it)
 
-### Endpoints (verify before implementing)
-- Time index: `https://www.jma.go.jp/bosai/jmatile/data/nowc/targetTimes_N1.json`
-  - Returns the list of available basetimes and their valid times
-- Tiles: `https://www.jma.go.jp/bosai/jmatile/data/nowc/<basetime>/none/<validtime>/surf/hrpns/<z>/<x>/<y>.png`
-  - Standard XYZ tile scheme, z (zoom), x, y
-  - Transparent PNG; render on top of a base map
+### Endpoints (checked 2026-10-13)
+- Time index, observations: `.../jmatile/data/nowc/targetTimes_N1.json` —
+  the past 3 hours, `basetime == validtime`
+- Time index, forecast: `.../jmatile/data/nowc/targetTimes_N2.json` —
+  +5 … +60 min from the latest basetime
+- Each entry lists its `elements`; the precipitation layer is `hrpns`
+- Tiles: `.../jmatile/data/nowc/<basetime>/none/<validtime>/surf/hrpns/<z>/<x>/<y>.png`
+  - 256 px Web-Mercator XYZ tiles, times in UTC (`YYYYmmddHHMMSS`)
+  - **Only even z carry data**; an odd z, or z ≥ 12, returns a blank tile
+  - Palette PNGs in JMA's eight legend colours, transparent where no echo
 
-These paths have changed in past JMA updates. **Always fetch the
-targetTimes index first** and extract the URL pattern from there, rather
-than hardcoding deeply nested paths.
+All URLs are in `services/jma_endpoints.py`. Pick frames from the index;
+never build a time that the index did not list.
 
-### Rendering approach
-- Use a base map of Japan (cartopy `LambertConformal` centered on Japan, or
-  `PlateCarree` with `extent=[122, 146, 24, 46]`)
-- Overlay the radar tiles at appropriate zoom
-- Apply the standard JMA precipitation colormap (0-1, 1-5, 5-10, 10-20,
-  20-30, 30-50, 50-80, 80+ mm/h) — use JMA's own color values for
-  readability familiarity
-- Do not invent a new color scale; users recognize the JMA scheme on sight
-
-### Tile fetching strategy
-- For one viewport, fetch only the tiles that intersect the visible extent
-- Cache tiles by (basetime, validtime, z, x, y) under
-  `<data_dir>/jma/radar/` (see "Caching" below)
-- Tiles for old basetimes can be deleted aggressively (>2 hours old)
+### Implementation (`services/jma_radar_service.py`, `figures/radar_map.py`, `components/radar_view.py`)
+- The view shows Japan (`_japan_map.EXTENT`) at **z=6** (~2 km): 36 tiles a
+  frame. Requests are paced to **4 per second** with at most 4 in flight,
+  so a new frame takes about 9 s; one already on disk shows at once
+- The user picks the latest observation (取得), any frame of the past 3 h,
+  or the forecast; each pick fetches one frame and nothing else
+- Tiles are decoded to intensity classes 0 (no echo) and 1 … 8 (JMA bins)
+  by nearest legend colour; a colour far from the legend is logged as a
+  palette change
+- Tiles are cached at `<data_dir>/jma/radar/<basetime>/<validtime>/<z>/<x>/<y>.png`
+  (immutable) and deleted once their basetime is 2 hours old
+- The figure resamples the Mercator mosaic onto the same lat/lon frame as
+  the AMeDAS map (`figures/_japan_map.py`), keeping the strongest class per
+  figure pixel so small heavy-rain cores survive the national scale. The
+  coastline is drawn over the radar
+- Colours are JMA's (`JMA_PRECIP_COLOURS`, shared with the AMeDAS
+  precipitation map). Do not invent a new scale; users recognise JMA's
+- Areas outside radar coverage look the same as "no echo" (the `hrpns_nd`
+  tiles were 404 when checked)
 
 ## AMeDAS (地上気象観測)
 
@@ -143,9 +149,9 @@ Always check for variable presence before reading; not all stations have all var
 Implemented as the 今 panel of the 観測 tab (`components/amedas_view.py`,
 figure `figures/amedas_map.py`). Temperature and wind reuse the model
 charts' anchors (`T2M`, `WIND10M`) so a colour means the same value across
-the app; precipitation uses JMA's bins. The land / coastline under the stations
-is Natural Earth 10m clipped to the map frame
-(`figures/_japan_coastline.npz`, built once by
+the app; precipitation uses JMA's bins. The map frame, land and coastline
+come from `figures/_japan_map.py`, shared with the radar map: Natural Earth
+10m clipped to the frame (`figures/_japan_coastline.npz`, built once by
 `figures/_precompute_japan_coast.py`); the 0.25° masks the model charts use
 are too coarse for station spacing. cartopy runs only in that precompute.
 
@@ -170,9 +176,9 @@ to south; the latest day is reported for a repeated extreme.
 `<data_dir>` is the `data_dir` setting in `config.toml`; when unset it is
 `~/.cache/aiseed-weather` (`resolved_data_dir()` in `models/user_settings.py`).
 
-- Radar: `<data_dir>/jma/radar/_latest_meta.json` for freshness; tiles are
-  planned at `<data_dir>/jma/radar/<basetime>/<validtime>/<z>/<x>/<y>.png`
-  (`jma_radar_service.py` is still a skeleton)
+- Radar: `<data_dir>/jma/radar/_latest_meta.json` holds the time index
+  (10-minute window); tiles at
+  `<data_dir>/jma/radar/<basetime>/<validtime>/<z>/<x>/<y>.png` (2 hours)
 - AMeDAS latest snapshot: `<data_dir>/jma/amedas/_latest_snapshot.json`
   (10-minute window)
 - AMeDAS station metadata: `<data_dir>/jma/amedas/amedastable.json`

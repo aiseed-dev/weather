@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Yasuhiro / AIseed
+
+"""The Japan map frame shared by the AMeDAS and radar figures.
+
+Both figures draw the same latitude/longitude frame (x axis scaled by
+cos 36°) on the app's gray land / sea base with a dark coastline
+(chart-base-design), so a station map and a radar map of the same
+moment line up when compared. The outline is Natural Earth 10m,
+precomputed for this frame by ``_precompute_japan_coast.py`` — the
+0.25° masks the model charts use are coarser than station spacing.
+
+Also holds JMA's precipitation colours, which both figures use:
+observed precipitation must not share the NWP palette
+(chart-base-design), and JMA's scheme is what the user recognises.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.collections import PolyCollection
+from matplotlib.figure import Figure
+
+from aiseed_weather.figures._basemap import COASTLINE_RGB, LAND_RGB, SEA_RGB
+
+EXTENT = (122.5, 149.0, 24.0, 46.0)        # lon_min, lon_max, lat_min, lat_max
+ASPECT_LAT = 36.0                          # the x axis is scaled by cos of this latitude
+BG = "#f7f7f5"
+FRAME = "#585c64"
+AXIS_FG = "#202428"
+_COAST_PATH = Path(__file__).parent / "_japan_coastline.npz"
+
+# 気象庁の降水量・降水強度の配色（mm、mm/h）
+JMA_PRECIP_BOUNDS = (0.0, 1.0, 5.0, 10.0, 20.0, 30.0, 50.0, 80.0, 1000.0)
+JMA_PRECIP_COLOURS = ("#f2f2ff", "#a0d2ff", "#218cff", "#0041ff",
+                      "#faf500", "#ff9900", "#ff2800", "#b40068")
+
+
+def _load_outline() -> tuple[list[np.ndarray], np.ndarray] | None:
+    if not _COAST_PATH.exists():
+        return None
+    with np.load(_COAST_PATH) as d:
+        land, coast = d["land"], d["coast"]
+    breaks = np.nonzero(np.isnan(land[:, 0]))[0]
+    rings = [r for r in np.split(land, breaks) if len(r) > 3]
+    return [r[~np.isnan(r[:, 0])] for r in rings], coast
+
+
+_OUTLINE = _load_outline()
+
+
+def rgb01(c) -> tuple[float, float, float]:
+    return tuple(float(x) / 255 for x in c)
+
+
+def japan_axes(fig: Figure, rect: tuple[float, float, float, float], *,
+               coast_zorder: float = 0.6) -> Axes:
+    """Axes with the sea, land, coastline, graticule and ticks of the Japan frame.
+
+    Land sits at zorder 0.5. Data drawn above ``coast_zorder`` hides the
+    coastline; a raster layer that covers the land should go below it.
+    """
+    ax = fig.add_axes(rect)
+    ax.set_facecolor(rgb01(SEA_RGB))
+    if _OUTLINE is not None:
+        rings, coast = _OUTLINE
+        ax.add_collection(PolyCollection(rings, facecolors=[rgb01(LAND_RGB)], edgecolors="none",
+                                         zorder=0.5))
+        ax.plot(coast[:, 0], coast[:, 1], color=rgb01(COASTLINE_RGB), linewidth=0.5,
+                zorder=coast_zorder)
+    ax.set_xlim(EXTENT[0], EXTENT[1])
+    ax.set_ylim(EXTENT[2], EXTENT[3])
+    ax.set_aspect(1 / np.cos(np.radians(ASPECT_LAT)))
+    ax.grid(color="#ffffff", linewidth=0.5, alpha=0.35)
+    ax.set_xticks(range(125, 150, 5), [f"{x}°E" for x in range(125, 150, 5)])
+    ax.set_yticks(range(25, 47, 5), [f"{y}°N" for y in range(25, 47, 5)])
+    ax.tick_params(colors=AXIS_FG, labelsize=8, length=0)
+    for s in ax.spines.values():
+        s.set_color(FRAME)
+    return ax

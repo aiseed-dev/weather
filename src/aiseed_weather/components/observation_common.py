@@ -191,25 +191,28 @@ def ResultArea(result: Result):
             logger.exception("Clipboard copy failed")
             set_message(f"コピーに失敗しました: {type(exc).__name__}")
 
-    shown = result.rows[:TABLE_LIMIT]
+    # A figure without a table (the radar map) gets neither the copy button nor the table.
     table = ft.DataTable(
         columns=[ft.DataColumn(ft.Text(h, weight=ft.FontWeight.BOLD)) for h in result.header],
-        rows=[ft.DataRow(cells=[ft.DataCell(ft.Text(c)) for c in r]) for r in shown],
+        rows=[ft.DataRow(cells=[ft.DataCell(ft.Text(c)) for c in r])
+              for r in result.rows[:TABLE_LIMIT]],
         heading_row_height=34, data_row_min_height=26, data_row_max_height=30,
         column_spacing=18,
-    )
+    ) if result.rows else None
     return ft.Column(spacing=8, controls=[
         ft.Text(result.fetched_line, size=11, color=ft.Colors.GREY),
         ft.Row([
             ft.OutlinedButton("PNG で保存", icon=ft.Icons.SAVE_ALT,
                               on_click=lambda _: ft.context.page.run_task(save_png)),
-            ft.OutlinedButton("表をコピー（TSV）", icon=ft.Icons.CONTENT_COPY, on_click=copy_tsv),
+            *([ft.OutlinedButton("表をコピー（TSV）", icon=ft.Icons.CONTENT_COPY,
+                                 on_click=copy_tsv)] if table is not None else []),
             ft.Text(message, size=12, color=ft.Colors.GREY),
         ], wrap=True),
         ft.Image(src=result.png, fit=ft.BoxFit.CONTAIN),
         ft.Text(result.note, size=11, color=ft.Colors.GREY) if result.note
         else ft.Container(height=0),
-        ft.Row([table], scroll=ft.ScrollMode.AUTO),
+        ft.Row([table], scroll=ft.ScrollMode.AUTO) if table is not None
+        else ft.Container(height=0),
         ft.Text(f"表は上位 {TABLE_LIMIT} 行まで表示（コピーは全 {len(result.rows)} 行）",
                 size=11, color=ft.Colors.GREY) if len(result.rows) > TABLE_LIMIT
         else ft.Container(height=0),
