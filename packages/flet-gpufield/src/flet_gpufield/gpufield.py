@@ -50,6 +50,8 @@ class GpuFrame(ft.BaseControl):
 
     - `scalar`: 色で描く量。格子点ごとに RGBA 4 バイト。RG が `vmin`〜`vmax` を 0〜65535 に
       詰めた値（R が上位）、A が 255 なら値あり・0 なら欠測。
+    - `scalar8`: `scalar` の代わりに 1 格子点 1 バイト（0〜255 が `vmin`〜`vmax`、欠測なし）。
+      階級のような粗い値を細かい格子で送るとき（送る量が 4 分の 1）。
     - `wind`: 風の粒子用の u・v。int16 little-endian（0.01 m/s 単位）で u を ny × nx、続けて v。
     - `contours` / `contours_bold`: 等値線。float32 LE の (経度, 緯度) の並び、線の切れ目は NaN。
     - `labels`: 等値線の数値。float32 LE の (経度, 緯度, 値) の並び。
@@ -57,6 +59,7 @@ class GpuFrame(ft.BaseControl):
 
     index: int = 0
     scalar: Optional[bytes] = None
+    scalar8: Optional[bytes] = None
     wind: Optional[bytes] = None
     contours: Optional[bytes] = None
     contours_bold: Optional[bytes] = None

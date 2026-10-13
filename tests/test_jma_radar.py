@@ -135,6 +135,28 @@ def test_mosaic_fetches_once_and_caches(tmp_path, monkeypatch):
         asyncio.run(svc.mosaic(frame, extent, 5))
 
 
+def test_tiles_wholly_outside_the_observed_area_are_not_requested(tmp_path, monkeypatch):
+    monkeypatch.setattr(jr, "MAX_REQUESTS_PER_SECOND", 1000)
+    # Observed only well inside tile (56, 24) of the 2 × 2 at z6 (135–140.6°E, 36.6–41°N).
+    doc = {"features": [{"geometry": {"type": "Polygon", "coordinates": [
+        [[-45, -85], [315, -85], [315, 85], [-45, 85], [-45, -85]],
+        [[137, 38], [139, 38], [139, 39.5], [137, 39.5], [137, 38]]]}}]}
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        if request.url.path.endswith("/data.geojson"):
+            return httpx.Response(200, json=doc)
+        return httpx.Response(200, content=_palette_tile(np.zeros((256, 256), np.uint8)))
+
+    _client_factory(monkeypatch, handler)
+    svc = jr.JmaRadarService(data_dir=tmp_path)
+    m = asyncio.run(svc.mosaic(jr.RadarFrame("20991231235500", "20991231235500"),
+                               (135.0, 141.0, 33.0, 37.0), 6))
+    assert sorted("/".join(p.split("/")[-2:]) for p in seen if p.endswith(".png")) == ["56/24.png"]
+    assert m.tiles == 1 and m.classes.shape == (512, 512)
+
+
 def test_mosaic_with_no_tile_delivered_is_an_error(tmp_path, monkeypatch):
     monkeypatch.setattr(jr, "MAX_REQUESTS_PER_SECOND", 1000)
     _client_factory(monkeypatch, lambda request: httpx.Response(503))

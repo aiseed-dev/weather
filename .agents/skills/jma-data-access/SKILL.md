@@ -84,6 +84,12 @@ JMA publishes radar composites as map tiles plus index files.
   - 256 px Web-Mercator XYZ tiles, times in UTC (`YYYYmmddHHMMSS`)
   - **Only even z carry data**; an odd z, or z ≥ 12, returns a blank tile
   - Palette PNGs in JMA's eight legend colours, transparent where no echo
+  - **A coarser zoom is the maximum of the finer one**: every z6 pixel equals
+    the maximum of its 4 × 4 z8 pixels, every z8 pixel that of its z10 block
+    (100 % of 6,128 and 37,300 pixels, 2026-10-13). Heavy rain grows with
+    each step down: the area of ≥ 10 mm/h against z10 was ×3.0 at z4, ×1.6
+    at z6, ×1.1 at z8. Choose the zoom for accuracy, not only sharpness, and
+    never take a second maximum on top (draw a tile pixel ≈ a display pixel)
 
 All URLs are in `services/jma_endpoints.py`. Pick frames from the index;
 never build a time that the index did not list.
@@ -103,11 +109,15 @@ never build a time that the index did not list.
 - Areas: the whole country or a region (北日本・東日本・西日本・南西諸島),
   `_japan_map.AREAS`, shared by 図 and 動く地図. Each area names the tile
   zoom per mode (`figure_zoom`, `moving_zoom`)
-- 図: z=6 (~2 km, 36 tiles) for the whole country, z=8 (~0.5 km, 30 – 56
-  tiles) for a region. The figure is sized to the area and keeps the
-  AMeDAS map's frame, land and coastline (`japan_axes(extent=…)`)
+- 図: z=6 (~2 km) for the whole country, z=8 (~0.5 km) for a region, drawn
+  at 200 dpi so a tile pixel is about a figure pixel. The figure is sized
+  to the area and keeps the AMeDAS map's frame, land and coastline
+  (`japan_axes(extent=…)`)
+- The frame's no-data GeoJSON comes first; tiles wholly inside it are blank
+  and are not requested (`observed_tiles`): the whole country at z6 is 22
+  tiles instead of 36
 - Requests are paced to **4 per second** across frames, at most 4 in
-  flight; a new figure frame takes 8 – 14 s, one on disk shows at once
+  flight; a new figure frame takes 6 – 14 s, one on disk shows at once
 - The user picks the latest observation (取得), any frame of the past 3 h,
   or the forecast; each pick fetches one frame and nothing else
 - Tiles are decoded to intensity classes 0 (no echo) and 1 … 8 (JMA bins)
@@ -125,11 +135,12 @@ never build a time that the index did not list.
 - Colours are JMA's (`JMA_PRECIP_COLOURS`, shared with the AMeDAS
   precipitation map). Do not invent a new scale; users recognise JMA's
 - 動く地図 (`services/gpu_radar.py`, `components/radar_gpu_panel.py`): every
-  frame of the past 1 or 3 hours and the forecast, on the GPU map. The whole
-  country uses z=4 (~8 km, the tiles JMA's own nationwide animation shows),
-  a region z=6 (~2 km); 4 – 9 tiles a frame plus its no-data GeoJSON,
-  fetched latest observation → forecast → past and shown as they arrive.
-  Classes are drawn with nearest sampling, never interpolated
+  frame of the past 1 or 3 hours and the forecast, on the GPU map, at z=6
+  (~2 km) for every area; 4 – 22 tiles a frame plus its no-data GeoJSON
+  (the whole country's 25 frames ≈ 2.5 min), fetched latest observation →
+  forecast → past and shown as they arrive. Frames go to the GPU as one byte
+  per cell (`GpuFrame.scalar8`; the country is ~1.5 M cells). Classes are
+  drawn with nearest sampling, never interpolated
 
 ## AMeDAS (地上気象観測)
 

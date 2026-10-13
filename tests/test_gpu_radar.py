@@ -10,10 +10,9 @@ from aiseed_weather.services import gpu_radar as gr
 
 def test_grids_match_the_tile_resolution():
     g = gr.area_grid(area("japan"))
-    assert (g.nx, g.ny) == (302, 306)
-    assert abs(g.dlon - 360 / (256 * 16)) < 0.001             # one zoom-4 tile pixel
-    w = gr.area_grid(area("west"))
-    assert abs(w.dlon - 360 / (256 * 64)) < 0.0005            # one zoom-6 tile pixel
+    assert (g.nx, g.ny) == (1206, 1222)
+    for a in ("japan", "west"):
+        assert abs(gr.area_grid(area(a)).dlon - 360 / (256 * 64)) < 0.0005   # one zoom-6 pixel
     assert g.lon0 == EXTENT[0] + g.dlon / 2 and g.lat0 == EXTENT[3] - g.dlat / 2
 
 
@@ -34,12 +33,11 @@ def test_pack_frame_stores_the_class_and_marks_no_data():
     # No data everywhere except the observed hole x 0 … 5, y 0 … 10.
     world = np.array([[-45, -85], [315, -85], [315, 85], [-45, 85], [-45, -85]], float)
     hole = np.array([[0, 0], [5, 0], [5, 10], [0, 10], [0, 0]], float)
-    rgba = np.frombuffer(gr.pack_frame(classes, lons, lats, grid, ((world, hole),)),
-                         np.uint8).reshape(10, 10, 4)
-    level = np.rint((rgba[..., 0].astype(int) * 256 + rgba[..., 1]) / 65535 * gr.N_LEVELS)
+    packed = gr.pack_frame(classes, lons, lats, grid, ((world, hole),))
+    assert len(packed) == 100                                  # one byte a cell (scalar8)
+    level = np.rint(np.frombuffer(packed, np.uint8).reshape(10, 10) / 255 * gr.N_LEVELS)
     assert np.array_equal(level[:, :5], classes[:, :5])
     assert (level[:, 5:] == gr.NO_DATA).all()
-    assert (rgba[..., 3] == 255).all()
 
 
 def test_lut_draws_jma_colours_and_the_no_data_veil():

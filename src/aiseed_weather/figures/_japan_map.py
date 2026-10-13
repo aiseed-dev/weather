@@ -46,9 +46,11 @@ JMA_PRECIP_LABELS = ("〜1", "1〜5", "5〜10", "10〜20", "20〜30", "30〜50",
 class JapanArea:
     """A part of the frame, and the JMA radar tile zoom each nowcast view uses there.
 
-    ``figure_zoom``: a tile pixel about the size of a figure pixel (~2 km for
-    the whole country, ~0.5 km for a region). ``moving_zoom``: 4 – 9 tiles a
-    frame, so a whole loop for the 動く地図 arrives within a minute.
+    JMA builds each lower zoom as the maximum of the pixels below it, so the
+    zoom sets how much heavy rain is inflated, not only how sharp it looks.
+    ``figure_zoom``: a tile pixel about the size of a figure pixel at 200 dpi
+    (~2 km for the whole country, ~0.5 km for a region). ``moving_zoom``:
+    ~2 km on the GPU map, where the whole country is 22 tiles a frame.
     """
 
     key: str
@@ -64,7 +66,7 @@ class JapanArea:
 
 # Regions stay inside the frame, whose outline the land and coastline come from.
 AREAS = (
-    JapanArea("japan", "全国", EXTENT, figure_zoom=6, moving_zoom=4),
+    JapanArea("japan", "全国", EXTENT, figure_zoom=6, moving_zoom=6),
     JapanArea("north", "北日本", (138.5, 146.5, 38.5, 45.8), figure_zoom=8, moving_zoom=6),
     JapanArea("east", "東日本", (135.0, 142.5, 33.8, 39.5), figure_zoom=8, moving_zoom=6),
     JapanArea("west", "西日本", (129.0, 136.4, 31.0, 36.5), figure_zoom=8, moving_zoom=6),

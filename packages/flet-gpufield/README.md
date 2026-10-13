@@ -33,7 +33,8 @@ GpuField(
 時刻は `GpuFrame` を足していき、`step` を変えるだけで切り替える。
 
 値が階級（レーダーの降水強度など）のときは `sampling="nearest"` で補間せずに塗り、
-`classes=["", "〜1", "1〜5", …]` で読み取りに階級の名前を出す。風の無い量は
+`classes=["", "〜1", "1〜5", …]` で読み取りに階級の名前を出す。細かい格子の階級は
+`GpuFrame(scalar8=…)`（1 格子点 1 バイト）で送ると RGBA の 4 分の 1 で済む。風の無い量は
 `show_particles=False, particles=0`。
 
 ## 実行環境

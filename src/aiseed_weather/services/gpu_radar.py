@@ -13,11 +13,11 @@ classes are categories, and interpolating between them would draw
 intensities that were never observed.
 
 Areas and their tile zooms are ``_japan_map.AREAS`` (``moving_zoom``):
-the whole country uses zoom-4 tiles (~8 km), the ones JMA's own
-nationwide animation shows; a region uses zoom-6 tiles (~2 km). Either
-way a frame is 4 – 9 tiles, so the past hour and the hour ahead
-(25 frames) arrive in under a minute at the four requests a second JMA
-is asked for.
+zoom-6 tiles (~2 km) everywhere. JMA builds each lower zoom as the
+maximum of the 4 × 4 pixels below it, so a coarser zoom inflates heavy
+rain (zoom 4 tripled the area of ≥ 10 mm/h against zoom 10). A frame is
+one byte per cell (``GpuFrame.scalar8``): the whole country is ~1.5 M
+cells, which as 16-bit RGBA would be 6 MB a frame.
 """
 
 from __future__ import annotations
@@ -85,19 +85,14 @@ def area_grid(area: JapanArea) -> RadarGrid:
 
 def pack_frame(classes: np.ndarray, lons: np.ndarray, lats: np.ndarray,
                grid: RadarGrid, no_data=None) -> bytes:
-    """One frame as the field's RGBA: value k is k / 9 of the 16-bit range.
+    """One frame for ``GpuFrame.scalar8``: one byte per cell, value k as k / 9 of 255.
 
     ``no_data`` is JMA's no-data area (polygons of (lon, lat) rings), or None.
     """
     cells = resample_to_frame(classes, lons, lats, grid.extent, grid.nx, grid.ny)
     if no_data is not None:
         cells[no_data_mask(no_data, grid.extent, grid.nx, grid.ny)] = NO_DATA
-    q = cells.astype(np.uint32) * 65535 // N_LEVELS
-    rgba = np.zeros(cells.shape + (4,), np.uint8)
-    rgba[..., 0] = q >> 8
-    rgba[..., 1] = q & 255
-    rgba[..., 3] = 255
-    return rgba.tobytes()
+    return np.rint(cells.astype(np.float32) * (255.0 / N_LEVELS)).astype(np.uint8).tobytes()
 
 
 def lut_rgba() -> bytes:

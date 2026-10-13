@@ -34,7 +34,7 @@ from typing import Callable
 
 import httpx
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from aiseed_weather.services import jma_endpoints
 
@@ -114,7 +114,7 @@ class RadarMosaic:
     x0: int
     y0: int
     classes: np.ndarray
-    tiles: int
+    tiles: int              # tiles requested (those wholly in the no-data area are not)
     missing: int            # tiles JMA did not deliver (drawn as no echo)
     fetched_at: datetime
     # JMA's no-data area: polygons, each (exterior, hole, …) as (lon, lat)
@@ -188,6 +188,42 @@ def parse_no_data(doc: dict) -> tuple[tuple[np.ndarray, ...], ...]:
         for rings in parts:
             polygons.append(tuple(np.asarray(r, dtype=np.float64)[:, :2] for r in rings if len(r) >= 3))
     return tuple(polygons)
+
+
+def observed_tiles(no_data, x0: int, x1: int, y0: int, y1: int, zoom: int,
+                   samples: int = 16) -> set[tuple[int, int]]:
+    """Tiles of the range that reach into the observed area.
+
+    The rest lie wholly in JMA's no-data area and are blank, so they need no
+    request. The polygons are drawn in tile space, ``samples`` points per
+    tile side, and the observed area is grown by one sample so a tile the
+    coverage edge barely touches is still fetched.
+    """
+    n = 2 ** zoom
+    width, height = (x1 - x0 + 1) * samples, (y1 - y0 + 1) * samples
+
+    def to_xy(ring: np.ndarray) -> list[tuple[float, float]]:
+        s = np.sin(np.radians(np.clip(ring[:, 1], -85.05, 85.05)))
+        x = (ring[:, 0] + 180.0) / 360.0 * n * samples - x0 * samples - 0.5
+        y = (0.5 - np.log((1 + s) / (1 - s)) / (4 * np.pi)) * n * samples - y0 * samples - 0.5
+        return list(zip(x.tolist(), y.tolist()))
+
+    unobserved = np.zeros((height, width), bool)
+    for rings in no_data:
+        inside = np.zeros((height, width), bool)
+        for ring in rings:
+            img = Image.new("1", (width, height), 0)
+            ImageDraw.Draw(img).polygon(to_xy(ring), fill=1)
+            inside ^= np.asarray(img, bool)
+        unobserved |= inside
+    observed = ~unobserved
+    grown = observed.copy()
+    grown[1:] |= observed[:-1]
+    grown[:-1] |= observed[1:]
+    grown[:, 1:] |= observed[:, :-1]
+    grown[:, :-1] |= observed[:, 1:]
+    blocks = grown.reshape(y1 - y0 + 1, samples, x1 - x0 + 1, samples).any(axis=(1, 3))
+    return {(x0 + int(c), y0 + int(r)) for r, c in zip(*np.nonzero(blocks))}
 
 
 def _assemble(blobs: dict[tuple[int, int], bytes | None],
@@ -288,15 +324,22 @@ class JmaRadarService:
                      on_progress: Callable[[int, int], None] | None = None) -> RadarMosaic:
         """Intensity classes of one frame over ``extent`` at ``zoom``.
 
-        Tiles already on disk are not fetched again. ``on_progress(done,
-        total)`` is called as tiles arrive.
+        The frame's no-data area comes first: tiles wholly inside it are
+        blank and are not requested. Tiles already on disk are not fetched
+        again. ``on_progress(done, total)`` is called as tiles arrive.
         """
         if zoom % 2:
             raise ValueError(f"JMA radar tiles carry data only at even zoom levels, not {zoom}")
         async with self._tile_lock:
             await asyncio.to_thread(self._prune)
             x0, x1, y0, y1 = tile_range(extent, zoom)
+            no_data_doc = await self._no_data_doc(frame)
+            no_data = (await asyncio.to_thread(parse_no_data, no_data_doc)
+                       if no_data_doc is not None else None)
             coords = [(x, y) for y in range(y0, y1 + 1) for x in range(x0, x1 + 1)]
+            if no_data:
+                observed = await asyncio.to_thread(observed_tiles, no_data, x0, x1, y0, y1, zoom)
+                coords = [c for c in coords if c in observed]
             frame_dir = self._cache_dir / frame.basetime / frame.validtime / str(zoom)
             blobs: dict[tuple[int, int], bytes | None] = {}
             todo = []
@@ -338,13 +381,10 @@ class JmaRadarService:
 
                     await asyncio.gather(*(fetch_tile(x, y) for x, y in todo))
             missing = sum(1 for v in blobs.values() if v is None)
-            if missing == len(coords):
+            if coords and missing == len(coords):
                 raise RuntimeError(f"JMA delivered none of the {len(coords)} radar tiles "
                                    f"for {frame.validtime} UTC")
-            no_data_doc = await self._no_data_doc(frame)
-            classes, no_data = await asyncio.to_thread(
-                lambda: (_assemble(blobs, x0, x1, y0, y1),
-                         parse_no_data(no_data_doc) if no_data_doc is not None else None))
+            classes = await asyncio.to_thread(_assemble, blobs, x0, x1, y0, y1)
         return RadarMosaic(frame=frame, zoom=zoom, x0=x0, y0=y0, classes=classes,
                            tiles=len(coords), missing=missing, fetched_at=datetime.now(UTC),
                            no_data=no_data)

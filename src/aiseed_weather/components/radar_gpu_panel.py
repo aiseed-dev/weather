@@ -97,7 +97,7 @@ def RadarGpuPanel(area_key: str, frames: tuple, step: int, status_text: str):
         vmin=0.0, vmax=float(gpu_radar.N_LEVELS), lut=static["lut"],
         base=static["base"], coast=static["coast"],
         sampling="nearest", classes=list(gpu_radar.CLASS_LABELS),
-        frames=[GpuFrame(key=key, index=i, scalar=data) for i, key, data in frames],
+        frames=[GpuFrame(key=key, index=i, scalar8=data) for i, key, data in frames],
         step=step,
         particles=0, show_particles=False,
         attribution=jma_endpoints.ATTRIBUTION_PROCESSED_INLINE,

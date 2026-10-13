@@ -8,16 +8,20 @@ another time, or switches 図 / 動く地図 (parameter changes — see the
 `user-action-fetch` skill). JMA is asked for at most four tiles a second.
 
 The area — the whole country or a region (``_japan_map.AREAS``) — is
-shared by both modes; each has its own tile zoom:
+shared by both modes; each has its own tile zoom. JMA builds a coarser
+zoom as the maximum of the pixels below it, so the zoom decides how far
+heavy rain is inflated; tiles wholly outside the radars' range are not
+requested.
 
-- 図: one frame as the exportable figure; zoom 6 (~2 km, 36 tiles) for the
-  whole country, zoom 8 (~0.5 km, 30 – 56 tiles) for a region — 8 to 14
-  seconds for a frame not on disk yet.
+- 図: one frame as the exportable figure, drawn at 200 dpi so a tile pixel
+  is about a figure pixel (no second maximum on top of JMA's); zoom 6
+  (~2 km, ~22 tiles) for the whole country, zoom 8 (~0.5 km, 30 – 54
+  tiles) for a region — 6 to 14 seconds for a frame not on disk yet.
 - 動く地図: every frame of the past hour (or three) and the hour ahead on
-  the GPU (``radar_gpu_panel``); zoom 4 (~8 km, the tiles JMA's nationwide
-  animation uses) for the whole country, zoom 6 (~2 km) for a region,
-  4 – 9 tiles a frame. Frames appear as they arrive, the latest
-  observation first; play steps through them.
+  the GPU (``radar_gpu_panel``) at zoom 6 (~2 km): 4 – 22 tiles a frame,
+  so the whole country's 25 frames take about two and a half minutes.
+  Frames appear as they arrive, the latest observation first; play steps
+  through them.
 
 Where JMA has no data (outside the radars' range, or a radar down) both
 modes veil the map, so "not observed" never reads as "no rain".
@@ -55,7 +59,10 @@ from aiseed_weather.services.jma_radar_service import (
 
 logger = logging.getLogger(__name__)
 
-SCREEN_DPI = 100
+# A zoom-6 tile pixel across the country, or a zoom-8 one across a region, is
+# about one figure pixel at 200 dpi; at 100 dpi two would merge into their
+# maximum, on top of the maximum JMA already took.
+SCREEN_DPI = 200
 PLAY_INTERVAL_SEC = 0.5
 PAST_HOURS = (("1", "過去 1 時間"), ("3", "過去 3 時間"))
 
@@ -71,8 +78,8 @@ class RadarFigure:
 
     def render(self, dpi: int) -> bytes:
         m, a = self.mosaic, self.area
-        note = (f"ズーム {m.zoom} のタイル（約 {_km(m.zoom, a)} km）を、"
-                "図の画素ごとに最も強い値で表示。")
+        note = (f"ズーム {m.zoom} のタイル（約 {_km(m.zoom, a)} km。気象庁が細かい画素の"
+                "最大値で作るので、強い雨はやや広めに出る）。")
         if m.missing:
             note += f"{m.missing}/{m.tiles} 枚のタイルが取得できず、その範囲は空白。"
         return render_radar_map(m.classes, m.lons(), m.lats(), valid=m.frame.valid,
@@ -308,8 +315,9 @@ def RadarView(settings: UserSettings):
     idle_text = ("気象庁の高解像度降水ナウキャストを、日本全体か地方の図にします。最新の観測のほか、"
                  "過去 3 時間（5 分ごと）と 1 時間先までの予測を選べます。"
                  if mode == "figure" else
-                 "過去の観測と 1 時間先までの予測を、動く地図でコマ送り・再生します。"
-                 "全国は約 8 km、地方は約 2 km のタイルで、1 コマ 4〜9 枚を取得します。")
+                 "過去の観測と 1 時間先までの予測を、約 2 km の動く地図でコマ送り・再生します。"
+                 "1 コマに地図タイル 4〜22 枚。全国の 25 コマは 2 分半ほどかかり、"
+                 "届いたコマから表示します。")
     footer = ft.Text(f"{jma_endpoints.ATTRIBUTION}。高解像度降水ナウキャストの地図タイルを"
                      "取得して編集・加工しています。", size=10, color=ft.Colors.GREY)
     header = ft.Text("降水ナウキャスト / Nowcast (JMA)", size=18, weight=ft.FontWeight.BOLD)

@@ -50,19 +50,37 @@ class _Grid {
   }
 }
 
-/// 1 時刻分のデータ。値は 16 bit に詰めた RGBA（シェーダーへそのまま渡す）、
+/// 1 時刻分のデータ。値は 16 bit に詰めた RGBA（シェーダーへそのまま渡す）か、
+/// 1 格子点 1 バイト（u8。細かい格子の階級をそのまま送ると RGBA の 4 分の 1 で済む）。
 /// 風は int16（0.01 m/s 単位）の u・v。
 class _Frame {
-  _Frame(this.rgba, this.u, this.v, this.contours, this.bold, this.labels);
+  _Frame(this.rgba, this.u8, this.u, this.v, this.contours, this.bold, this.labels);
 
-  final Uint8List rgba;
+  final Uint8List? rgba, u8;
   final Int16List? u, v;
   final Float32List? contours, bold, labels;
 
   /// その格子点の値（0〜1）。欠測は NaN。
   double q(int k) {
-    if (rgba[k * 4 + 3] < 128) return double.nan;
-    return (rgba[k * 4] * 256 + rgba[k * 4 + 1]) / 65535.0;
+    final b = u8;
+    if (b != null) return b[k] / 255.0;
+    final c = rgba!;
+    if (c[k * 4 + 3] < 128) return double.nan;
+    return (c[k * 4] * 256 + c[k * 4 + 1]) / 65535.0;
+  }
+
+  /// シェーダーに渡す RGBA。1 バイトの値 b は 16 bit の b × 257（= b / 255）にする。
+  /// GPU に置く時刻だけ作る（全時刻を RGBA で持つと、細かい格子では数百 MB になる）。
+  Uint8List shaderRgba() {
+    final b = u8;
+    if (b == null) return rgba!;
+    final out = Uint8List(b.length * 4);
+    for (var k = 0; k < b.length; k++) {
+      out[k * 4] = b[k];
+      out[k * 4 + 1] = b[k];
+      out[k * 4 + 3] = 255;
+    }
+    return out;
   }
 }
 
@@ -457,17 +475,20 @@ class _GpuFieldState extends State<GpuFieldControl>
       // （-1 にしていたら、0 番の時刻だけ届かないことになっていた）
       final idx = f.getInt("index", 0)!;
       seen.add(idx);
-      final scalar = f.get("scalar");
-      if (identical(scalar, _frameSrc[idx]) && _frames.containsKey(idx)) continue;
-      if (scalar is! Uint8List || scalar.lengthInBytes < m * 4) continue;
-      _frameSrc[idx] = scalar;
+      final scalar = f.get("scalar"), scalar8 = f.get("scalar8");
+      final src = scalar8 is Uint8List ? scalar8 : scalar;
+      if (identical(src, _frameSrc[idx]) && _frames.containsKey(idx)) continue;
+      final rgba = scalar is Uint8List && scalar.lengthInBytes >= m * 4 ? scalar : null;
+      final u8 = scalar8 is Uint8List && scalar8.lengthInBytes >= m ? scalar8 : null;
+      if (rgba == null && u8 == null) continue;
+      _frameSrc[idx] = src;
       final wind = f.get("wind");
       Int16List? u, v;
       if (wind is Uint8List) {
         u = _int16s(wind, 0, m);
         v = _int16s(wind, m * 2, m);
       }
-      _frames[idx] = _Frame(scalar, u, v, _floats(f.get("contours")),
+      _frames[idx] = _Frame(u8 == null ? rgba : null, u8, u, v, _floats(f.get("contours")),
           _floats(f.get("contours_bold")), _floats(f.get("labels")));
       _evict(idx);
       if (idx == _shown) _shown = -1;
@@ -503,7 +524,7 @@ class _GpuFieldState extends State<GpuFieldControl>
     }
     _pending.add(idx);
     final sw = Stopwatch()..start();
-    _image(f.rgba, grid.nx, grid.ny).then((img) {
+    _image(f.shaderRgba(), grid.nx, grid.ny).then((img) {
       _pending.remove(idx);
       if (!mounted || !identical(_frames[idx], f)) {
         img.dispose();
