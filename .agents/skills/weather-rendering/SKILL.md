@@ -28,6 +28,26 @@ charts.
   and return an image. Apart from `canvas_timeseries.py`, which builds
   canvas shapes, modules in `figures/` do not import Flet.
 
+## Interactive map (GPU, "動く地図")
+
+The map view has two modes: 図 (the PNG figure path below — the exportable
+product) and 動く地図, drawn on the GPU by the `flet-gpufield` extension
+(`packages/flet-gpufield/`, data from `services/gpu_frames.py`, panel in
+`components/gpu_map_panel.py`). Rules that keep the two consistent:
+
+- Values, palettes, transparency, dry cutoff and isoline intervals come from
+  the same `ChartSpec`; `gpu_frames` runs the spec's extractor, so a step has
+  the same values and colours in both modes. Change a palette in
+  `_chart_specs.py`, not in the GPU code.
+- The GPU view never fetches; it reads cached GRIBs / packs and skips missing
+  steps. Steps are sent once as `GpuFrame` children; switching is by index.
+- A Dart / shader change needs the client rebuilt (`tools/build_client.sh`).
+- Flet does not send properties left at their default, so the Dart side's
+  defaults must equal the Python field defaults (a -1 vs 0 mismatch once hid
+  step 0).
+
+See `docs/gpu-map.md` for the architecture and the measured costs.
+
 ## Projections
 
 Regions and their projections are defined in `figures/regions.py`:

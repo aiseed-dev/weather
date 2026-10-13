@@ -1,10 +1,2 @@
-data/
-build/
-__pycache__/
-*.pyc
-app/src/data/
-app/build/
-build_*.log
-build_*.time
 # リポジトリ直下の .gitignore の lib/ から、Flutter の部品のソースを戻す
 !flet-gpufield/src/flutter/flet_gpufield/lib/

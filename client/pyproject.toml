@@ -1,0 +1,22 @@
+[project]
+name = "aiseed-weather-client"
+version = "0.1.0"
+description = "AIseed Weather の動く地図（flet-gpufield）入りの Flet 実行環境"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+dependencies = [
+    "flet==1.0.4",
+    "flet-gpufield",
+]
+
+[tool.flet]
+org = "dev.aiseed"
+product = "AIseed Weather"
+company = "AIseed"
+copyright = "Copyright (c) 2026 Yasuhiro"
+
+[tool.flet.app]
+path = "src"
+
+[tool.flet.dev_packages]
+flet-gpufield = "../packages/flet-gpufield"

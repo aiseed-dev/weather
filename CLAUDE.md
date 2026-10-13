@@ -54,6 +54,9 @@ data infrastructure (deb2 + Cloudflare). Their docs are indexed in
 - Processing: xarray + cfgrib (GRIB2), numpy
 - Map rendering: numpy + PIL + contourpy (`figures/_layered_renderer.py`).
   cartopy is used only to precompute coastline masks
+- Interactive map ("動く地図"): the `flet-gpufield` Flet extension draws on the
+  GPU (shader + wind particles); data from `services/gpu_frames.py`. Needs the
+  client built by `tools/build_client.sh` (see `docs/gpu-map.md`)
 - Point-forecast chart: `flet.canvas` on screen, matplotlib for the PNG download
 - Export: planned (see the `figure-export` skill)
 - Packaging: **Miniforge / conda-forge** (not uv) — required for cartopy + cfgrib

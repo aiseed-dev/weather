@@ -37,6 +37,7 @@ from aiseed_weather.figures.regions import (
     custom_region,
 )
 from aiseed_weather.figures.render_pool import render_layer, render_layer_in_pool
+from aiseed_weather.components.gpu_map_panel import GpuMapPanel
 from aiseed_weather.models.user_settings import UserSettings
 from aiseed_weather.products.catalog import (
     CATEGORY_LABELS,
@@ -789,6 +790,9 @@ def MapView(settings: UserSettings, fetch=None):
     # top (Windy-style). For now only MSL isobars are supported;
     # gh@500 isohypsae and 10m wind arrows are planned.
     msl_overlay, set_msl_overlay = ft.use_state(False)
+    # 「図」（PNG を描いて表示）か「動く地図」（GPU で描く。拡大・移動・風の粒子）。
+    # 周期・地域・層・時刻の選び方は共通で、表示の部品だけを替える。
+    view_mode, set_view_mode = ft.use_state("figure")  # figure | gpu
 
     # Fetch confirmation dialog state — surfaces from "取得開始" and
     # "更新" so the user explicitly acknowledges the (multi-minute)
@@ -1675,6 +1679,15 @@ def MapView(settings: UserSettings, fetch=None):
         except ValueError:
             return
         next_step = step_options[(idx + 1) % len(step_options)]
+        if view_mode == "gpu":
+            # 動く地図は全時刻を部品が持っていて、番号を変えるだけで切り替わる。
+            # PNG を描く必要は無い（描くと CPU を無駄に使う）
+            set_step_hours(next_step)
+            set_run_label(
+                f"{run_time_holder:%Y%m%d %Hz} IFS · {_step_label(next_step)}"
+                if run_time_holder else _step_label(next_step)
+            )
+            return
         next_png = _get_frame(next_step)
         if next_png is None:
             # Missing frame — try lazy render then carry on; if still
@@ -1694,7 +1707,7 @@ def MapView(settings: UserSettings, fetch=None):
         # effect with a fresh closure and schedules the next tick. Pausing
         # flips is_playing → the next setup returns without scheduling and
         # the chain terminates.
-        if not is_playing or state != "ready":
+        if not is_playing or (state != "ready" and view_mode != "gpu"):
             return
         anim_task_ref["task"] = ft.context.page.run_task(_advance_one_frame)
 
@@ -1718,11 +1731,13 @@ def MapView(settings: UserSettings, fetch=None):
     # dict cleared elsewhere; this kicks the rendering for the visible
     # step from disk if it's there. No-op if the GRIB isn't downloaded.
     def _maybe_render_visible():
+        if view_mode == "gpu":
+            return
         ft.context.page.run_task(_ensure_rendered, step_hours)
 
     ft.use_effect(
         _maybe_render_visible,
-        [step_hours, region, data_field_key, primary_cycle],
+        [step_hours, region, data_field_key, primary_cycle, view_mode],
     )
 
     # Start the drainer once at mount and keep it alive for the
@@ -1755,8 +1770,11 @@ def MapView(settings: UserSettings, fetch=None):
     # changes or the component unmounts, so we don't leak a thread
     # churning on a stale cycle.
     def _kick_bg():
+        # 動く地図の間は PNG を先に描いておく必要が無い（CPU を空ける）。図に戻すと再開する
+        if view_mode == "gpu":
+            return
         _start_bg_precompute()
-    ft.use_effect(_kick_bg, [primary_cycle], _stop_bg_precompute)
+    ft.use_effect(_kick_bg, [primary_cycle, view_mode], _stop_bg_precompute)
 
     # On mount: probe only the most recent few cycles so the bootstrap
     # can lock onto the latest published base time. Full dialog probe
@@ -3147,7 +3165,8 @@ def MapView(settings: UserSettings, fetch=None):
     )
 
     # ----- Main: chart area depending on state -----
-    if state == "idle":
+    gpu_mode = view_mode == "gpu" and primary_cycle is not None and bool(step_options)
+    if state == "idle" and not gpu_mode:
         # Context-aware placeholder. When GRIBs are already on disk for
         # this cycle, the user has nothing left to do — they're waiting
         # for a render. When nothing is on disk, point them at Fetch.
@@ -3184,7 +3203,7 @@ def MapView(settings: UserSettings, fetch=None):
                 controls=idle_controls,
             ),
         )
-    elif state == "loading" and not has_image:
+    elif state == "loading" and not has_image and not gpu_mode:
         # Very first fetch — no chart to show yet.
         main_area = ft.Container(
             alignment=ft.Alignment.CENTER,
@@ -3197,7 +3216,7 @@ def MapView(settings: UserSettings, fetch=None):
                 ],
             ),
         )
-    elif state == "error":
+    elif state == "error" and not gpu_mode:
         main_area = ft.Container(
             alignment=ft.Alignment.CENTER,
             content=ft.Column(
@@ -3270,10 +3289,25 @@ def MapView(settings: UserSettings, fetch=None):
                     ),
                 ),
                 ft.Container(
-                    content=ft.Image(
-                        src=image_bytes,
-                        fit=ft.BoxFit.CONTAIN,
-                        expand=True,
+                    content=(
+                        GpuMapPanel(
+                            settings=settings,
+                            plan=tuple(stitch_plan),
+                            region=region,
+                            layer_key=data_field_key,
+                            step_hours=step_hours,
+                            msl_overlay=msl_overlay,
+                            attribution=(
+                                f"ECMWF IFS {primary_cycle:%Y-%m-%d %H}Z +{step_hours}h  "
+                                "Data: ECMWF Open Data (CC-BY-4.0)"
+                            ),
+                        )
+                        if gpu_mode else
+                        ft.Image(
+                            src=image_bytes,
+                            fit=ft.BoxFit.CONTAIN,
+                            expand=True,
+                        )
                     ),
                     expand=True,
                 ),
@@ -3285,6 +3319,34 @@ def MapView(settings: UserSettings, fetch=None):
                 ),
             ],
         )
+
+    # 図 / 動く地図 の切り替え（どの状態でも出す。図がまだ無くても動く地図は見られる）
+    mode_toggle = ft.Container(
+        padding=ft.Padding.only(left=16, right=16, top=8),
+        content=ft.Row(
+            spacing=12,
+            controls=[
+                ft.SegmentedButton(
+                    segments=[
+                        ft.Segment(value="figure", label=ft.Text("図")),
+                        ft.Segment(value="gpu", label=ft.Text("動く地図")),
+                    ],
+                    selected=[view_mode],
+                    on_change=lambda e: set_view_mode(e.control.selected[0]),
+                ),
+                ft.Text(
+                    "拡大はホイール、移動はドラッグ。風の粒子は 10m（上空の層はその高さ）の風",
+                    size=11, color=ft.Colors.GREY,
+                    visible=view_mode == "gpu",
+                ),
+            ],
+        ),
+    )
+    main_area = ft.Column(
+        expand=True,
+        spacing=0,
+        controls=[mode_toggle, ft.Container(content=main_area, expand=True)],
+    )
 
     # ----- Bottom: status bar -----
     if state == "error":

@@ -72,3 +72,6 @@ dependencies:
   - pip
   - pip:
       - flet[all]>=0.85
+      # 動く地図（GPU 描画）の部品。Flutter 側を含むので、実行環境は
+      # tools/build_client.sh で build/linux に作る（packages/flet-gpufield/README.md）
+      - -e ./packages/flet-gpufield

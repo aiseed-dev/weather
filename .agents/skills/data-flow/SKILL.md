@@ -82,6 +82,14 @@ Renderers are pure: same (grib, region, layer) → same bytes. The
 caller decides which file to open (sfc vs pl) and whether the result
 goes into the memory cache, the visible image, or both.
 
+### GPU map view (services/gpu_frames + components/gpu_map_panel)
+
+The 動く地図 mode reads the same cached files as the renderers but does not
+go through `decode_kind` for bulk GRIBs: it scans the GRIB with eccodes
+`headers_only` (cached per file) and decodes only the messages the layer
+needs (~7 ms each; cfgrib costs 0.2–1.6 s per open). Mirror packs (.nc) do go
+through `decode_kind`. Like the renderers, it never triggers a download.
+
 ### UI (components/map_view)
 
 State that drives a render:

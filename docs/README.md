@@ -44,6 +44,7 @@ R2 は地点別 10 分値の収集先（Worker が置く。非公開・30 日で
 | [forecast-spec.md](forecast-spec.md) | アプリが読む数値予報パックの仕様 |
 | [forecast-distribution.md](forecast-distribution.md) | 予報パックの配信設計 |
 | [forecast-charts.md](forecast-charts.md) | 予報図の描画 |
+| [gpu-map.md](gpu-map.md) | 地図画面の「動く地図」（GPU 描画・風の粒子）。部品・実行環境・速さ |
 
 利用者向けの文書は **Web が載せる**: `/App/`（紹介）と `/App/Develop/`
 （開発マニュアル）。テンプレートは

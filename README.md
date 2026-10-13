@@ -174,6 +174,15 @@ flet run -r
 `pyproject.toml` の `[tool.flet.app] path` 設定により、`flet run` はプロジェクト
 ルートから `src/aiseed_weather/main.py` を自動的に見つけます。
 
+地図画面の「動く地図」（GPU で描く。拡大・移動・風の粒子）を使うには、部品入りの
+Flet 実行環境を一度だけ作ります（約 1 分。`build/linux` に置かれ、`flet run` が使います）:
+
+```bash
+tools/build_client.sh
+```
+
+詳しくは [docs/gpu-map.md](docs/gpu-map.md)。
+
 ### JupyterLab で解析する
 
 サンプルノートブックが `notebooks/` に同梱されています ― ECMWF GRIB2 の
