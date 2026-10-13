@@ -260,6 +260,17 @@ What stays out of a ref:
 - Direct control mutation: `control.value = x`, `dialog.open = True`,
   `nav.selected_index = i` — always derive from state instead
 
+## Flet version drift
+
+Flet renames and removes names between releases. 1.0 removed
+`ft.Colors.BLACK26` (now `BLACK_26`) and `page.set_clipboard` (now
+`await ft.Clipboard().set(text)` in an async handler). A missing name
+in a component body freezes the screen with no log line: Flet's update
+loop stops on the render exception and never logs it.
+`tests/test_flet_api_names.py` checks every `ft.*` name and keyword
+argument in `src/` against the installed Flet. Run it after the Flet
+version changes.
+
 ## When uncertain
 
 If a Flet API seems to require imperative style, treat it as a sign to

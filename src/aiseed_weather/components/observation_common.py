@@ -183,9 +183,9 @@ def ResultArea(result: Result):
             logger.exception("Observation PNG export failed")
             set_message(f"保存に失敗しました: {type(exc).__name__}: {exc}")
 
-    def copy_tsv(_e):
+    async def copy_tsv(_e):
         try:
-            ft.context.page.set_clipboard(result.tsv())
+            await ft.Clipboard().set(result.tsv())
             set_message(f"コピーしました（{len(result.rows)} 行・TSV）")
         except Exception as exc:
             logger.exception("Clipboard copy failed")

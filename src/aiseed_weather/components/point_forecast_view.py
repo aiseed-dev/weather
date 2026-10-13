@@ -378,7 +378,7 @@ def _forecast_summary_strip(
                 spacing=2,
             ),
             padding=ft.Padding.all(8),
-            border=ft.Border.all(width=1, color=ft.Colors.BLACK26),
+            border=ft.Border.all(width=1, color=ft.Colors.BLACK_26),
             border_radius=6,
             width=92,
         ))
@@ -515,7 +515,7 @@ def _hourly_forecast_strip(
                 spacing=1,
             ),
             padding=ft.Padding.symmetric(horizontal=2, vertical=4),
-            border=ft.Border.all(width=1, color=ft.Colors.BLACK12),
+            border=ft.Border.all(width=1, color=ft.Colors.BLACK_12),
             border_radius=4,
             width=50,
         ))
@@ -621,7 +621,7 @@ def _amedas_card(
             ),
         ], spacing=4),
         padding=ft.Padding.all(10),
-        border=ft.Border.all(width=1, color=ft.Colors.BLACK26),
+        border=ft.Border.all(width=1, color=ft.Colors.BLACK_26),
         border_radius=6,
     )
 
@@ -709,7 +709,7 @@ def _jma_forecast_card(forecast) -> ft.Control:
                 spacing=1,
             ),
             padding=ft.Padding.all(6),
-            border=ft.Border.all(width=1, color=ft.Colors.BLACK12),
+            border=ft.Border.all(width=1, color=ft.Colors.BLACK_12),
             border_radius=4,
             width=72,
         ))
@@ -741,7 +741,7 @@ def _jma_forecast_card(forecast) -> ft.Control:
             ),
         ], spacing=6),
         padding=ft.Padding.all(10),
-        border=ft.Border.all(width=1, color=ft.Colors.BLACK26),
+        border=ft.Border.all(width=1, color=ft.Colors.BLACK_26),
         border_radius=6,
     )
 
@@ -1118,7 +1118,7 @@ def PointForecastView(settings: UserSettings):
     def on_download_click(_e):
         ft.context.page.run_task(_save_chart_png)
 
-    def on_copy_hourly(_e):
+    async def on_copy_hourly(_e):
         """Copy the HRES hourly forecast as TSV. The user said the
         on-screen hourly table can go away as long as the data is
         copy-able, so this is its replacement — paste into Excel /
@@ -1129,7 +1129,7 @@ def PointForecastView(settings: UserSettings):
         if not text:
             return
         try:
-            ft.context.page.set_clipboard(text)
+            await ft.Clipboard().set(text)
             set_copy_msg(
                 f"コピー済 ({forecast_data.hres_df.height} 行)",
             )

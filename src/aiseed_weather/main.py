@@ -40,6 +40,16 @@ from aiseed_weather.models.user_settings import (
 _DEFAULT_WIDTH = 1400
 _DEFAULT_HEIGHT = 900
 
+# WindowEvent.type arrives as the enum, not its string value, so a
+# comparison against "resize" etc. never matches and nothing is saved.
+_GEOMETRY_EVENTS = (
+    ft.WindowEventType.RESIZE,
+    ft.WindowEventType.MOVE,
+    ft.WindowEventType.CLOSE,
+    ft.WindowEventType.MAXIMIZE,
+    ft.WindowEventType.UNMAXIMIZE,
+)
+
 
 def _restore_window(page: ft.Page) -> None:
     state = load_window_state()
@@ -65,7 +75,7 @@ def _persist_on_window_event(page: ft.Page):
     position in window.json. Writes are atomic via temp + rename.
     """
     def handler(e):
-        if e.type not in ("resize", "move", "close", "maximize", "unmaximize"):
+        if e.type not in _GEOMETRY_EVENTS:
             return
         try:
             save_window_state({
