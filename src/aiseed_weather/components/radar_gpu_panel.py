@@ -22,7 +22,9 @@ from aiseed_weather.figures._japan_map import JMA_PRECIP_COLOURS, JMA_PRECIP_LAB
 from aiseed_weather.figures.radar_map import NO_DATA_RGBA
 from aiseed_weather.services import gpu_radar, jma_endpoints
 
-READY_TIMEOUT_SEC = 4.0
+# 部品の ready を待つ時間。Web 版で 0.3〜1.3 秒（2026-10-14）だが、最初のコマの受け渡しが
+# 重いと 20 秒近く遅れたことがある（2026-10-13、Web 版）。案内は ready が届けば消える。
+READY_TIMEOUT_SEC = 10.0
 
 
 def _message(text: str, *, icon=ft.Icons.INFO_OUTLINE) -> ft.Control:
@@ -108,12 +110,14 @@ def RadarGpuPanel(area_key: str, frames: tuple, step: int, status_text: str):
             left=0, right=0, top=0, bottom=0,
             bgcolor=ft.Colors.with_opacity(0.85, ft.Colors.SURFACE),
             content=_message(
-                "動く地図の部品が、いまの Flet の実行環境に入っていません。\n"
+                "動く地図の部品から応答がありません（応答が届けば、この案内は消えます）。\n"
+                "消えないときは、いまの Flet の実行環境に部品が入っていません。\n"
                 "一度だけ tools/build_client.sh を実行し（build/linux に作られます）、\n"
                 "プロジェクトのフォルダーから flet run で起動し直してください。",
                 icon=ft.Icons.BUILD_CIRCLE_OUTLINED),
         ))
     return ft.Column(expand=True, spacing=6, controls=[
-        ft.Stack(expand=True, controls=[gpu, *overlay]),
+        # 部品が無いと Flet は細い「Unknown control」の箱を出す。案内が細くならないよう枠いっぱいに
+        ft.Stack(expand=True, fit=ft.StackFit.EXPAND, controls=[gpu, *overlay]),
         _legend(),
     ])

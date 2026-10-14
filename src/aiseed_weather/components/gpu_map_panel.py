@@ -27,7 +27,9 @@ from aiseed_weather.services.forecast_service import grib_cache_path, is_grib_ca
 
 logger = logging.getLogger(__name__)
 
-READY_TIMEOUT_SEC = 4.0
+# 部品の ready を待つ時間。Web 版で 0.3〜1.3 秒（2026-10-14）だが、最初のコマの受け渡しが
+# 重いと 20 秒近く遅れたことがある（2026-10-13、Web 版）。案内は ready が届けば消える。
+READY_TIMEOUT_SEC = 10.0
 
 
 def _step_files(settings, cycle, step: int, kinds) -> dict | None:
@@ -182,7 +184,8 @@ def GpuMapPanel(settings, plan: tuple, region, layer_key: str, step_hours: int,
             left=0, right=0, top=0, bottom=0,
             bgcolor=ft.Colors.with_opacity(0.85, ft.Colors.SURFACE),
             content=_message(
-                "動く地図の部品が、いまの Flet の実行環境に入っていません。\n"
+                "動く地図の部品から応答がありません（応答が届けば、この案内は消えます）。\n"
+                "消えないときは、いまの Flet の実行環境に部品が入っていません。\n"
                 "一度だけ tools/build_client.sh を実行し（build/linux に作られます）、\n"
                 "プロジェクトのフォルダーから flet run で起動し直してください。",
                 icon=ft.Icons.BUILD_CIRCLE_OUTLINED),
@@ -192,7 +195,8 @@ def GpuMapPanel(settings, plan: tuple, region, layer_key: str, step_hours: int,
         expand=True,
         spacing=2,
         controls=[
-            ft.Stack(expand=True, controls=[gpu, *overlay]),
+            # 部品が無いと Flet は細い「Unknown control」の箱を出す。案内が細くならないよう枠いっぱいに
+            ft.Stack(expand=True, fit=ft.StackFit.EXPAND, controls=[gpu, *overlay]),
             ft.Text(f"{loading}{stats}", size=11, color=ft.Colors.GREY),
         ],
     )
