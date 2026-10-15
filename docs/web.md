@@ -275,6 +275,7 @@ public/data/current.json                    主要都市の現在値
 
 `weatherlib/svgchart.py`。matplotlib も JS のグラフ部品も使わない。
 
+- `uonzu_svg` … 雨温図。`narrow=True` はスマートフォンの幅用（360×440。広い図を縮めると文字が約 5px になるため。ページは両方を持ち、600px 以下で切り替える。表も月を行にした形に替える）
 - `intraday_svg` … 当日の 10 分値推移（時刻軸）
 - `trend_svg` … 複数日の推移
 - 目盛りの刻みは `_nice_step`（log10 で桁を出す）

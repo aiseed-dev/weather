@@ -47,9 +47,17 @@ def _line_runs(xs, vals):
     return runs
 
 
-def uonzu_svg(name: str, monthly: dict, width: int = 720, height: int = 460) -> str:
-    """雨温図 SVG。monthly = {tmax/tavg/tmin: [表示値×12], precip: [表示値×12]}"""
-    ml, mr, mt, mb = 52, 56, 44, 30
+def uonzu_svg(name: str, monthly: dict, width: int = 720, height: int = 460,
+              narrow: bool = False) -> str:
+    """雨温図 SVG。monthly = {tmax/tavg/tmin: [表示値×12], precip: [表示値×12]}
+
+    narrow … スマートフォンの幅用（360×440）。720 幅の図を 330px に縮めると文字が 5px ほどに
+    なって読めない（2026-10-15）。月は数字だけ、軸の単位は軸の上、凡例は 2 段にする
+    """
+    if narrow:
+        width, height = 360, 440
+    ml, mr, mt, mb = (34, 34, 64, 26) if narrow else (52, 56, 44, 30)
+    fs = 12 if narrow else 11
     pw, ph = width - ml - mr, height - mt - mb
     t_lo, t_hi, p_hi = -20.0, 40.0, 600.0
 
@@ -68,6 +76,9 @@ def uonzu_svg(name: str, monthly: dict, width: int = 720, height: int = 460) -> 
              f'aria-label="{name}の雨温図">')
     e.append(f'<text x="{width / 2}" y="20" text-anchor="middle" font-size="16" '
              f'font-weight="bold" {FONT}>{name}の雨温図</text>')
+    if narrow:
+        e.append(f'<text x="{ml - 4}" y="{mt - 8}" text-anchor="end" font-size="{fs}" '
+                 f'fill="{C_TMAX}" {FONT}>°C</text>')
 
     # グリッドと左軸（気温）
     t = t_lo
@@ -75,17 +86,17 @@ def uonzu_svg(name: str, monthly: dict, width: int = 720, height: int = 460) -> 
         y = ty(t)
         e.append(f'<line x1="{ml}" y1="{y:.1f}" x2="{ml + pw}" y2="{y:.1f}" '
                  f'stroke="{"#999" if t == 0 else "#e3e8ee"}" stroke-width="1"/>')
-        e.append(f'<text x="{ml - 6}" y="{y + 4:.1f}" text-anchor="end" font-size="11" '
-                 f'fill="{C_TMAX}" {FONT}>{t:.0f}°C</text>')
+        e.append(f'<text x="{ml - 4 if narrow else ml - 6}" y="{y + 4:.1f}" text-anchor="end" '
+                 f'font-size="{fs}" fill="{C_TMAX}" {FONT}>{t:.0f}{"" if narrow else "°C"}</text>')
         t += 10
     # 右軸（雨量）
     p = 0
     while p <= p_hi:
-        e.append(f'<text x="{ml + pw + 6}" y="{py(p) + 4:.1f}" text-anchor="start" '
-                 f'font-size="11" fill="{C_PRECIP}" {FONT}>{p:.0f}</text>')
+        e.append(f'<text x="{ml + pw + 4}" y="{py(p) + 4:.1f}" text-anchor="start" '
+                 f'font-size="{fs}" fill="{C_PRECIP}" {FONT}>{p:.0f}</text>')
         p += 100
-    e.append(f'<text x="{ml + pw + 40}" y="{mt - 8}" text-anchor="end" font-size="11" '
-             f'fill="{C_PRECIP}" {FONT}>mm</text>')
+    e.append(f'<text x="{width - 2 if narrow else ml + pw + 40}" y="{mt - 8}" text-anchor="end" '
+             f'font-size="{fs}" fill="{C_PRECIP}" {FONT}>mm</text>')
 
     # 降水量の棒
     bw = pw / 12 * 0.55
@@ -108,17 +119,19 @@ def uonzu_svg(name: str, monthly: dict, width: int = 720, height: int = 460) -> 
     # 月ラベルと枠
     for i in range(12):
         e.append(f'<text x="{mx(i):.1f}" y="{mt + ph + 16}" text-anchor="middle" '
-                 f'font-size="11" fill="#555" {FONT}>{i + 1}月</text>')
+                 f'font-size="{fs}" fill="#555" {FONT}>{i + 1}{"" if narrow else "月"}</text>')
     e.append(f'<rect x="{ml}" y="{mt}" width="{pw}" height="{ph}" fill="none" '
              f'stroke="#c8d2dc"/>')
 
     # 凡例
-    lx = ml + 8
-    for label, color in (("最高気温", C_TMAX), ("平均気温", C_TAVG),
-                         ("最低気温", C_TMIN), ("降水量", C_PRECIP)):
-        e.append(f'<rect x="{lx}" y="{mt - 16}" width="10" height="10" fill="{color}"/>')
-        e.append(f'<text x="{lx + 14}" y="{mt - 7}" font-size="11" fill="#333" {FONT}>{label}</text>')
-        lx += 14 + len(label) * 12 + 18
+    lx, ly = ml + 8, (34 if narrow else mt - 16)
+    for i, (label, color) in enumerate((("最高気温", C_TMAX), ("平均気温", C_TAVG),
+                                        ("最低気温", C_TMIN), ("降水量", C_PRECIP))):
+        if narrow and i == 2:          # 2 段目
+            lx, ly = ml + 8, ly + 16
+        e.append(f'<rect x="{lx}" y="{ly}" width="10" height="10" fill="{color}"/>')
+        e.append(f'<text x="{lx + 14}" y="{ly + 9}" font-size="{fs}" fill="#333" {FONT}>{label}</text>')
+        lx += 14 + len(label) * (fs + 1) + 18
     e.append("</svg>")
     return "".join(e)
 

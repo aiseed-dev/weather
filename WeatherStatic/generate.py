@@ -1374,6 +1374,7 @@ def build_climate(env: Environment, stations: dict) -> None:
             page_title=f"{st['pref']}{st['name']}の気候（気温と降水量のグラフ（雨温図））",
             nav_active="climate", build_year=datetime.now().year, trend_url=trend_url,
             st=st, st_svg=uonzu_svg(st["name"], st["monthly"]),
+            st_svg_narrow=uonzu_svg(st["name"], st["monthly"], narrow=True),
             kennai=kennai_map[st["prec_no"]], main_links=main_links)
         write(f"Climate/Chart/{st['slug']}/index.html", html, quiet=True)
         n += 1
