@@ -53,6 +53,18 @@ WWWROOT = next((p for p in _candidates if p and p.is_dir()), BASE / "wwwroot")
 # スタイルは assets/site-base.css + assets/site.css の 2 枚だけで足りる。
 ASSET_PATHS = ["Images", "favicon.ico", "robots.txt"]
 
+# /App/Forecast/ の画面の例（wwwroot/Images/App/）。予報ではなく解析（T+0）を写したもの
+APP_FORECAST_SHOTS = [
+    {"src": "/Images/App/forecast-map.jpg", "width": 800, "height": 600,
+     "alt": "AIseed Weather の地図画面。全球の海面更正気圧の等圧線",
+     "caption": "地図画面（図）。全球の海面更正気圧。左で地域・GPV データ・レイヤーを選び、下のスライダーで"
+                "予報時間を進める。写っているのは ECMWF IFS 2026-10-13 00 UTC の解析（T+0）。"},
+    {"src": "/Images/App/forecast-moving.jpg", "width": 800, "height": 600,
+     "alt": "AIseed Weather の動く地図。日本周辺の海面更正気圧と 10 m 風の粒子",
+     "caption": "動く地図。日本周辺の海面更正気圧に 10 m 風の粒子を流している。GPU で描き、拡大・移動できる。"
+                "同じく解析（T+0）。"},
+]
+
 
 # ---------------------------------------------------------------- 入力の読み込み
 
@@ -1333,6 +1345,8 @@ def build_climate(env: Environment, stations: dict) -> None:
     # 主要都市リンク（雨温図ページ間の移動用）
     main_links = [(slug, rec["name"]) for code, rec, nml, slug in targets
                   if rec.get("main")]
+    temp_slugs = {slug for code, rec, nml, slug in targets if rec["elements"].get("temp")}
+    this_month = (date.today() - timedelta(days=1)).month
 
     # 一覧ページ
     groups = [{"prec_no": p, "pref": prec_names[p], "region": region_of(p),
@@ -1353,9 +1367,12 @@ def build_climate(env: Environment, stations: dict) -> None:
     from weatherlib.svgchart import uonzu_svg
     n = 0
     for st in charts:
+        # 「最高気温、最低気温の推移」のタブは、気温のある地点なら今月の月ごとのページへ
+        trend_url = (f"/Stations/JP/{st['slug']}/{this_month}" if st["slug"] in temp_slugs
+                     else f"/Stations/JP/{st['slug']}")
         html = env.get_template("climate/chart.html").render(
             page_title=f"{st['pref']}{st['name']}の気候（気温と降水量のグラフ（雨温図））",
-            nav_active="climate", build_year=datetime.now().year,
+            nav_active="climate", build_year=datetime.now().year, trend_url=trend_url,
             st=st, st_svg=uonzu_svg(st["name"], st["monthly"]),
             kennai=kennai_map[st["prec_no"]], main_links=main_links)
         write(f"Climate/Chart/{st['slug']}/index.html", html, quiet=True)
@@ -1367,6 +1384,26 @@ def build_climate(env: Environment, stations: dict) -> None:
 
 def _disp10(v) -> str:
     return f"{v / 10:.1f}" if v is not None else "-"
+
+
+def month_data(hist: History, row: int, nml: dict, first: date, end: date) -> dict:
+    """月ごとの最高・最低気温のページに埋め込むデータ（assets/js/station-month.js が読む）。
+
+    値は 0.1℃ 単位の整数（欠測は null）。観測は first から end までの日ごと。観測の始まる前の
+    欠測は削って、短くする（新しい地点のページを軽くする）。平年値は月ごとの日別平年値と月平年値。"""
+    obs = {v: hist.series(v, row, first, end) for v in ("tmax", "tmin")}
+    lead = next((i for i in range(len(obs["tmax"]))
+                 if obs["tmax"][i] is not None or obs["tmin"][i] is not None), len(obs["tmax"]))
+    lead = min(lead, len(obs["tmax"]) - 1) if obs["tmax"] else 0
+    daily = nml.get("daily", {})
+    monthly = nml.get("monthly", {})
+    return {
+        "from": (first + timedelta(days=lead)).isoformat(), "to": end.isoformat(),
+        "tmax": obs["tmax"][lead:], "tmin": obs["tmin"][lead:],
+        "normal": {v: [daily.get(str(m), {}).get(v) or [] for m in range(1, 13)]
+                   for v in ("tmax", "tmin")},
+        "normal_month": {v: list(monthly.get(v) or [None] * 12) for v in ("tmax", "tmin")},
+    }
 
 
 def build_stations(env: Environment, stations: dict, hist: History) -> None:
@@ -1392,11 +1429,18 @@ def build_stations(env: Environment, stations: dict, hist: History) -> None:
         region_filters=[(k, n) for k, n, _, _ in REGIONS], groups=groups))
 
     # 地点ページ: 直近 30 日の実測 vs 平年値
+    import hashlib
     from weatherlib.svgchart import timeseries_svg
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=29)
     n_days = 30
     n_pages = 0
+    # 月ごとの最高・最低気温（旧サイトの /Stations/JP/{地点}/{月}）。月の数だけ作ると Pages の
+    # 上限（2 万ファイル）を超えるので、地点ごとに 1 枚にして日別の値を埋め込み、月は URL から
+    # ブラウザで選ぶ（_redirects の 200。assets/js/station-month.js）。濃い線 1 年と薄い線 7 年と、
+    # 1 月を選んだときの前年 12 月が入るよう、8 年前の 1 月 1 日から持たせる
+    month_from = date(end.year - 8, 1, 1)
+    month_js_v = hashlib.sha256((BASE / "assets" / "js" / "station-month.js").read_bytes()).hexdigest()[:10]
     for code, rec, nml, slug in targets:
         obs = {v: hist.series(v, rec["row"], start, end) for v in ("tmax", "tavg", "tmin")}
         nml_series: dict[str, list] = {"tmax": [], "tmin": []}
@@ -1446,10 +1490,15 @@ def build_stations(env: Environment, stations: dict, hist: History) -> None:
         html = env.get_template("stations/jp.html").render(
             page_title=f"{st['pref']} {st['name']}の気温、降水量、観測所情報",
             nav_active="station", build_year=datetime.now().year,
-            st=st, st_svg=svg, has_obs=has_obs,
+            st=st, st_svg=svg, has_obs=has_obs, cur_month=end.month,
             period_label=f"{start.month}/{start.day}〜{end.month}/{end.day}",
             kennai=by_prec[rec.get("etrn", {}).get("prec_no", 99)])
         write(f"Stations/JP/{slug}/index.html", html, quiet=True)
+        write(f"Stations/JP/{slug}/month/index.html", env.get_template("stations/month.html").render(
+            page_title=f"{st['pref']} {st['name']}の最高気温・最低気温の推移",
+            nav_active="station", build_year=datetime.now().year,
+            st=st, cur_month=end.month, js_version=month_js_v,
+            month_data=month_data(hist, rec["row"], nml, month_from, end)), quiet=True)
         n_pages += 1
     print(f"  [html] Stations/JP/*  ({n_pages} 地点)")
 
@@ -1594,6 +1643,12 @@ def build_app(env: Environment) -> None:
     write("App/Develop/index.html", env.get_template("app/develop.html").render(
         page_title="AIseed Weather 開発マニュアル",
         nav_active="app", build_year=datetime.now().year))
+    # 数値予報の使い方。旧サイトの GFS の予報図（/Gfs/…）から来た人に、予報図はアプリで
+    # 描くことを案内する（このサイトは予報図を載せない）。画面の例は解析（T+0）だけを使う
+    shots = [s for s in APP_FORECAST_SHOTS if (WWWROOT / s["src"].lstrip("/")).is_file()]
+    write("App/Forecast/index.html", env.get_template("app/forecast.html").render(
+        page_title="数値予報の天気図を自分で描く（ECMWF・AIseed Weather の使い方）",
+        nav_active="app", build_year=datetime.now().year, shots=shots))
 
 
 def build_privacy(env: Environment) -> None:
@@ -1901,8 +1956,10 @@ def legacy_redirects(targets: list, now: datetime | None = None) -> list[str]:
         "/Temperature /Temperature/HighsMain/ 301",
         "/Temperature/ /Temperature/HighsMain/ 301",
         "/Summer/Nettaiya /Temperature/TodayLowsDec/ 301",
-        # 予報図は扱わない（気象業務法）。予報はデスクトップアプリで
-        "/Gfs /App/ 301",
+        # 予報図は扱わない（気象業務法）。旧サイトの GFS の予報図を見に来た人には、
+        # デスクトップアプリで数値予報を描く使い方のページを出す
+        "/Gfs /App/Forecast/ 301",
+        "/Forecast /App/Forecast/ 301",
     ]
     for m in range(1, 13):
         lines.append(f"/Monthly/Heinenti/{m:02d} /Monthly/Heinenti{m:02d}/ 301")
@@ -1963,7 +2020,12 @@ def legacy_redirects(targets: list, now: datetime | None = None) -> list[str]:
     # 名前付きの置き場所（:year）は転送先で使わないと無効になり（2026-10-05、
     # 使っていなかった行がすべて効かなかった）、クエリには差し込まれない
     # （?year=:year は「:year」のまま出る）。なので * を使う
-    lines.append("/Gfs/* /App/ 301")
+    lines.append("/Gfs/* /App/Forecast/ 301")
+    # 地点ごとの月の最高・最低気温（旧サイトの /Stations/Jp/Fukusaki/7）。地点ごとの枠 1 枚に
+    # URL のままつなぎ、月は枠のスクリプトが URL から読む（build_stations）。置き場所 :name は
+    # 転送先で使うので有効。* にしないのは、地点ページ（/stations/jp/{地点}/）にも当たるから
+    for m in range(1, 13):
+        lines.append(f"/Stations/JP/:name/{m} /Stations/JP/:name/month/ 200")
     # 旧サイトでも 404 だった月別のリンク（旧サイト内の切れたリンク）。月別気温の一覧へ
     for kind in ("MonthlyHigh", "MonthlyLow", "MonthlyMean"):
         lines.append(f"/Monthly/{kind}/* /Monthly/ 301")
@@ -1995,7 +2057,9 @@ def legacy_redirects(targets: list, now: datetime | None = None) -> list[str]:
     assert not any(not is_dyn(l) for l in lines[first_dyn:]), "固定の転送はパターン付きより前に置く"
     for l in lines:
         src, dst = l.split()[:2]
-        assert not re.search(r":[A-Za-z]", src), f"名前付きの置き場所は使わない: {l}"
+        # 名前付きの置き場所は、転送先で使わないと行ごと無効になる（2026-10-05）
+        for name in re.findall(r":([A-Za-z]\w*)", src):
+            assert f":{name}" in dst, f"置き場所 :{name} を転送先で使っていない: {l}"
         assert src == src.lower() and dst == dst.lower(), f"URL は小文字: {l}"
         if "*" in src:   # 転送先が自分のパターンに当たると回り続ける（* は空にも当たるとみなす）
             assert not re.fullmatch(re.escape(src).replace(r"\*", ".*"), dst), f"転送先が自分に当たる: {l}"
@@ -2015,7 +2079,7 @@ def build_seo(env: Environment, stations: dict) -> None:
             "/Temperature/HighsList/", "/Temperature/LowsList/",
             "/Summer/Ranking/", "/Winter/LowestList/", "/Climate/",
             "/Stations/", "/Monthly/", "/Monthly/Latest/",
-            "/Precipitation/", "/App/", "/App/Develop/", "/About/", "/privacy/",
+            "/Precipitation/", "/App/", "/App/Develop/", "/App/Forecast/", "/About/", "/privacy/",
             f"/{AMEDAS_URL}/", f"/{DAILY_URL}/"]
     urls += [f"/Monthly/Heinenti{m:02d}{l}/" for m in range(1, 13) for l in ("", "l")]
     targets = climate_targets(stations)
@@ -2075,7 +2139,11 @@ def build_seo(env: Environment, stations: dict) -> None:
           'location.replace(p.toLowerCase()+location.search+location.hash);'
           # 作らなくなった古い年の夏・冬のページ（FIRST_SEASON_YEAR より前）は今年・今季のページへ
           'var m=/^\\/(summer|winter)\\/([a-z]+)\\/(\\d{4})\\/?$/.exec(p.toLowerCase());'
-          f'if(m&&+m[3]<{FIRST_SEASON_YEAR})location.replace("/"+m[1]+"/"+m[2]+"/")</script>'
+          f'if(m&&+m[3]<{FIRST_SEASON_YEAR})location.replace("/"+m[1]+"/"+m[2]+"/");'
+          # 月の最高・最低気温の旧 URL で、地点ページの無い地点（旧サイトの別名・廃止地点）や
+          # 1〜12 でない月は、地点の URL へ（そこから _redirects が今の行き先へ送る）
+          'var s=/^\\/stations\\/jp\\/([^\\/]+)\\/\\d+\\/?$/.exec(p.toLowerCase());'
+          'if(s)location.replace("/stations/jp/"+s[1]+"/")</script>'
           '<body style="font-family:sans-serif;text-align:center;padding:60px">'
           '<h1>ページが見つかりません</h1>'
           '<p><a href="/">個人開発気象統計 トップへ</a></p></body>')

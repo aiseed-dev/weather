@@ -146,7 +146,7 @@ def write_nc(master: dict, days: int, rng: random.Random) -> list[date]:
     History.matrix が date_index() で引くので、0 から詰めると範囲外になる。
     実データと同じく、原点から今日までの疎な配列に、末尾 days 日分だけ値を置く。
     """
-    from weatherlib.ncstore import NcStore, date_index, hour_index, FILL, FILL_B
+    from weatherlib.ncstore import NcStore, date_index, hour_index, FILL, FILL_B, HOURLY_EPOCH
 
     # netCDF4 1.7 が内部で配列の shape を書き換えるため numpy 2.5 の非推奨警告が
     # 出る。こちらの書き方では避けられないので、この関数の中だけ黙らせる。
@@ -170,8 +170,10 @@ def write_nc(master: dict, days: int, rng: random.Random) -> list[date]:
     conn.commit()
 
     j0, j1 = date_index(dates[0]), date_index(dates[-1]) + 1
-    h0 = hour_index(datetime.combine(dates[0], datetime.min.time()))
-    h1 = h0 + days * 24
+    # 時別値は原点（2020-01-01）からしか置けない。実データも日別値だけが古くからある
+    hourly_from = max(0, (HOURLY_EPOCH.date() - dates[0]).days)
+    h0 = hour_index(datetime.combine(dates[hourly_from], datetime.min.time()))
+    h1 = h0 + (days - hourly_from) * 24
     # 座標変数は添字そのもの（date[i] = 原点からの日数）
     ds["date"][:j1] = np.arange(j1, dtype="i4")
     ds["time"][:h1] = np.arange(h1, dtype="i4")
@@ -198,9 +200,9 @@ def write_nc(master: dict, days: int, rng: random.Random) -> list[date]:
             else:
                 for h in range(7, 16):
                     sh[j * 24 + h] = 10
-        ds["temp"][row, h0:h1] = hourly
-        ds["precip1h"][row, h0:h1] = ph
-        ds["sun1h"][row, h0:h1] = sh
+        ds["temp"][row, h0:h1] = hourly[hourly_from * 24:]
+        ds["precip1h"][row, h0:h1] = ph[hourly_from * 24:]
+        ds["sun1h"][row, h0:h1] = sh[hourly_from * 24:]
         ds["tmax"][row, j0:j1] = hi
         ds["tmin"][row, j0:j1] = lo
         ds["tavg"][row, j0:j1] = av

@@ -19,6 +19,7 @@ Pages と同じ規則（順に判定する）
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -36,13 +37,14 @@ MEDIA = {".nc": "application/x-netcdf", ".json": "application/json",
 class Redirects:
     """生成済みの public/_redirects を Pages と同じ規則で解釈する。
 
-    固定の行は完全一致、* を含む行は前方一致（* は空も含めて何にでも当たる）。
+    固定の行は完全一致。* は空も含めて何にでも当たり、:name は次の / までの 1 区切りに
+    当たって、転送先の :name（* は :splat）に差し込まれる。
     書いてある順に見て、最初に当たった行を使う。ファイルが変われば読み直す。"""
 
     def __init__(self):
         self.mtime = -1.0
         self.static: dict[str, tuple[str, int]] = {}
-        self.dynamic: list[tuple[str, str, int]] = []
+        self.dynamic: list[tuple[re.Pattern, str, int]] = []
 
     def load(self) -> None:
         p = PUBLIC / "_redirects"
@@ -57,8 +59,12 @@ class Redirects:
                     continue
                 src, dst = parts[0], parts[1]
                 code = int(parts[2]) if len(parts) > 2 else 302
-                if "*" in src:
-                    dynamic.append((src.split("*")[0], dst, code))
+                if "*" in src or ":" in src:
+                    pattern = "".join(
+                        "(?P<splat>.*)" if tok == "*" else
+                        f"(?P<{tok[1:]}>[^/]+)" if tok.startswith(":") else re.escape(tok)
+                        for tok in re.split(r"(\*|:[A-Za-z]\w*)", src) if tok)
+                    dynamic.append((re.compile(pattern), dst, code))
                 else:
                     static.setdefault(src, (dst, code))
         self.static, self.dynamic, self.mtime = static, dynamic, mt
@@ -67,8 +73,11 @@ class Redirects:
         self.load()
         if path in self.static:
             return self.static[path]
-        for prefix, dst, code in self.dynamic:
-            if path.startswith(prefix):
+        for pattern, dst, code in self.dynamic:
+            hit = pattern.fullmatch(path)
+            if hit:
+                for name, value in hit.groupdict().items():
+                    dst = dst.replace(f":{name}", value)
                 return dst, code
         return None
 

@@ -49,6 +49,7 @@
 | `/monthly/monthly(l)/{年月}` | 枠 1 | 月の平均気温のランキング（任意の月） | 同上 | 同上 |
 | `/climate/chart/{地点}` | 896 | 雨温図（平年値の気温と降水量） | generate | 毎時 |
 | `/stations/jp/{地点}` | 896 | 地点別の気候値・30 日推移・平年値 | generate | 毎時 |
+| `/stations/jp/{地点}/{月}` | 枠 896（地点ごと） | 月を中心に前後 1 か月の日ごとの最高・最低気温（旧サイトの同じ URL）。濃い線は期間が始まっている一番新しい年、薄い線はその前の 7 年（スマートフォンの幅では出さない）、点線は日別平年値。地点ごとの枠 `/stations/jp/{地点}/month/` に 8 年分の日別値と平年値を埋め込み、`_redirects` の 200 で月の URL のまま返す。月は `assets/js/station-month.js` が URL から読んで描く（月の数だけ作ると 1 万ページを超え、Pages の上限に近づくため） | generate（`build_stations`） | 毎時 |
 | `/monthly/…` | 26 | 月別気温（観測値・平年値） | generate | 毎時 |
 | `/precipitation/` | 1 | 降水量ランキング | generate | 毎時 |
 | `/status/temperature/` `/wind/` `/precipitation/` `/snow/` | 4 | 実況（10 分値）。上に全地点の地図（気温、風速と風下の線、前 1 時間・前 24 時間の降水量、積雪深。配色はアプリのアメダスの地図と同じ。点から地点のページへ。weatherlib/stationmap.py・templates/status/_map.html）。地図の上に「自分の地点」のカード（最大 10 地点。localStorage の my-stations-v1 にアメダス番号を保存し、どこにも送らない。値は /data/amedas-latest.json、開いたままでも 10 分ごとに読み直す。地図の点と表の行も目立たせる。assets/js/mystations.js・templates/status/_mine.html。地点のページ /status/station/・/stations/jp/ に「自分の地点に入れる」ボタン） | generate_status | 10 分 |
@@ -60,6 +61,7 @@
 | `/privacy/` | 1 | 免責事項・プライバシーポリシー（旧サイトは www.time-j.net の共通ページ。このサイトで実際に使っている物だけを書く） | generate（`build_privacy`） | 毎時 |
 | `/kaiseki/` `/kaiseki.js` | 1 | 自前のアクセス解析（aiai-pro の kaiseki）の知らせ（外部送信規律）とスクリプト。`WEATHER_KAISEKI_TO` があるときだけ作り、全ページの `</head>` の前にスクリプトを入れる。無ければ消す（weatherlib/kaiseki.py） | generate（`build_kaiseki`） | 毎時 |
 | `/app/develop/` | 1 | **アプリの開発マニュアル**（環境構築・構成・スキル・設計原則） | generate | 毎時 |
+| `/app/forecast/` | 1 | **数値予報の天気図をアプリで描く使い方**（描ける図・旧サイトの GFS の図との対応・入れ方・取得元の選び方・画面の操作）。旧サイトの `/Gfs/…` の行き先。画面の例は解析（T+0）だけを写す（`wwwroot/Images/App/`） | generate（`build_app`） | 毎時 |
 | `/data/daily/` | 1 ＋ 配布ファイル | **日別の観測データ**（気温・降水・日照、1880 年〜、廃止地点を含む。年ごと・地点ごとの NetCDF） | generate（書き出しは export_dist） | ストアの更新時 |
 | `/data/amedas/` | 1 ＋ 配布ファイル | **アメダス 10 分値アーカイブ**（半月ごとの NetCDF・索引・地点一覧） | generate | 10 分 |
 
@@ -175,14 +177,18 @@
   `WeatherStatic/legacy/station_slugs.json` に残した（910 地点）。旧サイトが自分の
   リンクで使っていた別名（`/Climate/Chart/akita`、`Tokyoold` など 61 件）もそこにある。
   **旧システムを止めたら取れないので、この JSON と `old_paths.json` は消さない**
-- 301 … 同じ中身のページが別の URL にある（入口・平年値の月・予報図・廃止地点）
+- 301 … 同じ中身のページが別の URL にある（入口・平年値の月・廃止地点）。旧サイトの GFS の
+  予報図（`/gfs`・`/gfs/*`）は、予報図を載せない代わりに `/app/forecast/`（アプリで描く使い方）へ
 - 302 … 今年・今季の年のページ（`/summer/ranking/2026` → `/summer/ranking/`）
-- 200 … 日ごと・月ごとの過去のページ（上の「過去の記録のページ」）
+- 200 … 日ごと・月ごとの過去のページ（上の「過去の記録のページ」）と、地点ごとの月の最高・最低気温
+  （`/stations/jp/:name/{1〜12}` → `/stations/jp/:name/month/`）。月ごとに 1 行で 12 行。`*` にしないのは、
+  地点ページ `/stations/jp/{地点}/` にも当たるから。地点ページの無い地点（旧サイトの別名・廃止地点）や
+  1〜12 でない月は 404 になり、`404.html` のスクリプトが地点の URL へ送る（そこから上の 301 が今の行き先へ）
 - Pages の `_redirects` は**実ファイルより先に効く**。ファイルのある URL に当たる行を
   置かないこと（過去の年の夏・冬のページなど）
 - Pages の `_redirects` の決まり: 固定の転送をパターン付きより前に置く。名前付きの
-  置き場所（`:year`）は転送先で使わないと無効になり、クエリには差し込まれない。
-  なので `*` を使う。200 の行き先は拡張子なし（`/history/day/`。`day.html` と書くと
+  置き場所（`:year`）は転送先で使わないと無効になり（2026-10-05）、クエリには差し込まれない。
+  転送先のパスで使う置き場所だけを許し（月の最高・最低気温の `:name`）、ほかは `*` を使う。200 の行き先は拡張子なし（`/history/day/`。`day.html` と書くと
   Pages が拡張子を外す 308 を挟む）。上限は固定 2,000 件・パターン付き 100 件。
   生成時に並び順・小文字・自己当たり・上限を確かめる
 - URL 名を変えたときに残る古いページは、生成のたびに片付ける（地点ページ・雨温図・

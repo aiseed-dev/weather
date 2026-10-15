@@ -46,8 +46,8 @@ R2 は地点別 10 分値の収集先（Worker が置く。非公開・30 日で
 | [forecast-charts.md](forecast-charts.md) | 予報図の描画 |
 | [gpu-map.md](gpu-map.md) | 地図画面の「動く地図」（GPU 描画・風の粒子）。部品・実行環境・速さ |
 
-利用者向けの文書は **Web が載せる**: `/App/`（紹介）と `/App/Develop/`
-（開発マニュアル）。テンプレートは
+利用者向けの文書は **Web が載せる**: `/App/`（紹介）、`/App/Forecast/`（数値予報の
+天気図を描く使い方）と `/App/Develop/`（開発マニュアル）。テンプレートは
 [../WeatherStatic/templates/app/](../WeatherStatic/templates/app/) にあり、
 内容の正本はリポジトリの README / AGENTS / CLAUDE。向こうを変えたら
 ページも直す。

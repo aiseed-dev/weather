@@ -1,6 +1,6 @@
 {#
   地点別の観測所情報ページ（旧 Stations/JP 相当）。
-  コンテキスト: st(地点情報) / st_svg(直近30日SVG) / has_obs / period_label / kennai
+  コンテキスト: st(地点情報) / st_svg(直近30日SVG) / has_obs / cur_month / period_label / kennai
 #}
 {% extends "_layout.html" %}
 
@@ -80,6 +80,7 @@
 </div>
 
 <div class="action-links">
+    <a href="/Stations/JP/{{ st.slug }}/{{ cur_month }}">月ごとの最高・最低気温の推移（平年値と過去 7 年）</a>
     <a href="/Climate/Chart/{{ st.slug }}/">雨温図（月別の気温と降水量）</a>
     <a href="{{ st.etrn_url }}" target="_blank" rel="noopener">気象庁の平年値ページ</a>
     <a href="/Stations/">地点一覧へ</a>

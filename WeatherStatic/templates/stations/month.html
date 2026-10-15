@@ -1,0 +1,80 @@
+{#
+  地点ごとの、月を中心に前後 1 か月の最高・最低気温（旧サイトの /Stations/JP/{地点}/{月}）。
+  地点ごとに 1 枚で、月は URL からブラウザで選ぶ（_redirects の 200 でこの枠を返す。
+  描くのは assets/js/station-month.js）。
+  コンテキスト: st(地点情報) / month_data(観測と平年値) / cur_month / js_version
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+<style>
+    .st-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 4px 10px 0; }
+    .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+                  padding: 10px 12px; margin: 12px 10px; box-shadow: 0 1px 4px rgba(30,60,90,.06); }
+    .chart-card h4 { margin: 4px 6px 2px; }
+    .chart-sub { font-size: 12.5px; color: var(--muted); margin: 0 6px 6px; }
+    .legend { font-size: 12px; color: var(--muted); margin: 2px 6px 6px; line-height: 1.7; }
+    .legend b { font-weight: 600; }
+    .lg-tmax { color: #F92500 } .lg-tmin { color: #0C00CC }
+    .month-nav { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 10px; }
+    .month-nav a { min-width: 3.4em; text-align: center; padding: 5px 10px; border-radius: 16px;
+                   border: 1px solid var(--border); background: var(--card); font-size: 13.5px; }
+    .month-nav a[aria-current="page"] { background: var(--accent-light); border-color: var(--accent);
+                                        color: var(--accent-dark); font-weight: 700; }
+    .month-stats { margin: 4px 10px 0; font-size: 13.5px; }
+    .month-stats td, .month-stats th { padding: 3px 10px; }
+    .action-links { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 10px; }
+    .action-links a { padding: 6px 14px; border-radius: 18px; background: var(--accent-light);
+                      color: var(--accent-dark); font-size: 13px; font-weight: 600; }
+    #month-chart svg { display: block; }
+    @media (max-width: 600px) { .past-years { display: none; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="st-head">
+    <h2 style="margin:6px 0">{{ st.pref }} {{ st.name }}の最高気温・最低気温の推移</h2>
+</div>
+
+<div class="action-links">
+    <a href="/Stations/JP/{{ st.slug }}/">{{ st.name }}の観測所情報（直近 30 日の気温）</a>
+    <a href="/Climate/Chart/{{ st.slug }}/">雨温図</a>
+</div>
+
+<nav class="month-nav" aria-label="月を選ぶ">
+    {% for m in range(1, 13) %}
+    <a href="/Stations/JP/{{ st.slug }}/{{ m }}" data-month="{{ m }}"{% if m == cur_month %} aria-current="page"{% endif %}>{{ m }}月</a>
+    {% endfor %}
+</nav>
+
+<div class="chart-card">
+    <h4 id="month-title">{{ st.name }}の最高気温・最低気温の推移</h4>
+    <p class="chart-sub" id="month-period"></p>
+    <div class="legend">
+        <b class="lg-tmax">赤</b>が最高気温、<b class="lg-tmin">青</b>が最低気温。
+        濃い線（点つき）は観測値<span id="month-recent"></span>、
+        <span class="past-years">薄い線はその前の 7 年<span id="month-past"></span>（スマートフォンの幅では出しません）、</span>
+        点線は平年値（1991〜2020 年）です。
+    </div>
+    <div id="month-chart">
+        <noscript><p style="margin:8px">グラフの表示には JavaScript が要ります。</p></noscript>
+    </div>
+</div>
+
+<table class="wtable month-stats" id="month-stats" hidden>
+    <thead><tr><th></th><th>観測</th><th>平年値</th><th>平年差</th></tr></thead>
+    <tbody></tbody>
+</table>
+
+<div id="info">
+    <h5>データについての説明</h5>
+    <p>選んだ月と、その前後 1 か月の日ごとの最高気温・最低気温です。観測値は、選んだ月の期間が
+       始まっている一番新しい年のものを濃い線で、その前の 7 年を薄い線で描きます。期間の途中なら、
+       濃い線は観測のある日（{{ month_data.to | replace("-", "/") }} まで）で終わります。
+       平年値は気象庁の 1991〜2020 年の日別平年値です。観測値は当サイトが気象庁の観測から
+       集計したもので、速報値を含みます。出典: 気象庁ホームページの公開データを加工して作成。</p>
+</div>
+
+<script type="application/json" id="month-data">{{ month_data | tojson }}</script>
+<script src="/js/station-month.js?v={{ js_version }}" defer></script>
+{% endblock %}

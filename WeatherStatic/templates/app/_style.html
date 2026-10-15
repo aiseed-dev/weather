@@ -1,0 +1,37 @@
+{# AIseed Weather の案内ページ（/App/・/App/Forecast/）の共通のスタイル。色は site.css の CSS 変数だけ #}
+<style>
+    .app-hero { background: linear-gradient(135deg, var(--sky-from), var(--sky-to));
+        color: #fff; border-radius: var(--radius); padding: 32px 28px; margin: 12px 10px 22px; }
+    /* site.css の .main-section h2（濃い字と左の線）が後から当たるので、同じ強さ以上で白に戻す */
+    .main-section .app-hero h2 { margin: 0 0 10px; font-size: 26px; line-height: 1.35;
+        color: #fff; border-left: none; padding-left: 0; background: none; }
+    .app-hero p { margin: 0 0 6px; font-size: 15px; opacity: .95; max-width: 46em; }
+    .app-hero .lede { font-size: 17px; opacity: 1; }
+    .app-sec { margin: 0 10px 26px; }
+    .app-sec h3 { font-size: 19px; border-left: 4px solid var(--accent);
+        padding-left: 10px; margin: 0 0 12px; }
+    .app-grid { display: grid; gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .app-card { background: var(--card); border: 1px solid var(--border);
+        border-radius: var(--radius); padding: 16px 18px; }
+    .app-card h4 { margin: 0 0 6px; font-size: 15px; color: var(--accent-dark); }
+    .app-card p { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.65; }
+    .app-table { width: 100%; border-collapse: collapse; background: var(--card);
+        border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .app-table th, .app-table td { border-bottom: 1px solid var(--border);
+        padding: 9px 12px; font-size: 13.5px; text-align: left; vertical-align: top; }
+    .app-table th { background: var(--th-bg); color: var(--th-text); white-space: nowrap; }
+    .app-table tr:last-child td { border-bottom: none; }
+    .app-note { background: var(--panel); border: 1px solid var(--border);
+        border-left: 4px solid var(--accent); border-radius: 8px;
+        padding: 12px 16px; font-size: 13.5px; color: var(--muted); line-height: 1.7; }
+    .app-code { background: var(--panel); border: 1px solid var(--border);
+        border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+    .app-code pre { margin: 0; background: none; border: none; padding: 0;
+        font-size: 13px; color: var(--text); white-space: pre; }
+    .app-flow { width: 100%; height: auto; max-width: 760px; display: block; margin: 0 auto; }
+    .app-links a { display: inline-block; margin: 0 14px 8px 0; font-size: 14px; }
+    .app-badge { display: inline-block; background: var(--accent-light); color: var(--accent-dark);
+        border-radius: 999px; padding: 2px 11px; font-size: 12px; margin-right: 6px; }
+    @media (max-width: 600px) { .app-hero { padding: 24px 18px; } .app-hero h2 { font-size: 21px; } }
+</style>

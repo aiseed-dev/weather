@@ -1,0 +1,152 @@
+{#
+  数値予報の天気図をデスクトップアプリ（AIseed Weather）で描く使い方（/App/Forecast/）。
+  このサイトは予報図を載せない（気象業務法）。旧サイトの GFS の予報図（/Gfs/…）は
+  ここへ 301 で送る（generate.py の legacy_redirects）。
+  内容の正本はリポジトリの README・CLAUDE.md とアプリ本体。画面の名前はアプリと同じにする。
+  コンテキスト: shots（画面の例。無ければ出さない）
+#}
+{% extends "_layout.html" %}
+
+{% block head_extra %}
+{% include "app/_style.html" %}
+<style>
+    .fc-steps { counter-reset: step; list-style: none; padding: 0; margin: 0; }
+    .fc-steps > li { position: relative; padding: 0 0 18px 44px; font-size: 14px; line-height: 1.8; }
+    .fc-steps > li::before { counter-increment: step; content: counter(step); position: absolute; left: 0; top: 0;
+        width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff;
+        font-weight: 700; text-align: center; line-height: 30px; }
+    .fc-steps h4 { margin: 2px 0 4px; font-size: 15px; color: var(--accent-dark); }
+    .fc-shot { margin: 0 0 16px; }
+    .fc-shot img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; display: block; }
+    .fc-shot figcaption { font-size: 12.5px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+    .fc-ui { font-weight: 600; color: var(--text); }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="app-hero">
+    <h2>数値予報の天気図は、デスクトップアプリで</h2>
+    <p class="lede">地上天気図（気圧配置）、500 hPa 高度、850 hPa 気温、ジェット気流、降水量 —
+       ECMWF の数値予報を自分の PC に取得して、全球から日本周辺まで描きます。</p>
+    <p>このサイトは、気象業務法のため予報図を載せていません。以前ここにあった GFS の予報図
+       （850 hPa 気温など）の代わりに、デスクトップアプリ AIseed Weather で同じ種類の図を描く方法をまとめました。</p>
+</div>
+
+<div class="app-sec">
+    <h3>描ける図</h3>
+    <div class="app-grid">
+        <div class="app-card">
+            <h4>地上天気図（気圧配置）</h4>
+            <p>海面更正気圧の等圧線に、降水量や 10 m 風を重ねます。高気圧・低気圧の配置、
+               等圧線の混み具合、台風の中心気圧と経路を、予報時間を進めながら追えます。</p>
+        </div>
+        <div class="app-card">
+            <h4>高層天気図</h4>
+            <p>1000〜50 hPa の 13 面の、ジオポテンシャル高度・気温・風速・湿度・鉛直流・渦度。
+               500 hPa 高度でトラフとリッジ、850 hPa 気温で寒気・暖気の流れ込みを見ます。</p>
+        </div>
+        <div class="app-card">
+            <h4>ジェット気流</h4>
+            <p>250 hPa・300 hPa の風速で、ジェットの位置と強さ。</p>
+        </div>
+        <div class="app-card">
+            <h4>降水・雲・大気の状態</h4>
+            <p>積算降水量・降水強度・降水タイプ・全雲量・可降水量・最不安定 CAPE・2 m 気温・突風など、
+               ECMWF Open Data の 185 要素。</p>
+        </div>
+        <div class="app-card">
+            <h4>全球予報図と地域</h4>
+            <p>全球・北極中心・南極中心・日本周辺・東アジア・北太平洋・北大西洋・ヨーロッパ・北米・
+               アジア・アフリカ・南米・オセアニアの 13 の範囲から選べます。</p>
+        </div>
+        <div class="app-card">
+            <h4>予報時間と動く地図</h4>
+            <p>解析（T+0）から 240 時間先まで（00・12 UTC の初期値。144 時間までは 3 時間ごと、その先は 6 時間ごと）。
+               「動く地図」では GPU で描き、拡大・移動しながら風の粒子を流して再生できます。</p>
+        </div>
+    </div>
+</div>
+
+{% if shots %}
+<div class="app-sec">
+    <h3>画面の例</h3>
+    {% for s in shots %}
+    <figure class="fc-shot">
+        <img src="{{ s.src }}" width="{{ s.width }}" height="{{ s.height }}" alt="{{ s.alt }}" loading="lazy">
+        <figcaption>{{ s.caption }}</figcaption>
+    </figure>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="app-sec">
+    <h3>旧サイトの GFS の図との対応</h3>
+    <table class="app-table">
+        <thead><tr><th>旧サイトの図</th><th>アプリで選ぶもの</th></tr></thead>
+        <tbody>
+            <tr><td>850 hPa 気温（/Gfs/Temperature/850）</td><td>レイヤー「850hPa気温」</td></tr>
+            <tr><td>500・925 hPa 気温</td><td>レイヤー「500hPa気温」「925hPa気温」</td></tr>
+            <tr><td>北極域の 500・850 hPa 気温（/Gfs/TemperaturePoler/…）</td><td>地域「北極中心」＋ レイヤー「500hPa気温」「850hPa気温」</td></tr>
+            <tr><td>300・500・850 hPa の風（/Gfs/Wind/…）</td><td>レイヤー「300hPa風速」「500hPa風速」「850hPa風速」</td></tr>
+            <tr><td>降水量（/Gfs/Precip）</td><td>レイヤー「積算降水量」「降水強度」</td></tr>
+        </tbody>
+    </table>
+    <p style="font-size:13.5px; color:var(--muted); margin-top:10px;">
+        モデルは GFS ではなく ECMWF の IFS（HRES、0.25°）です。GFS などほかのモデルは計画中です。
+    </p>
+</div>
+
+<div class="app-sec">
+    <h3>使い方</h3>
+    <ol class="fc-steps">
+        <li>
+            <h4>入れる</h4>
+            Linux（macOS も同じ手順）で、Miniforge（conda-forge）を使います。動く地図を使うなら、
+            部品入りの実行環境を一度だけ作ります（約 1 分）。
+            <div class="app-code" style="margin-top:8px;"><pre>git clone https://github.com/aiseed-dev/weather.git
+cd weather
+mamba env create --prefix ./.venv -f environment.yml
+mamba activate ./.venv
+pip install -e .
+tools/build_client.sh        # 動く地図を使うとき（一度だけ）
+flet run</pre></div>
+        </li>
+        <li>
+            <h4>取得元を選ぶ</h4>
+            初回の起動で <code>~/.config/aiseed-weather/config.toml</code> ができます。どこから予報を取るかは
+            アプリが勝手に決めないので、ここで選んでから起動し直します。日本からは Google Cloud のミラーが速い。
+            <div class="app-code" style="margin-top:8px;"><pre>forecast_source = "ecmwf_gcp"   # ほかに "ecmwf_aws"・"ecmwf_azure"・"ecmwf_direct"</pre></div>
+        </li>
+        <li>
+            <h4>データを取る</h4>
+            下のタブの <span class="fc-ui">モデル</span> を開き、左の <span class="fc-ui">GPV データ</span>
+            で初期時刻を選んで <span class="fc-ui">取得</span> を押します。1 時刻分が約 150 MB で、
+            取り終えた時刻から描けます。取得するのはこのボタンを押したときだけで、
+            手元に取ったデータは次からそのまま使います。
+        </li>
+        <li>
+            <h4>図を選ぶ</h4>
+            左の <span class="fc-ui">地域</span> で範囲を、<span class="fc-ui">レイヤー</span> で要素を選びます。
+            下のスライダーと ▶ で予報時間を進め、上の <span class="fc-ui">図</span> ／
+            <span class="fc-ui">動く地図</span> で描き方を切り替えます。
+        </li>
+    </ol>
+    <p class="app-note">
+        図には、データの出典（ECMWF Open Data、CC-BY-4.0）と初期時刻・予報時間を描き込みます。
+        このアプリは公開されている数値予報のデータを可視化する道具で、予報を発表するものではありません。
+        防災の判断には、気象庁の警報・注意報などの情報を使ってください。
+    </p>
+</div>
+
+<div class="app-sec">
+    <h3>リンク</h3>
+    <p class="app-links">
+        <a href="/App/"><strong>AIseed Weather の紹介</strong></a>
+        <a href="/App/Develop/">開発マニュアル</a>
+        <a href="https://github.com/aiseed-dev/weather">GitHub リポジトリ</a>
+        <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF Open Data</a>
+    </p>
+</div>
+
+{% endblock %}

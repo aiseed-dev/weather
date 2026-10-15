@@ -6,40 +6,7 @@
 {% extends "_layout.html" %}
 
 {% block head_extra %}
-<style>
-    .app-hero { background: linear-gradient(135deg, var(--sky-from), var(--sky-to));
-        color: #fff; border-radius: var(--radius); padding: 32px 28px; margin: 12px 10px 22px; }
-    .app-hero h2 { margin: 0 0 10px; font-size: 26px; line-height: 1.35; }
-    .app-hero p { margin: 0 0 6px; font-size: 15px; opacity: .95; max-width: 46em; }
-    .app-hero .lede { font-size: 17px; opacity: 1; }
-    .app-sec { margin: 0 10px 26px; }
-    .app-sec h3 { font-size: 19px; border-left: 4px solid var(--accent);
-        padding-left: 10px; margin: 0 0 12px; }
-    .app-grid { display: grid; gap: 14px;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-    .app-card { background: var(--card); border: 1px solid var(--border);
-        border-radius: var(--radius); padding: 16px 18px; }
-    .app-card h4 { margin: 0 0 6px; font-size: 15px; color: var(--accent-dark); }
-    .app-card p { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.65; }
-    .app-table { width: 100%; border-collapse: collapse; background: var(--card);
-        border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-    .app-table th, .app-table td { border-bottom: 1px solid var(--border);
-        padding: 9px 12px; font-size: 13.5px; text-align: left; vertical-align: top; }
-    .app-table th { background: var(--th-bg); color: var(--th-text); white-space: nowrap; }
-    .app-table tr:last-child td { border-bottom: none; }
-    .app-note { background: var(--panel); border: 1px solid var(--border);
-        border-left: 4px solid var(--accent); border-radius: 8px;
-        padding: 12px 16px; font-size: 13.5px; color: var(--muted); line-height: 1.7; }
-    .app-code { background: var(--panel); border: 1px solid var(--border);
-        border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
-    .app-code pre { margin: 0; background: none; border: none; padding: 0;
-        font-size: 13px; color: var(--text); white-space: pre; }
-    .app-flow { width: 100%; height: auto; max-width: 760px; display: block; margin: 0 auto; }
-    .app-links a { display: inline-block; margin: 0 14px 8px 0; font-size: 14px; }
-    .app-badge { display: inline-block; background: var(--accent-light); color: var(--accent-dark);
-        border-radius: 999px; padding: 2px 11px; font-size: 12px; margin-right: 6px; }
-    @media (max-width: 600px) { .app-hero { padding: 24px 18px; } .app-hero h2 { font-size: 21px; } }
-</style>
+{% include "app/_style.html" %}
 {% endblock %}
 
 {% block content %}
@@ -89,9 +56,9 @@
             <path d="M458 117 H 524" stroke="var(--border)" stroke-width="2" fill="none"/>
             <rect x="526" y="70" width="226" height="94" rx="10"
                   fill="var(--card)" stroke="var(--border)"/>
-            <text x="639" y="100" fill="var(--text)" text-anchor="middle" font-weight="bold">書き出し（予定）</text>
+            <text x="639" y="100" fill="var(--text)" text-anchor="middle" font-weight="bold">出典つきの図</text>
             <text x="639" y="122" fill="var(--muted)" text-anchor="middle" font-size="11">出典・ラン時刻・ライセンスを</text>
-            <text x="639" y="138" fill="var(--muted)" text-anchor="middle" font-size="11">図とメタデータに埋め込む</text>
+            <text x="639" y="138" fill="var(--muted)" text-anchor="middle" font-size="11">図そのものに描き込む</text>
         </g>
     </svg>
 </div>
@@ -101,7 +68,8 @@
     <div class="app-grid">
         <div class="app-card">
             <h4>全球予報図</h4>
-            <p>ECMWF Open Data（IFS / AIFS）から、海面気圧・500 hPa 高度・850 hPa 気温・ジェット気流などを描きます。</p>
+            <p>ECMWF Open Data（IFS）から、海面気圧・500 hPa 高度・850 hPa 気温・ジェット気流などを描きます。
+               <a href="/App/Forecast/">使い方</a></p>
         </div>
         <div class="app-card">
             <h4>気候値とアノマリ</h4>
@@ -110,7 +78,8 @@
         </div>
         <div class="app-card">
             <h4>日本の現況</h4>
-            <p>気象庁のレーダー雨量ナウキャストと AMeDAS 約 1,300 地点の地上観測を、「いまの日本」の層として重ねます。</p>
+            <p>気象庁の高解像度降水ナウキャスト（過去 3 時間と 1 時間先まで、全国と地方の図）と、
+               AMeDAS 約 1,300 地点の地上観測を、「いまの日本」の層として描きます。</p>
         </div>
         <div class="app-card">
             <h4>観測の記録（1880 年〜）</h4>
@@ -119,17 +88,18 @@
         </div>
         <div class="app-card">
             <h4>注釈と重ね描き</h4>
-            <p>等圧線や風を、気温場・降水の上に重ねて描きます。
-               （予定）任意の気圧面のジオポテンシャル、テキストや矢印による注釈。</p>
+            <p>等圧線や風を、気温場・降水の上に重ねて描きます。気圧面は 1000〜50 hPa の 13 面
+               （ジオポテンシャル高度・気温・風・湿度・鉛直流・渦度）。（予定）テキストや矢印による注釈。</p>
         </div>
         <div class="app-card">
             <h4>エクスポート</h4>
-            <p>（予定）書き出す図には、出典・ラン識別子・ライセンスを必ず入れます。
-               いまは地点予報のグラフを PNG でダウンロードできます。</p>
+            <p>図には出典・ラン時刻・ライセンスを描き込みます。観測の記録の図と地点予報のグラフは、
+               そのまま PNG で保存できます。（開発中）予報図・ナウキャストの図の保存。</p>
         </div>
         <div class="app-card">
-            <h4>アニメーション</h4>
-            <p>予報ステップをタイムラインで連続再生できます（⏮ ▶ ⏭ とスライダー）。</p>
+            <h4>動く地図とアニメーション</h4>
+            <p>予報ステップをタイムラインで連続再生できます（⏮ ▶ ⏭ とスライダー）。
+               「動く地図」では GPU で描き、拡大・移動しながら風の粒子を流せます。ナウキャストも 5 分ごとのコマで再生できます。</p>
         </div>
     </div>
 </div>
@@ -182,7 +152,7 @@
     </table>
     <p class="app-note" style="margin-top:14px;">
         <strong>帰属は省略できません。</strong>
-        書き出す図には、データの出典・ラン時刻・図法・（アノマリなら）基準期間を必ず入れます（書き出しは開発中）。
+        書き出す図には、データの出典・ラン時刻・図法・（アノマリなら）基準期間を必ず入れます（予報図の保存は開発中）。
         図を共有した相手から「これは何のデータ?」と聞かれたとき、図そのものが答えられる状態にしてあります。
         気象庁データを合成・加工した場合は、その旨と編集責任の所在も併記します。
     </p>
@@ -226,6 +196,7 @@ flet run</pre></div>
 <div class="app-sec">
     <h3>リンク</h3>
     <p class="app-links">
+        <a href="/App/Forecast/"><strong>数値予報の天気図を描く（使い方）</strong></a>
         <a href="/App/Develop/"><strong>開発マニュアル</strong></a>
         <a href="https://github.com/aiseed-dev/weather">GitHub リポジトリ</a>
         <a href="https://www.ecmwf.int/en/forecasts/datasets/open-data">ECMWF Open Data</a>
