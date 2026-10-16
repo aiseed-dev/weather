@@ -80,10 +80,12 @@ def test_resolved_data_dir_defaults_to_user_cache(monkeypatch):
         __import__("pathlib").Path(user_cache_dir("aiseed-weather"))
 
 
-def test_resolved_data_dir_honors_setting_and_expands_tilde(monkeypatch):
-    monkeypatch.setenv("HOME", "/home/test")
+def test_resolved_data_dir_honors_setting_and_expands_tilde(monkeypatch, tmp_path):
+    # Windows の Python は ~ を HOME ではなく USERPROFILE から展開する
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     s = UserSettings(data_dir="~/wxdata")
-    assert str(user_settings.resolved_data_dir(s)) == "/home/test/wxdata"
+    assert user_settings.resolved_data_dir(s) == tmp_path / "wxdata"
 
 
 def test_load_or_init_reports_invalid_enum(fake_config):
