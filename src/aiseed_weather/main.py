@@ -53,6 +53,11 @@ _GEOMETRY_EVENTS = (
 
 def _restore_window(page: ft.Page) -> None:
     state = load_window_state()
+    if not state:
+        # 初めての起動。決め打ちの大きさだと小さい画面（1366×768 のノート、1280×800 の
+        # 仮想環境）ではみ出し、下のタブが見えない。画面の大きさは Flet から取れないので最大化する
+        page.window.maximized = True
+        return
     page.window.width = float(state.get("width", _DEFAULT_WIDTH))
     page.window.height = float(state.get("height", _DEFAULT_HEIGHT))
     # top / left may be None (first run); leave the platform to centre
