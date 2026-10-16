@@ -111,6 +111,17 @@ cron が止まっているときや、deb2 を経由せず確かめたいとき�
 15 1 * * * cd $HOME/dev/weather/WeatherStatic && ../.venv/bin/python aggregate_votes.py --kv
 ```
 
+**記録（`logs/*.log`）のローテーション。** cron の行は足さない。Debian の
+`logrotate.timer`（毎日 0 時台）が `/etc/logrotate.d/` を読むので、設定を写すだけでよい
+（root の持ち物にする。運用者が行う）:
+
+```bash
+sudo install -m 644 -o root -g root ~/dev/weather/WeatherStatic/logrotate-weather.conf /etc/logrotate.d/weather
+```
+
+週ごと・12 週分を残し、2 週目から圧縮する。50MB を超えたら週の途中でも回す。
+cron は毎回 `>>` で開き直すので、移すだけで次の実行が新しいファイルを作る。
+
 **入れる順番。** 前提が揃っていない行を入れると、毎回失敗するだけで何も
 進まない（失敗は log に溜まるだけで気づきにくい）。
 
