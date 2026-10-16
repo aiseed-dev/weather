@@ -1,0 +1,46 @@
+# AIseed Weather の Windows 版（Python ごとまとめたアプリ）を、GitHub の Windows の機械で組み立てる。
+# 試験を流してから desktop/ を flet build windows し、成果物（artifact）として 14 日残す。
+# 組み立ての中身は desktop/pyproject.toml。手元では win11（仮想環境）で同じことを確かめている。
+name: windows-app
+
+on:
+  push:
+    branches: [windows-app]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: アプリの部品と試験の道具
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install eccodes cfgrib ecmwf-opendata xarray netcdf4 zarr fsspec s3fs numpy pandas scipy matplotlib cartopy pyproj contourpy pillow platformdirs httpx polars "flet==1.0.4" pytest pytest-asyncio
+          python -m pip install -e . -e packages/flet-gpufield
+
+      - name: 試験
+        run: python -m pytest -q tests
+
+      - name: 組み立て
+        working-directory: desktop
+        run: |
+          python -m pip install "flet-cli==1.0.4"
+          flet build windows --yes
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aiseed-weather-windows
+          path: desktop/build/windows
+          retention-days: 14
