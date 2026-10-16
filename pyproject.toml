@@ -12,7 +12,7 @@ keywords = ["weather", "ecmwf", "open-meteo", "flet", "visualization", "aiseed"]
 # Flet is installed via pip even in dev (beta with frequent releases).
 # This list exists for packaging metadata.
 dependencies = [
-    "flet[all]>=0.85",
+    "flet>=0.85",  # 開発用のコマンド・Web 版（flet[all]）は environment.yml で入れる
     "ecmwf-opendata>=0.3.20",
     "xarray>=2024.1.0",
     "numpy>=1.26",

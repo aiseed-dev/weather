@@ -1,0 +1,53 @@
+# AIseed Weather を Python ごと 1 つのアプリにまとめる（配布用）。
+#
+# 開発は今までどおり conda の環境（environment.yml）と `flet run`。こちらは、conda を使わない人に
+# 配るための組み立て。Windows の 2026-10-15 の /app/ は、人のアクセスの 42% が Windows だった。
+#
+#   cd desktop && flet build windows --yes      # Windows で（Visual Studio の C++ の道具が要る）
+#
+# 部品は、どれも PyPI に Windows・Python 3.13 用の出来合い（wheel）がある（2026-10-16 に確かめた）。
+# 版の正本は environment.yml。こちらは同じ物を PyPI の名前で並べる。
+[project]
+name = "aiseed-weather-desktop"
+version = "0.1.0"
+description = "AIseed Weather（Python ごとまとめた配布用のアプリ）"
+requires-python = "==3.13.*"
+license = "AGPL-3.0-or-later"
+dependencies = [
+    "aiseed-weather",
+    "flet==1.0.4",
+    "flet-gpufield",
+    "eccodes",
+    "cfgrib",
+    "ecmwf-opendata",
+    "xarray",
+    "netcdf4",
+    "zarr",
+    "fsspec",
+    "s3fs",
+    "numpy",
+    "pandas",
+    "scipy",
+    "matplotlib",
+    "cartopy",
+    "pyproj",
+    "contourpy",
+    "pillow",
+    "platformdirs",
+    "httpx",
+    "polars",
+]
+
+[tool.flet]
+org = "dev.aiseed"
+product = "AIseed Weather"
+company = "AIseed"
+copyright = "Copyright (c) 2026 Yasuhiro"
+
+[tool.flet.app]
+path = "src"
+
+# リポジトリの中の物を使う（PyPI には出していない）
+[tool.flet.dev_packages]
+aiseed-weather = ".."
+flet-gpufield = "../packages/flet-gpufield"

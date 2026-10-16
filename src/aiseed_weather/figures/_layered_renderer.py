@@ -20,6 +20,7 @@ Those files become thin wrappers that call ``render(SPEC, …)``.
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import contourpy
@@ -60,7 +61,12 @@ _FALLBACK_BASE_RGB = 110                  # used when no precomputed mask
 
 
 def _load_font(size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    # matplotlib が同梱する DejaVu Sans を先に使う。どの OS でも同じ字形になり、Windows には
+    # /usr/share/fonts が無い（そのままだと小さな仮のフォントに落ちる）
+    import matplotlib
+    bundled = Path(matplotlib.get_data_path()) / "fonts" / "ttf" / "DejaVuSans.ttf"
     for path in (
+        str(bundled),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     ):
