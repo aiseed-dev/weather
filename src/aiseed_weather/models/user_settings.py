@@ -205,6 +205,24 @@ class LoadResult:
     error: str | None = None
 
 
+def open_in_text_editor(path: Path) -> None:
+    """Open the config file in the OS text editor, for the user to edit.
+
+    The app neither reads nor writes the file here; the user's editor does.
+    Windows has no default program for ``.toml``, so ``os.startfile`` fails
+    there; Notepad is always present.
+    """
+    import subprocess
+    import sys
+
+    if sys.platform == "win32":
+        subprocess.Popen(["notepad.exe", str(path)])
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-t", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
+
+
 def load_or_init() -> LoadResult:
     """Load config.toml, writing the template once if it doesn't exist.
 

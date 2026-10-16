@@ -3,15 +3,27 @@
 # 組み立ての中身は desktop/pyproject.toml。手元では win11（仮想環境）で同じことを確かめている。
 name: windows-app
 
+# main ではアプリと組み立ての中身が変わったときだけ流す（サイトの変更では流さない）。
+# app-v* のタグを打つと、組み立てた zip を GitHub の Release（試験版）に載せる。タグは運用者が打つ
 on:
   push:
-    branches: [windows-app]
+    branches: [main]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "desktop/**"
+      - "packages/flet-gpufield/**"
+      - "pyproject.toml"
+      - ".github/workflows/windows-app.yml"
+    tags: ["app-v*"]
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 90
+    permissions:
+      contents: write   # タグのときに Release を作る
     defaults:
       run:
         shell: pwsh
@@ -44,3 +56,15 @@ jobs:
           name: aiseed-weather-windows
           path: desktop/build/windows
           retention-days: 14
+
+      - name: Release に載せる（app-v* のタグのとき）
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 展開したときに 1 つのフォルダーにまとまるように
+          Rename-Item .\desktop\build\windows "AIseed Weather"
+          $zip = "AIseed-Weather-windows-${{ github.ref_name }}.zip"
+          7z a -tzip -mx=7 $zip ".\desktop\build\AIseed Weather" | Out-Null
+          gh release create "${{ github.ref_name }}" $zip --prerelease --title "AIseed Weather ${{ github.ref_name }}（Windows 試験版）" --notes "Windows 10/11（64 ビット）。zip を展開し、AIseed Weather.exe を起動してください。初めての起動は 1 分ほどかかります。"
+

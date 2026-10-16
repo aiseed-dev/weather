@@ -20,7 +20,10 @@ restart. This is the standard Linux pattern: dotfile, not wizard.
 2. If the file does not exist:
    - Create the parent directory.
    - Write the template returned by `user_settings.template()`.
-   - Render a panel telling the user where the file is and to restart.
+   - Render a panel telling the user where the file is and to restart, in
+     Japanese, with one button that opens the file in the OS text editor
+     (`user_settings.open_in_text_editor`; Notepad on Windows, where `.toml`
+     has no default program). The editor, not the app, touches the file.
 3. If the file exists but fails to parse or validate:
    - Render a panel with the path and the reason. No fallback values.
 4. Otherwise: hand the parsed `UserSettings` to the main app.

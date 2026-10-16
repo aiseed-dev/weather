@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
+import logging
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -12,6 +13,8 @@ from aiseed_weather.components.point_forecast_view import PointForecastView
 from aiseed_weather.components.radar_view import RadarView
 from aiseed_weather.models import user_settings
 from aiseed_weather.models.user_settings import LoadResult
+
+logger = logging.getLogger(__name__)
 
 
 # Path → tab index mapping used by both the NavigationBar (active tab
@@ -583,23 +586,35 @@ def AppShell(settings, fetch: FetchController):
 
 @ft.component
 def ConfigStatusPanel(result: LoadResult):
+    # 設定の画面は作らない（first-run-setup）。場所と書き換え方を伝え、OS の編集ソフトで
+    # 開くボタンだけを置く。Windows の人に AppData の奥のファイルを探させないため
+    open_error, set_open_error = ft.use_state("")
+
     if result.status == "created":
-        title = "Config file created"
+        title = "設定ファイルを作りました / Config file created"
         title_color = ft.Colors.AMBER
         lines = [
-            f"A template was written to:\n  {result.path}",
-            'Edit it to choose data sources ("forecast_source", '
-            '"historical_source", "point_source"), then restart the app.',
-            'JMA radar and AMeDAS work even with every source set to "none".',
+            "どこからデータを取るかは、この設定ファイルで選びます。アプリが勝手に決めることはありません。",
+            "ファイルを開き、forecast_source（数値予報）・historical_source（気候値）・"
+            "point_source（地点予報）を書き換えて保存し、アプリを起動し直してください。"
+            "選べる値は、ファイルの中の説明にあります。",
+            '気象庁のレーダー（ナウキャスト）とアメダスは、すべて "none" のままでも使えます。',
         ]
     else:  # "invalid"
-        title = "Config file is invalid"
+        title = "設定ファイルに誤りがあります / Config file is invalid"
         title_color = ft.Colors.RED
         lines = [
-            f"Path:\n  {result.path}",
-            f"Reason:\n  {result.error}",
-            "Fix the file and restart the app.",
+            f"理由: {result.error}",
+            "直して保存し、アプリを起動し直してください。",
         ]
+
+    def open_file(e):
+        try:
+            user_settings.open_in_text_editor(result.path)
+            set_open_error("")
+        except Exception as exc:
+            logger.exception("Opening the config file failed")
+            set_open_error(f"開けませんでした: {type(exc).__name__}: {exc}")
 
     return ft.Container(
         padding=24,
@@ -607,6 +622,9 @@ def ConfigStatusPanel(result: LoadResult):
             spacing=12,
             controls=[
                 ft.Text(title, size=22, weight=ft.FontWeight.BOLD, color=title_color),
+                ft.Text(str(result.path), size=13, selectable=True, font_family="monospace"),
+                ft.Button("設定ファイルを開く", icon=ft.Icons.EDIT_NOTE, on_click=open_file),
+                *([ft.Text(open_error, size=13, color=ft.Colors.RED)] if open_error else []),
                 *[ft.Text(line, size=13) for line in lines],
             ],
         ),

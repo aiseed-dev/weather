@@ -51,3 +51,11 @@ path = "src"
 [tool.flet.dev_packages]
 aiseed-weather = ".."
 flet-gpufield = "../packages/flet-gpufield"
+
+# Windows の実行ファイルの名前（既定は project.name の aiseed-weather-desktop）
+[tool.flet.windows]
+artifact = "AIseed Weather"
+
+# 部品の試験一式（pandas・scipy・xarray などで約 65MB）と型の説明は、動かすのに要らない
+[tool.flet.cleanup]
+package_files = ["**/tests", "**/*.pyi"]

@@ -45,6 +45,7 @@ R2 は地点別 10 分値の収集先（Worker が置く。非公開・30 日で
 | [forecast-distribution.md](forecast-distribution.md) | 予報パックの配信設計 |
 | [forecast-charts.md](forecast-charts.md) | 予報図の描画 |
 | [gpu-map.md](gpu-map.md) | 地図画面の「動く地図」（GPU 描画・風の粒子）。部品・実行環境・速さ |
+| [windows-app.md](windows-app.md) | Windows 版（Python ごとまとめたアプリ）。組み立て・配布・仮想環境での確かめ方 |
 
 利用者向けの文書は **Web が載せる**: `/App/`（紹介）、`/App/Forecast/`（数値予報の
 天気図を描く使い方）と `/App/Develop/`（開発マニュアル）。テンプレートは
