@@ -1,0 +1,14 @@
+{# 画面の例（generate.py の APP_SHOTS。wwwroot/Images/App/）。予報ではなく解析（T+0）と観測だけを写す #}
+{% if shots %}
+<div class="app-sec">
+    <h3>画面の例</h3>
+    <div class="app-shots">
+    {% for s in shots %}
+    <figure class="fc-shot">
+        <img src="{{ s.src }}" width="{{ s.width }}" height="{{ s.height }}" alt="{{ s.alt }}" loading="lazy">
+        <figcaption>{{ s.caption }}</figcaption>
+    </figure>
+    {% endfor %}
+    </div>
+</div>
+{% endif %}

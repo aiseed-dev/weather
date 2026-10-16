@@ -53,8 +53,8 @@ WWWROOT = next((p for p in _candidates if p and p.is_dir()), BASE / "wwwroot")
 # スタイルは assets/site-base.css + assets/site.css の 2 枚だけで足りる。
 ASSET_PATHS = ["Images", "favicon.ico", "robots.txt"]
 
-# /App/Forecast/ の画面の例（wwwroot/Images/App/）。予報ではなく解析（T+0）を写したもの
-APP_FORECAST_SHOTS = [
+# /App/・/App/Forecast/ の画面の例（wwwroot/Images/App/）。予報ではなく解析（T+0）と観測だけを写す
+APP_SHOTS = [
     {"src": "/Images/App/forecast-map.jpg", "width": 800, "height": 600,
      "alt": "AIseed Weather の地図画面。全球の海面更正気圧の等圧線",
      "caption": "地図画面（図）。全球の海面更正気圧。左で地域・GPV データ・レイヤーを選び、下のスライダーで"
@@ -63,6 +63,10 @@ APP_FORECAST_SHOTS = [
      "alt": "AIseed Weather の動く地図。日本周辺の海面更正気圧と 10 m 風の粒子",
      "caption": "動く地図。日本周辺の海面更正気圧に 10 m 風の粒子を流している。GPU で描き、拡大・移動できる。"
                 "同じく解析（T+0）。"},
+    {"src": "/Images/App/nowcast-moving.jpg", "width": 800, "height": 500, "app_only": True,
+     "alt": "AIseed Weather のナウキャスト。全国の降水強度の動く地図",
+     "caption": "ナウキャスト。気象庁の高解像度降水ナウキャストを、過去 1 時間から 1 時間先まで 5 分ごとに"
+                "再生する。出典: 気象庁ホームページ（加工して描画）。"},
 ]
 
 
@@ -1638,18 +1642,21 @@ def build_app(env: Environment) -> None:
 
     普通の人にはデスクトップ版を勧める位置づけなので、アプリの文書は
     このサイトが載せる。内容の正本はリポジトリの README / AGENTS / CLAUDE。"""
+    import hashlib
+    app_js_v = hashlib.sha256((BASE / "assets" / "js" / "app-pages.js").read_bytes()).hexdigest()[:10]
+    shots = [s for s in APP_SHOTS if (WWWROOT / s["src"].lstrip("/")).is_file()]
     write("App/index.html", env.get_template("app/index.html").render(
-        page_title="AIseed Weather — 天気図スタジオ",
-        nav_active="app", build_year=datetime.now().year))
+        page_title="AIseed Weather — 天気図を自分で描くデスクトップアプリ",
+        nav_active="app", build_year=datetime.now().year, shots=shots, app_js_v=app_js_v))
     write("App/Develop/index.html", env.get_template("app/develop.html").render(
         page_title="AIseed Weather 開発マニュアル",
         nav_active="app", build_year=datetime.now().year))
     # 数値予報の使い方。旧サイトの GFS の予報図（/Gfs/…）から来た人に、予報図はアプリで
     # 描くことを案内する（このサイトは予報図を載せない）。画面の例は解析（T+0）だけを使う
-    shots = [s for s in APP_FORECAST_SHOTS if (WWWROOT / s["src"].lstrip("/")).is_file()]
     write("App/Forecast/index.html", env.get_template("app/forecast.html").render(
         page_title="数値予報の天気図を自分で描く（ECMWF・AIseed Weather の使い方）",
-        nav_active="app", build_year=datetime.now().year, shots=shots))
+        nav_active="app", build_year=datetime.now().year, app_js_v=app_js_v,
+        shots=[s for s in shots if not s.get("app_only")]))
 
 
 def build_privacy(env: Environment) -> None:
@@ -1961,6 +1968,9 @@ def legacy_redirects(targets: list, now: datetime | None = None) -> list[str]:
         # デスクトップアプリで数値予報を描く使い方のページを出す
         "/Gfs /App/Forecast/ 301",
         "/Forecast /App/Forecast/ 301",
+        # 打ち間違い（2026-10-16、利用者が /app/forcast を開いて 404 だった）
+        "/App/Forcast /App/Forecast/ 301",
+        "/Forcast /App/Forecast/ 301",
     ]
     for m in range(1, 13):
         lines.append(f"/Monthly/Heinenti/{m:02d} /Monthly/Heinenti{m:02d}/ 301")
@@ -2145,9 +2155,14 @@ def build_seo(env: Environment, stations: dict) -> None:
           # 1〜12 でない月は、地点の URL へ（そこから _redirects が今の行き先へ送る）
           'var s=/^\\/stations\\/jp\\/([^\\/]+)\\/\\d+\\/?$/.exec(p.toLowerCase());'
           'if(s)location.replace("/stations/jp/"+s[1]+"/")</script>'
-          '<body style="font-family:sans-serif;text-align:center;padding:60px">'
+          '<body style="font-family:sans-serif;text-align:center;padding:60px;line-height:2">'
           '<h1>ページが見つかりません</h1>'
-          '<p><a href="/">個人開発気象統計 トップへ</a></p></body>')
+          # トップへのリンクだけだと、探していた物の近くへ戻る道が無い
+          '<p><a href="/">個人開発気象統計 トップへ</a></p>'
+          '<p><a href="/temperature/highsmain/">今日の気温</a> ・ <a href="/climate/">雨温図</a> ・ '
+          '<a href="/stations/">観測地点</a> ・ <a href="/status/temperature/">実況（10 分毎）</a></p>'
+          '<p><a href="/app/">デスクトップアプリ AIseed Weather</a> ・ '
+          '<a href="/app/forecast/">数値予報の天気図を描く</a></p></body>')
 
 
 def sweep_uppercase() -> None:

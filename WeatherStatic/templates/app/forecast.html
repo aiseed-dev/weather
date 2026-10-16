@@ -3,7 +3,7 @@
   このサイトは予報図を載せない（気象業務法）。旧サイトの GFS の予報図（/Gfs/…）は
   ここへ 301 で送る（generate.py の legacy_redirects）。
   内容の正本はリポジトリの README・CLAUDE.md とアプリ本体。画面の名前はアプリと同じにする。
-  コンテキスト: shots（画面の例。無ければ出さない）
+  コンテキスト: shots（画面の例。無ければ出さない）/ app_js_v
 #}
 {% extends "_layout.html" %}
 
@@ -16,9 +16,6 @@
         width: 30px; height: 30px; border-radius: 50%; background: var(--accent); color: #fff;
         font-weight: 700; text-align: center; line-height: 30px; }
     .fc-steps h4 { margin: 2px 0 4px; font-size: 15px; color: var(--accent-dark); }
-    .fc-shot { margin: 0 0 16px; }
-    .fc-shot img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; display: block; }
-    .fc-shot figcaption { font-size: 12.5px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
     .fc-ui { font-weight: 600; color: var(--text); }
 </style>
 {% endblock %}
@@ -31,7 +28,16 @@
        ECMWF の数値予報を自分の PC に取得して、全球から日本周辺まで描きます。</p>
     <p>このサイトは、気象業務法のため予報図を載せていません。以前ここにあった GFS の予報図
        （850 hPa 気温など）の代わりに、デスクトップアプリ AIseed Weather で同じ種類の図を描く方法をまとめました。</p>
+    <p class="app-cta">
+        <a class="app-btn app-btn-main" href="#steps">使い方を見る</a>
+        <a class="app-btn" href="/App/">AIseed Weather の紹介</a>
+        <a class="app-btn" href="https://github.com/aiseed-dev/weather">GitHub</a>
+    </p>
 </div>
+
+{% include "app/_mobile_note.html" %}
+
+{% include "app/_shots.html" %}
 
 <div class="app-sec">
     <h3>描ける図</h3>
@@ -68,17 +74,6 @@
     </div>
 </div>
 
-{% if shots %}
-<div class="app-sec">
-    <h3>画面の例</h3>
-    {% for s in shots %}
-    <figure class="fc-shot">
-        <img src="{{ s.src }}" width="{{ s.width }}" height="{{ s.height }}" alt="{{ s.alt }}" loading="lazy">
-        <figcaption>{{ s.caption }}</figcaption>
-    </figure>
-    {% endfor %}
-</div>
-{% endif %}
 
 <div class="app-sec">
     <h3>旧サイトの GFS の図との対応</h3>
@@ -97,7 +92,7 @@
     </p>
 </div>
 
-<div class="app-sec">
+<div class="app-sec" id="steps">
     <h3>使い方</h3>
     <ol class="fc-steps">
         <li>
@@ -149,4 +144,8 @@ flet run</pre></div>
     </p>
 </div>
 
+{% endblock %}
+
+{% block add_script %}
+<script src="/js/app-pages.js?v={{ app_js_v }}" defer></script>
 {% endblock %}

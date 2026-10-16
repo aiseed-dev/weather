@@ -33,5 +33,25 @@
     .app-links a { display: inline-block; margin: 0 14px 8px 0; font-size: 14px; }
     .app-badge { display: inline-block; background: var(--accent-light); color: var(--accent-dark);
         border-radius: 999px; padding: 2px 11px; font-size: 12px; margin-right: 6px; }
+    .app-cta { margin-top: 16px !important; display: flex; flex-wrap: wrap; gap: 10px; }
+    .app-btn { display: inline-block; padding: 8px 18px; border-radius: 999px; font-size: 14px; font-weight: 600;
+        border: 1px solid rgba(255,255,255,.7); color: #fff; background: rgba(255,255,255,.12); cursor: pointer; }
+    .app-btn:hover, .app-btn:focus { color: #fff; text-decoration: none; background: rgba(255,255,255,.25); }
+    .app-btn-main { background: #fff; color: var(--accent-dark); border-color: #fff; }
+    .app-btn-main:hover, .app-btn-main:focus { background: var(--accent-light); color: var(--accent-dark); }
+    .app-mobile-note { display: none; margin: 0 10px 22px; padding: 14px 16px; border-radius: var(--radius);
+        background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+        font-size: 14px; line-height: 1.8; }
+    .app-mobile-note .app-btn { margin-top: 8px; border-color: var(--accent); background: var(--accent); color: #fff; }
+    .app-share-done { margin-left: 8px; color: var(--muted); font-size: 13px; }
+    /* 指で触る端末だけに出す（幅だけで決めると、狭いウィンドウのパソコンにも出る） */
+    @media (pointer: coarse) { .app-mobile-note { display: block; } }
+    .app-shots { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    .fc-shot { margin: 0 0 16px; }
+    .fc-shot img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; display: block; }
+    .fc-shot figcaption { font-size: 12.5px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+    .app-code { position: relative; }
+    .app-copy { position: absolute; top: 8px; right: 8px; font-size: 12px; padding: 3px 10px; border-radius: 6px;
+        border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; }
     @media (max-width: 600px) { .app-hero { padding: 24px 18px; } .app-hero h2 { font-size: 21px; } }
 </style>

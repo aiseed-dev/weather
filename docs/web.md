@@ -57,7 +57,7 @@
 | `/status/records/` | 1 | 観測史上 1 位の更新状況 | generate_status | 10 分 |
 | `/status/lab/` | 1 | Python グラフ工房（ブラウザ内 Python） | generate_status | 10 分 |
 | `/data/amedas-latest.json` | 1 | 全地点の最新の値（気温・今日の最高最低と時刻・風向風速・前 1/24 時間降水量・積雪）。自分の地点のカード用（`build_latest_json`、約 130KB） | generate_status | 10 分 |
-| `/about/` `/app/` | 2 | サイト説明・デスクトップ版の案内 | generate | 毎時 |
+| `/about/` `/app/` | 2 | サイト説明・デスクトップ版の案内。`/app/` と `/app/forecast/` は上にボタンと画面の例（`wwwroot/Images/App/`、解析と観測だけ）、入れ方は OS ごとの状況つき。指で触る端末には「パソコンで使うアプリ」の案内とページを送るボタン（2026-10-15 の /app/ は人のアクセスの 55% がスマートフォン・タブレット）。`assets/js/app-pages.js` が、外へのリンク（kaiseki の出来事 `out`）・コマンドを写した・ページを送った（`use`）を記録する | generate | 毎時 |
 | `/privacy/` | 1 | 免責事項・プライバシーポリシー（旧サイトは www.time-j.net の共通ページ。このサイトで実際に使っている物だけを書く） | generate（`build_privacy`） | 毎時 |
 | `/kaiseki/` `/kaiseki.js` | 1 | 自前のアクセス解析（aiai-pro の kaiseki）の知らせ（外部送信規律）とスクリプト。`WEATHER_KAISEKI_TO` があるときだけ作り、全ページの `</head>` の前にスクリプトを入れる。無ければ消す（weatherlib/kaiseki.py） | generate（`build_kaiseki`） | 毎時 |
 | `/app/develop/` | 1 | **アプリの開発マニュアル**（環境構築・構成・スキル・設計原則） | generate | 毎時 |
