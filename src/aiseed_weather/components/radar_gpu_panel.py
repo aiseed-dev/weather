@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 
 import flet as ft
 
@@ -25,6 +26,10 @@ from aiseed_weather.services import gpu_radar, jma_endpoints
 # 部品の ready を待つ時間。Web 版で 0.3〜1.3 秒（2026-10-14）だが、最初のコマの受け渡しが
 # 重いと 20 秒近く遅れたことがある（2026-10-13、Web 版）。案内は ready が届けば消える。
 READY_TIMEOUT_SEC = 10.0
+# 部品入りの実行環境の作り方。Linux は tools/build_client.sh（bash）、Windows は client で flet build
+CLIENT_HOWTO = ("一度だけ client のフォルダーで flet build windows -o ..\\build\\windows を実行し、\n"
+                if sys.platform == "win32" else
+                "一度だけ tools/build_client.sh を実行し（build/linux に作られます）、\n")
 
 
 def _message(text: str, *, icon=ft.Icons.INFO_OUTLINE) -> ft.Control:
@@ -112,8 +117,8 @@ def RadarGpuPanel(area_key: str, frames: tuple, step: int, status_text: str):
             content=_message(
                 "動く地図の部品から応答がありません（応答が届けば、この案内は消えます）。\n"
                 "消えないときは、いまの Flet の実行環境に部品が入っていません。\n"
-                "一度だけ tools/build_client.sh を実行し（build/linux に作られます）、\n"
-                "プロジェクトのフォルダーから flet run で起動し直してください。",
+                + CLIENT_HOWTO
+                + "プロジェクトのフォルダーから flet run で起動し直してください。",
                 icon=ft.Icons.BUILD_CIRCLE_OUTLINED),
         ))
     return ft.Column(expand=True, spacing=6, controls=[
