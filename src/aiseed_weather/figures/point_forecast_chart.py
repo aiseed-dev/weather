@@ -49,11 +49,11 @@ configure_cjk_font()
 # entry: (display_label, unit). The chart renderer never hardcodes
 # 'temperature_2m'.
 _VAR_INFO: dict[str, tuple[str, str]] = {
-    "temperature_2m":     ("気温 / Temperature",       "°C"),
-    "precipitation":      ("降水量 / Precipitation",    "mm/h"),
-    "relative_humidity_2m": ("相対湿度 / Humidity",     "%"),
-    "wind_speed_10m":     ("風速 / Wind speed",         "m/s"),
-    "cloud_cover":        ("雲量 / Cloud cover",        "%"),
+    "temperature_2m": ("気温", "°C"),
+    "precipitation": ("降水量", "mm/h"),
+    "relative_humidity_2m": ("相対湿度", "%"),
+    "wind_speed_10m": ("風速", "m/s"),
+    "cloud_cover": ("雲量", "%"),
 }
 
 
@@ -172,7 +172,7 @@ def render_point_forecast(
         ax.plot(
             ts, _float_array(hres_joined[mean_col]),
             color=_CLIM_LINE, linestyle=":", linewidth=1.0,
-            label="平年 mean",
+            label="平年値",
         )
 
     # ── Ensemble band (future side only) ────────────────────────

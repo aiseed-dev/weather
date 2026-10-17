@@ -192,13 +192,13 @@ def AppShell(settings, fetch: FetchController):
     # OR when the user is on a different tab.
     #
     # Tabs:
-    #   - 取得状況 / Fetch    GPV download status, stop button,
-    #                          per-frame log
-    #   - ターミナル / Terminal  Python REPL for ad-hoc workflows
-    #                            (ERA5 anomaly composites etc.) —
-    #                            placeholder for now
-    #   - ログ / Logs         tail of recent app log lines
-    #                          (placeholder)
+    #   - 取得状況   GPV download status, stop button,
+    #                per-frame log
+    #   - ターミナル  Python REPL for ad-hoc workflows
+    #                (ERA5 anomaly composites etc.) —
+    #                placeholder for now
+    #   - ログ       tail of recent app log lines
+    #                (placeholder)
     # ──────────────────────────────────────────────────────────
     bottom_panel_open, set_bottom_panel_open = ft.use_state(False)
     bottom_panel_tab, set_bottom_panel_tab = ft.use_state(0)
@@ -236,8 +236,8 @@ def AppShell(settings, fetch: FetchController):
         )
 
     fetch_tab_label = (
-        f"取得状況 / Fetch  ({done}/{total})"
-        if fetch_running else "取得状況 / Fetch"
+        f"取得状況 ({done}/{total})"
+        if fetch_running else "取得状況"
     )
 
     bottom_panel_header = ft.Container(
@@ -251,8 +251,8 @@ def AppShell(settings, fetch: FetchController):
                     spacing=4,
                     controls=[
                         _tab_button(fetch_tab_label, 0),
-                        _tab_button("ターミナル / Terminal", 1),
-                        _tab_button("ログ / Logs", 2),
+                        _tab_button("ターミナル", 1),
+                        _tab_button("ログ", 2),
                     ],
                 ),
                 ft.Row(
@@ -264,7 +264,7 @@ def AppShell(settings, fetch: FetchController):
                         ft.IconButton(
                             icon=ft.Icons.STOP_CIRCLE,
                             icon_size=18,
-                            tooltip="停止 / Stop fetch",
+                            tooltip="取得を停止",
                             visible=fetch_running,
                             on_click=lambda _: stop_fetch(),
                         ),
@@ -319,6 +319,16 @@ def AppShell(settings, fetch: FetchController):
         "cancelled": ("−", ft.Colors.OUTLINE),
     }
 
+    _STATUS_LABEL_JA = {
+        "pending": "待機中",
+        "checking": "確認中",
+        "downloading": "取得中",
+        "done": "完了",
+        "cached": "キャッシュ済",
+        "failed": "失敗",
+        "cancelled": "中止",
+    }
+
     items = fetch_items
     n_done = sum(1 for it in items if it["status"] in ("done", "cached"))
     n_failed = sum(1 for it in items if it["status"] == "failed")
@@ -342,7 +352,12 @@ def AppShell(settings, fetch: FetchController):
         eta_str = "—"
 
     def _item_row(it):
-        glyph, color = _STATUS_GLYPH.get(it["status"], ("?", ft.Colors.GREY))
+        # "downloading (sfc/pl)" carries its kinds after the state word.
+        state_word, _, detail = it["status"].partition(" ")
+        glyph, color = _STATUS_GLYPH.get(state_word, ("?", ft.Colors.GREY))
+        status_text = _STATUS_LABEL_JA.get(state_word, state_word)
+        if detail:
+            status_text = f"{status_text} {detail}"
         return ft.Row(
             spacing=8,
             controls=[
@@ -368,7 +383,7 @@ def AppShell(settings, fetch: FetchController):
                     color=ft.Colors.GREY,
                 ),
                 ft.Text(
-                    it["status"], size=10, color=color, expand=True,
+                    status_text, size=10, color=color, expand=True,
                 ),
             ],
         )
@@ -394,7 +409,7 @@ def AppShell(settings, fetch: FetchController):
                             size=13, weight=ft.FontWeight.BOLD,
                         ),
                         ft.Text(
-                            f"{n_done}/{n_total} frames",
+                            f"{n_done}/{n_total} フレーム",
                             size=11, color=ft.Colors.GREY,
                         ),
                         ft.Text(
@@ -432,8 +447,8 @@ def AppShell(settings, fetch: FetchController):
                         if items
                         else [
                             ft.Text(
-                                "GPV データ取得を開始すると、ここに 1 frame ごとの"
-                                "状態 (pending → downloading → done) と "
+                                "GPV データ取得を開始すると、ここに 1 フレームごとの"
+                                "状態（待機中 → 取得中 → 完了）と "
                                 "サイズ・所要時間が表示されます。",
                                 size=11, color=ft.Colors.GREY, italic=True,
                             ),
@@ -451,7 +466,7 @@ def AppShell(settings, fetch: FetchController):
             spacing=8,
             controls=[
                 ft.Text(
-                    "ターミナル / Terminal  (Coming soon)",
+                    "ターミナル（準備中）",
                     size=13, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Text(
@@ -513,7 +528,7 @@ def AppShell(settings, fetch: FetchController):
             spacing=8,
             controls=[
                 ft.Text(
-                    "ログ / Logs  (Coming soon)",
+                    "ログ（準備中）",
                     size=13, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Text(
@@ -556,16 +571,16 @@ def AppShell(settings, fetch: FetchController):
         # the default landing page; モデル, ナウキャスト and 観測 follow.
         destinations=[
             ft.NavigationBarDestination(
-                icon=ft.Icons.LOCATION_ON, label="地点 / Points",
+                icon=ft.Icons.LOCATION_ON, label="地点",
             ),
             ft.NavigationBarDestination(
-                icon=ft.Icons.PUBLIC, label="モデル / Models",
+                icon=ft.Icons.PUBLIC, label="モデル",
             ),
             ft.NavigationBarDestination(
-                icon=ft.Icons.RADAR, label="ナウキャスト / Nowcast",
+                icon=ft.Icons.RADAR, label="ナウキャスト",
             ),
             ft.NavigationBarDestination(
-                icon=ft.Icons.THERMOSTAT, label="観測 / Observations",
+                icon=ft.Icons.THERMOSTAT, label="観測",
             ),
         ],
     )
@@ -591,7 +606,7 @@ def ConfigStatusPanel(result: LoadResult):
     open_error, set_open_error = ft.use_state("")
 
     if result.status == "created":
-        title = "設定ファイルを作りました / Config file created"
+        title = "設定ファイルを作りました"
         title_color = ft.Colors.AMBER
         lines = [
             "どこからデータを取るかは、この設定ファイルで選びます。アプリが勝手に決めることはありません。",
@@ -601,7 +616,7 @@ def ConfigStatusPanel(result: LoadResult):
             '気象庁のレーダー（ナウキャスト）とアメダスは、すべて "none" のままでも使えます。',
         ]
     else:  # "invalid"
-        title = "設定ファイルに誤りがあります / Config file is invalid"
+        title = "設定ファイルに誤りがあります"
         title_color = ft.Colors.RED
         lines = [
             f"理由: {result.error}",

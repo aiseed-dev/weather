@@ -34,11 +34,11 @@ import polars as pl
 # Variable presentation table — mirrored from the matplotlib module
 # so adding a variable in one place doesn't leave the other behind.
 _VAR_INFO: dict[str, tuple[str, str]] = {
-    "temperature_2m":     ("気温 / Temperature",       "°C"),
-    "precipitation":      ("降水量 / Precipitation",    "mm/h"),
-    "relative_humidity_2m": ("相対湿度 / Humidity",     "%"),
-    "wind_speed_10m":     ("風速 / Wind speed",         "m/s"),
-    "cloud_cover":        ("雲量 / Cloud cover",        "%"),
+    "temperature_2m": ("気温", "°C"),
+    "precipitation": ("降水量", "mm/h"),
+    "relative_humidity_2m": ("相対湿度", "%"),
+    "wind_speed_10m": ("風速", "m/s"),
+    "cloud_cover": ("雲量", "%"),
 }
 
 
@@ -600,7 +600,7 @@ def build_point_forecast_canvas(
     # ── Legend (top-right strip) ────────────────────────────────
     legend_items: list[tuple[str, str, str]] = [
         (_HRES,      "HRES",            "line"),
-        (_CLIM_LINE, "平年 mean",        "dotted"),
+        (_CLIM_LINE, "平年値",        "dotted"),
         (_CLIM_FILL, "平年 p25..p75",   "fill"),
     ]
     if (

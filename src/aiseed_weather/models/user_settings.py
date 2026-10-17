@@ -239,7 +239,7 @@ def load_or_init() -> LoadResult:
     try:
         raw = tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as e:
-        return LoadResult(status="invalid", path=path, error=f"TOML parse error: {e}")
+        return LoadResult(status="invalid", path=path, error=f"TOML を読めません: {e}")
     try:
         settings = _from_mapping(raw)
     except (ValueError, TypeError) as e:
@@ -257,7 +257,7 @@ def _enum_field(data: dict, key: str, enum_cls, default):
     except ValueError as exc:
         valid = ", ".join(repr(m.value) for m in enum_cls)
         raise ValueError(
-            f"{key}: {value!r} is not a valid value. Choose one of: {valid}"
+            f"{key}: {value!r} は使えない値です。選べる値: {valid}"
         ) from exc
 
 

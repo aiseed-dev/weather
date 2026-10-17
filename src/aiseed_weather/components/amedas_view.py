@@ -3,7 +3,7 @@
 
 """AMeDAS ground observation map (the 今 panel of the 観測 tab).
 
-Stays idle on mount; fetches only when the user presses 取得 / Fetch
+Stays idle on mount; fetches only when the user presses 取得
 (see the `user-action-fetch` skill). One snapshot carries every
 element, so switching the element re-draws without fetching again.
 """
@@ -83,7 +83,7 @@ def AmedasView(settings: UserSettings):
     result, set_result = ft.use_state(None)
 
     async def draw(snapshot, stations, el: str, desc: bool):
-        set_progress("Rendering station map…")
+        set_progress("観測所の図を描画中…")
         r = _result(snapshot, stations, el, desc)
         png = await asyncio.to_thread(r.spec.render, 100)
         set_result(Result(spec=r.spec, png=png, header=r.header, rows=r.rows,
@@ -94,9 +94,9 @@ def AmedasView(settings: UserSettings):
         set_error(None)
         try:
             service = JmaAmedasService(data_dir=resolved_data_dir(settings))
-            set_progress("Fetching AMeDAS snapshot from JMA…")
+            set_progress("気象庁からアメダスの観測値を取得中…")
             snapshot = await service.fetch(force=force)
-            set_progress("Reading the AMeDAS station table…")
+            set_progress("アメダスの観測所表を読み込み中…")
             stations = await service.stations()
             set_data((snapshot, stations))
             await draw(snapshot, stations, element, order == "desc")

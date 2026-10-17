@@ -80,7 +80,7 @@ class PointForecastService:
     def __init__(self, settings: UserSettings):
         if settings.point_source == PointForecastSource.NONE:
             raise PointForecastDisabledError(
-                "Point forecast source is not configured."
+                "地点予報のソースが設定されていません。"
             )
         self._cache_dir = resolved_data_dir(settings) / "openmeteo"
         self._cache_dir.mkdir(parents=True, exist_ok=True)

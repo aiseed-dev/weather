@@ -147,7 +147,7 @@ def field(label: str, value: str, on_change, width: int = 140,
 def StatusArea(state: str, progress: str, error: str | None, idle_text: str):
     if state == "loading":
         return ft.Row([ft.ProgressRing(width=18, height=18),
-                       ft.Text(progress or "Loading…", color=ft.Colors.GREY)], spacing=10)
+                       ft.Text(progress or "読み込み中…", color=ft.Colors.GREY)], spacing=10)
     if state == "error":
         return ft.Text(f"取得できませんでした: {error}", color=ft.Colors.RED)
     if state == "idle":
@@ -225,10 +225,10 @@ def fetch_buttons(state: str, run) -> ft.Control:
         return ft.FilledButton("取得中…", disabled=True)
     if state in ("ready", "error"):
         return ft.Row([
-            ft.FilledButton("取得 / Fetch", on_click=lambda _: ft.context.page.run_task(run)),
-            ft.OutlinedButton("再取得 / Refresh",
+            ft.FilledButton("取得", on_click=lambda _: ft.context.page.run_task(run)),
+            ft.OutlinedButton("再取得",
                               on_click=lambda _: ft.context.page.run_task(run, True)),
         ])
-    return ft.FilledButton("取得 / Fetch", on_click=lambda _: ft.context.page.run_task(run))
+    return ft.FilledButton("取得", on_click=lambda _: ft.context.page.run_task(run))
 
 

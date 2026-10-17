@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
-"""観測 / Observations — JMA observations, now and since 1880.
+"""観測 — JMA observations, now and since 1880.
 
 Four panels behind one mode switch:
 
@@ -95,7 +95,7 @@ def DayRankingPanel(data_dir: Path):
             block, m = await archive.load_period(d, d, elements=(element,), force=force,
                                                  progress=set_progress)
             stations = await archive.stations()
-            set_progress("Ranking stations…")
+            set_progress("観測所を順位付け中…")
             exclude = st.REMOTE_STATIONS if exclude_remote else frozenset()
             rows = st.day_ranking(block, stations, d, cond, exclude=exclude)
             if rows is None:
@@ -113,7 +113,7 @@ def DayRankingPanel(data_dir: Path):
                 zero_based=element in ("precip", "sun"),
                 prov=provenance(m, d.isoformat()),
             )
-            set_progress("Rendering figure…")
+            set_progress("図を描画中…")
             png = await asyncio.to_thread(spec.render, 100)
             set_result(Result(
                 spec=spec, png=png, header=("順位", "地点", f"{name}（{unit}）", "地点番号"),
@@ -188,7 +188,7 @@ def PeriodPanel(data_dir: Path):
             block, m = await archive.load_period(d0, d1, elements=(element,), force=force,
                                                  progress=set_progress)
             stations = await archive.stations()
-            set_progress("Summarising every station…")
+            set_progress("全観測所を集計中…")
             exclude = st.REMOTE_STATIONS if exclude_remote else frozenset()
             rows = await asyncio.to_thread(st.period_summary, block, element, cond, exclude=exclude)
             ranked = st.rank_period(rows, stations, metric, descending=order == "desc")
@@ -215,7 +215,7 @@ def PeriodPanel(data_dir: Path):
                 value_format=fmt, zero_based=metric == "count" or element in ("precip", "sun"),
                 prov=provenance(m, f"{first}..{last}"),
             )
-            set_progress("Rendering figure…")
+            set_progress("図を描画中…")
             png = await asyncio.to_thread(spec.render, 100)
             with_day = metric in ("max", "min")
             header = ("順位", "地点", "日数" if metric == "count" else f"{name}（{unit}）") \
@@ -306,7 +306,7 @@ def StationPanel(data_dir: Path):
                               file_stem=f"station{code}_{first:%Y%m%d}-{last:%Y%m%d}",
                               prov=provenance(m, f"{first}..{last}"),
                               series_first=first, series=vals)
-            set_progress("Rendering figure…")
+            set_progress("図を描画中…")
             png = await asyncio.to_thread(spec.render, 100)
 
             def summary(el: str) -> tuple[str, ...]:
@@ -343,7 +343,7 @@ def StationPanel(data_dir: Path):
             return
         set_state("loading")
         set_error(None)
-        set_progress("Reading the station list…")
+        set_progress("観測所の一覧を読み込み中…")
         try:
             stations = await ObservationArchive(data_dir=data_dir).stations(force=force)
         except Exception as e:
@@ -413,7 +413,7 @@ def ObservationView(settings: UserSettings):
 
     return ft.Container(padding=16, content=ft.Column(
         scroll=ft.ScrollMode.AUTO, expand=True, spacing=12, controls=[
-            ft.Text("観測 / Observations (JMA)", size=18, weight=ft.FontWeight.BOLD),
+            ft.Text("観測 (JMA)", size=18, weight=ft.FontWeight.BOLD),
             ft.Row([mode_button(k, label) for k, label in MODES], wrap=True, spacing=8),
             body,
             ft.Text(f"{ep.ATTRIBUTION}。日別の記録は個人開発気象統計が配っている NetCDF"

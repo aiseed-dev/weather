@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
-"""Point-forecast view (the 地点 / Points tab).
+"""Point-forecast view (the 地点 tab).
 
 Read .agents/skills/chart-base-design (palette principles), the
 flet-component-basics skill (declarative @ft.component + hooks), and
@@ -71,6 +71,13 @@ from aiseed_weather.services.point_climatology import (
     daily_records,
     hourly_climatology,
     join_forecast_with_climatology,
+)
+from aiseed_weather.services.solar import is_daylight
+from aiseed_weather.services.jma_weather_codes import JmaWeather, jma_weather
+from aiseed_weather.services.weather_summary import (
+    WET_HOUR_MM,
+    daily_weather_code,
+    hourly_display_code,
 )
 
 logger = logging.getLogger(__name__)
@@ -212,15 +219,13 @@ def _hourly_tsv(df: pl.DataFrame) -> str:
 
 # WMO weather code → (label, Material icon name, accent colour).
 # Mirrors what a Japanese TV / newspaper forecast shows at a glance.
-# When we collapse a day to a single 'representative' condition we
-# take the max code in the day because the WMO ordering puts the
-# more disruptive phenomena (rain → snow → thunder) above the benign
-# ones (clear → cloud), so 'worst of the day wins' is the right
-# default for a headline impression.
+# A day is collapsed to one code by services.weather_summary
+# (daytime sky, rain/snow only from 1 mm/day) — not by max code,
+# which let one drizzle hour make the whole day 霧雨.
 _WEATHER_BY_CODE: dict[int, tuple[str, str, str]] = {
     0:  ("快晴",     ft.Icons.WB_SUNNY,     "#f5a623"),
     1:  ("晴れ",     ft.Icons.WB_SUNNY,     "#f5a623"),
-    2:  ("晴時々曇", ft.Icons.WB_CLOUDY,    "#c8a14e"),
+    2:  ("晴時々曇", ft.Icons.WB_CLOUDY,    "#9aa5b1"),
     3:  ("曇り",     ft.Icons.CLOUD,        "#7c8693"),
     45: ("霧",       ft.Icons.FOGGY,        "#9aa0a8"),
     48: ("霧",       ft.Icons.FOGGY,        "#9aa0a8"),
@@ -257,7 +262,87 @@ def _weather_descr(code) -> tuple[str, str, str]:
     except (TypeError, ValueError):
         return ("—", ft.Icons.HELP_OUTLINE, ft.Colors.GREY)
     return _WEATHER_BY_CODE.get(
-        c, (f"code {c}", ft.Icons.HELP_OUTLINE, ft.Colors.GREY),
+        c, (f"コード {c}", ft.Icons.HELP_OUTLINE, ft.Colors.GREY),
+    )
+
+
+_WEEKDAY_JP = ("月", "火", "水", "木", "金", "土", "日")
+
+_SUN_COLOR = "#f5a623"
+_MOON_COLOR = "#6c7a96"
+_CLOUD_COLOR = "#9aa5b1"
+
+
+def _weather_icon(code, *, size: int, night: bool = False) -> ft.Control:
+    """Icon for a WMO code. 晴時々曇 is a sun behind a cloud because
+    the stock WB_CLOUDY glyph is cloud-only and read as plain 曇り;
+    clear and partly clear skies become a moon after dark.
+    """
+    _, icon, color = _weather_descr(code)
+    try:
+        c = int(code)
+    except (TypeError, ValueError):
+        c = None
+    if night and c in (0, 1):
+        return ft.Icon(ft.Icons.NIGHTLIGHT, color=_MOON_COLOR, size=size)
+    if night and c == 2:
+        return ft.Icon(ft.Icons.NIGHTS_STAY, color=_MOON_COLOR, size=size)
+    if c == 2:
+        return ft.Stack(
+            controls=[
+                ft.Icon(
+                    ft.Icons.WB_SUNNY, color=_SUN_COLOR,
+                    size=size * 0.7, left=0, top=0,
+                ),
+                ft.Icon(
+                    ft.Icons.CLOUD, color=_CLOUD_COLOR,
+                    size=size * 0.75, right=0, bottom=0,
+                ),
+            ],
+            width=size, height=size,
+        )
+    return ft.Icon(icon, color=color, size=size)
+
+
+_JMA_PART_ICON: dict[str, tuple[str, str]] = {
+    "sun": (ft.Icons.WB_SUNNY, _SUN_COLOR),
+    "cloud": (ft.Icons.CLOUD, _CLOUD_COLOR),
+    "rain": (ft.Icons.UMBRELLA, "#3a78b3"),
+    "snow": (ft.Icons.AC_UNIT, "#8aa9c6"),
+}
+
+
+def _jma_weather_icon(w: JmaWeather | None, *, size: int) -> ft.Control:
+    """Icon for a JMA forecast code: one glyph, two overlapped for
+    "時々", or two side by side with an arrow for "後"."""
+    if w is None:
+        return ft.Icon(ft.Icons.HELP_OUTLINE, color=ft.Colors.GREY, size=size)
+
+    def part(kind: str, part_size: float, **position) -> ft.Icon:
+        icon, color = _JMA_PART_ICON[kind]
+        return ft.Icon(icon, color=color, size=part_size, **position)
+
+    if w.sub is None:
+        return part(w.main, size)
+    if w.relation == "後":
+        return ft.Stack(
+            controls=[
+                part(w.main, size * 0.55, left=0, top=0),
+                part(w.sub, size * 0.55, right=0, bottom=0),
+                ft.Icon(
+                    ft.Icons.CHEVRON_RIGHT, color=ft.Colors.GREY,
+                    size=size * 0.35,
+                ),
+            ],
+            alignment=ft.Alignment.CENTER,
+            width=size, height=size,
+        )
+    return ft.Stack(
+        controls=[
+            part(w.main, size * 0.75, left=0, top=0),
+            part(w.sub, size * 0.55, right=0, bottom=0),
+        ],
+        width=size, height=size,
     )
 
 
@@ -303,7 +388,12 @@ def _forecast_summary_strip(
             .dt.convert_time_zone(str(tz))
             .dt.offset_by("-1h")
             .dt.date()
-            .alias("date")
+            .alias("date"),
+            pl.col("timestamp")
+            .dt.convert_time_zone(str(tz))
+            .dt.offset_by("-1h")
+            .dt.hour()
+            .alias("local_hour"),
         )
         # Drop the past_days=3 history slice the forecast fetch
         # always carries — a 'weekly forecast' headline shouldn't
@@ -314,7 +404,9 @@ def _forecast_summary_strip(
             pl.col("temperature_2m").max().alias("t_high"),
             pl.col("temperature_2m").min().alias("t_low"),
             pl.col("precipitation").sum().alias("p_sum"),
-            pl.col("weather_code").max().alias("wcode"),
+            pl.col("local_hour").alias("hours"),
+            pl.col("weather_code").alias("codes"),
+            pl.col("precipitation").alias("precips"),
         ])
         .sort("date")
         .head(days)
@@ -340,13 +432,16 @@ def _forecast_summary_strip(
             else "#c0392b" if d.weekday() == 6
             else None
         )
-        label, icon, color = _weather_descr(row["wcode"])
-        p_sum = row["p_sum"]
-        precip_text = (
-            f"{p_sum:.1f} mm" if p_sum is not None and p_sum > 0.05
-            else "—"
+        wcode = daily_weather_code(
+            row["hours"], row["codes"], row["precips"],
         )
-        precip_color = "#3a78b3" if (p_sum or 0) > 0.05 else ft.Colors.GREY
+        label = _weather_descr(wcode)[0]
+        p_sum = row["p_sum"]
+        # Below one gauge step of AMeDAS the model's rain is not
+        # something anyone would see fall, so the card shows nothing.
+        precip_wet = p_sum is not None and p_sum >= WET_HOUR_MM
+        precip_text = f"{p_sum:.1f} mm" if precip_wet else "—"
+        precip_color = "#3a78b3" if precip_wet else ft.Colors.GREY
 
         cards.append(ft.Container(
             content=ft.Column(
@@ -356,7 +451,7 @@ def _forecast_summary_strip(
                         color=day_color,
                     ),
                     ft.Text(d.strftime("%m/%d"), size=10, color=ft.Colors.GREY),
-                    ft.Icon(icon, color=color, size=40),
+                    _weather_icon(wcode, size=40),
                     ft.Text(label, size=11),
                     ft.Row(controls=[
                         ft.Text(
@@ -452,7 +547,7 @@ def _hourly_forecast_strip(
                 "今日" if delta == 0
                 else "明日" if delta == 1
                 else "明後日" if delta == 2
-                else d.strftime("%a")
+                else f"({_WEEKDAY_JP[d.weekday()]})"
             )
             head_color = (
                 "#2c7fb8" if d.weekday() == 5
@@ -481,9 +576,13 @@ def _hourly_forecast_strip(
             ))
             prev_date = d
 
-        label, icon, color = _weather_descr(row.get("weather_code"))
+        wcode = row.get("weather_code")
+        night = not is_daylight(
+            row["timestamp"], location.latitude, location.longitude,
+        )
         temp = row.get("temperature_2m")
         precip = row.get("precipitation")
+        wcode = hourly_display_code(wcode, precip)
         # Warm / cold tinting on the temperature digit — matches the
         # red-hot / blue-cold convention the weekly card already uses.
         if temp is None:
@@ -499,7 +598,7 @@ def _hourly_forecast_strip(
                 controls=[
                     ft.Text(hour_label, size=10,
                             color=ft.Colors.GREY),
-                    ft.Icon(icon, color=color, size=22),
+                    _weather_icon(wcode, size=22, night=night),
                     ft.Text(
                         _format_value(temp, fmt=".0f") + "°",
                         size=12, weight=ft.FontWeight.BOLD,
@@ -507,7 +606,8 @@ def _hourly_forecast_strip(
                     ),
                     ft.Text(
                         f"{precip:.1f}"
-                        if precip is not None and precip > 0.05 else "",
+                        if precip is not None and precip >= WET_HOUR_MM
+                        else "",
                         size=9, color="#3a78b3",
                     ),
                 ],
@@ -644,6 +744,7 @@ def _jma_forecast_card(forecast) -> ft.Control:
             else day.date.strftime("%m/%d")
         )
         text = day.weather_text or "—"
+        icon_weather = jma_weather(day.weather_code)
         pop_text = (
             f"降水確率 {day.precip_prob_pct} %"
             if day.precip_prob_pct is not None else ""
@@ -651,6 +752,7 @@ def _jma_forecast_card(forecast) -> ft.Control:
         short_rows.append(ft.Row(controls=[
             ft.Text(day_label, weight=ft.FontWeight.BOLD,
                     size=13, width=70),
+            _jma_weather_icon(icon_weather, size=20),
             ft.Text(text, size=12, expand=True),
             ft.Text(pop_text, size=11, color=ft.Colors.GREY),
         ]))
@@ -670,7 +772,7 @@ def _jma_forecast_card(forecast) -> ft.Control:
             "#2c7fb8" if day.date.weekday() == 5
             else "#c0392b" if day.date.weekday() == 6 else None
         )
-        label, icon, color = _weather_descr(day.weather_code)
+        weather = jma_weather(day.weather_code)
         rel_color = (
             "#27ae60" if day.reliability == "A"
             else "#e67e22" if day.reliability == "B"
@@ -683,8 +785,17 @@ def _jma_forecast_card(forecast) -> ft.Control:
                             color=day_color),
                     ft.Text(day.date.strftime("%m/%d"),
                             size=9, color=ft.Colors.GREY),
-                    ft.Icon(icon, color=color, size=28),
-                    ft.Text(label, size=10),
+                    _jma_weather_icon(weather, size=28),
+                    # Room for two lines so the cards stay one height
+                    # even beside long wording like 晴後一時雨か雷雨.
+                    ft.Container(
+                        content=ft.Text(
+                            weather.text if weather else "—",
+                            size=10, max_lines=2,
+                            text_align=ft.TextAlign.CENTER,
+                        ),
+                        height=28,
+                    ),
                     ft.Row(controls=[
                         ft.Text(_format_value(day.temp_max, fmt=".0f"),
                                 color="#c0392b",
@@ -860,7 +971,7 @@ def _daily_summary_table(
         rows.append(ft.DataRow(cells=cells))
 
     return ft.Column(controls=[
-        ft.Text("日次サマリ / Daily summary",
+        ft.Text("日次サマリ",
                 size=14, weight=ft.FontWeight.BOLD),
         ft.DataTable(columns=columns, rows=rows),
     ])
@@ -1423,7 +1534,7 @@ def PointForecastView(settings: UserSettings):
             try:
                 ZoneInfo(tz_input)
             except ZoneInfoNotFoundError:
-                set_settings_err(f"未知の timezone: {tz_input}")
+                set_settings_err(f"未知のタイムゾーン: {tz_input}")
                 return
         ids = tuple(
             s for s in (settings_a1, settings_a2, settings_a3) if s
@@ -1476,7 +1587,7 @@ def PointForecastView(settings: UserSettings):
             try:
                 ZoneInfo(tz_input)
             except ZoneInfoNotFoundError:
-                set_new_err(f"未知の timezone: {tz_input}")
+                set_new_err(f"未知のタイムゾーン: {tz_input}")
                 return
         name = new_name.strip() or f"{lat:.2f},{lon:.2f}"
         loc = Location.new(
@@ -1492,25 +1603,25 @@ def PointForecastView(settings: UserSettings):
         title=ft.Text("地点を追加"),
         content=ft.Column(tight=True, controls=[
             ft.TextField(
-                label="場所の名前 / Name",
+                label="場所の名前",
                 value=new_name,
                 autofocus=True,
                 on_change=lambda e: set_new_name(e.control.value),
             ),
             ft.TextField(
-                label="緯度 / Latitude (-90..90)",
+                label="緯度（-90〜90）",
                 value=new_lat,
                 keyboard_type=ft.KeyboardType.NUMBER,
                 on_change=lambda e: set_new_lat(e.control.value),
             ),
             ft.TextField(
-                label="経度 / Longitude (-180..180)",
+                label="経度（-180〜180）",
                 value=new_lon,
                 keyboard_type=ft.KeyboardType.NUMBER,
                 on_change=lambda e: set_new_lon(e.control.value),
             ),
             ft.TextField(
-                label="タイムゾーン / Timezone (IANA, 空欄で自動)",
+                label="タイムゾーン（IANA、空欄で自動）",
                 value=new_tz,
                 hint_text="Asia/Tokyo, Europe/London, America/New_York …",
                 on_change=lambda e: set_new_tz(e.control.value),
@@ -1597,7 +1708,7 @@ def PointForecastView(settings: UserSettings):
                         weight=ft.FontWeight.BOLD, size=13),
                 ft.Text(auto_hint, size=11, color=ft.Colors.GREY),
                 ft.Dropdown(
-                    label="予報エリア (office code)",
+                    label="予報エリア（府県予報区コード）",
                     value=settings_office,
                     options=office_options,
                     on_select=lambda e: set_settings_office(
@@ -1670,7 +1781,7 @@ def PointForecastView(settings: UserSettings):
 
     header = ft.Row(
         controls=[
-            ft.Text("地点予報 / Point forecast", size=18,
+            ft.Text("地点予報", size=18,
                     weight=ft.FontWeight.BOLD),
             ft.Container(expand=True),
             ft.FilledButton(
@@ -1737,7 +1848,7 @@ def PointForecastView(settings: UserSettings):
             variable_picker,
             ft.IconButton(
                 icon=ft.Icons.REFRESH,
-                tooltip="再取得 / Refresh now",
+                tooltip="再取得",
                 on_click=lambda _: (
                     ft.context.page.run_task(load_forecast, selected_location)
                     if selected_location else None

@@ -8,8 +8,8 @@ description: How and when data is fetched. The app fetches only in response to a
 Data is fetched **only** in response to an explicit user button press.
 The user actions that trigger fetching are:
 
-1. **Pressing 取得 / Fetch** on a view that is sitting idle
-2. **Pressing 再取得 / Refresh** on a view that already has data
+1. **Pressing 取得** on a view that is sitting idle
+2. **Pressing 再取得** on a view that already has data
 3. **Changing a parameter** that requires new data (different layer,
    region, or reference period) — implicit re-fetch, treated as a user
    action because the user just clicked something
@@ -41,12 +41,12 @@ idle ──[Fetch]──▶ loading ──▶ ready    ──[Refresh]──▶ 
 Required UI states:
 
 - **idle**: one-line description of what will be fetched, plus a
-  prominent `取得 / Fetch` button. No progress indicator yet.
+  prominent `取得` button. No progress indicator yet.
 - **loading**: progress indicator + a one-line status string showing
   which phase is running (see "Progress messages" below).
-- **ready**: the data, plus a `再取得 / Refresh` button that forces a
+- **ready**: the data, plus a `再取得` button that forces a
   fresh fetch ignoring cache.
-- **error**: the error message and a `再取得 / Retry` button.
+- **error**: the error message and a `再取得` button.
 
 Disabled / not-configured is a fifth state for views whose data source
 the user opted out of in `config.toml` (e.g. ECMWF map view with
@@ -62,14 +62,14 @@ which step is running:
 
 | Phase | Suggested message |
 |-------|-------------------|
-| Service construction | "Initializing forecast service…" |
-| Latest-run probe | "Probing latest ECMWF run…" |
-| Download / decode | "Fetching MSL grid · 20260514 00z…" |
-| Render | "Rendering chart (matplotlib + cartopy)…" |
-| Encode | "Encoding PNG…" |
+| Service construction | "予報サービスを初期化中…" |
+| Latest-run probe | "最新の ECMWF ランを確認中…" |
+| Download / decode | "MSL を取得中 · 20260514 00z…" |
+| Render | "図を描画中…" |
+| Encode | "PNG に変換中…" |
 
-Wording can vary by view; keep them short and in present-continuous
-tense.
+Wording can vary by view; keep them short, in Japanese, and in
+present-continuous tense (…中).
 
 ## Cache window per source
 
@@ -104,12 +104,12 @@ def MapView(settings):
     async def load(force: bool = False):
         set_state("loading")
         set_error(None)
-        set_progress("Probing…")
+        set_progress("確認中…")
         try:
             run = await service.latest_run(...)
-            set_progress(f"Fetching · {run}…")
+            set_progress(f"取得中 · {run}…")
             d = await service.fetch(..., force=force)
-            set_progress("Rendering…")
+            set_progress("描画中…")
             fig = await asyncio.to_thread(render, d)
             set_data(fig_bytes)
             set_progress("")
@@ -123,7 +123,7 @@ def MapView(settings):
         return ft.Column([
             ft.Text("MSL · ECMWF IFS, latest available run."),
             ft.FilledButton(
-                content=ft.Text("取得 / Fetch"),
+                content=ft.Text("取得"),
                 on_click=lambda _: ft.context.page.run_task(load),
             ),
         ])

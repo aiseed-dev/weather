@@ -26,38 +26,46 @@ class Region:
     # cartopy extent (lon_min, lon_max, lat_min, lat_max) in PlateCarree
     # degrees. None means "global" — render functions call set_global().
     extent: tuple[float, float, float, float] | None
+    # English name for captions of published charts (tools/publish_charts.py),
+    # which stay English while the desktop UI is Japanese-only.
+    label_en: str = ""
 
 
-GLOBAL = Region("global", "全球 / Global", "platecarree", None)
+GLOBAL = Region("global", "全球", "platecarree", None, label_en="Global")
 ARCTIC = Region(
-    "arctic", "北極中心 / Arctic",
+    "arctic", "北極中心",
     projection="north_polar",
     # Equidistant-azimuthal disc from the pole out to 30° N. The
     # extent is informational only — the renderer uses a precomputed
     # polar reindex table, not a plate-carrée crop.
     extent=(-180.0, 180.0, 30.0, 90.0),
+    label_en="Arctic",
 )
 ANTARCTIC = Region(
-    "antarctic", "南極中心 / Antarctic",
+    "antarctic", "南極中心",
     projection="south_polar",
     extent=(-180.0, 180.0, -90.0, -30.0),
+    label_en="Antarctic",
 )
 # Matches JMA ASAS (Asian Surface Analysis) standard chart extent —
 # 100°E to 180°E, equator to 60°N. The narrower zoom that just frames
 # the Japanese archipelago lost the synoptic context (Siberian high,
 # Pacific high, mid-latitude lows tracking off the continent) that
 # every JP analyst expects on a "日本周辺" chart.
-JAPAN = Region("japan", "日本周辺 / Japan", "platecarree", (100.0, 180.0, 0.0, 60.0))
-EAST_ASIA = Region("east_asia", "東アジア / East Asia", "platecarree", (95.0, 165.0, 5.0, 60.0))
+JAPAN = Region("japan", "日本周辺", "platecarree", (100.0, 180.0, 0.0, 60.0), label_en="Japan")
+EAST_ASIA = Region("east_asia", "東アジア", "platecarree", (95.0, 165.0, 5.0, 60.0), label_en="East Asia")
 NORTH_PACIFIC = Region(
-    "north_pacific", "北太平洋 / N. Pacific", "platecarree", (130.0, 240.0, 10.0, 65.0),
+    "north_pacific", "北太平洋", "platecarree", (130.0, 240.0, 10.0, 65.0),
+    label_en="N. Pacific",
 )
 NORTH_ATLANTIC = Region(
-    "north_atlantic", "北大西洋 / N. Atlantic", "platecarree", (-80.0, 20.0, 20.0, 70.0),
+    "north_atlantic", "北大西洋", "platecarree", (-80.0, 20.0, 20.0, 70.0),
+    label_en="N. Atlantic",
 )
-EUROPE = Region("europe", "ヨーロッパ / Europe", "platecarree", (-25.0, 50.0, 30.0, 72.0))
+EUROPE = Region("europe", "ヨーロッパ", "platecarree", (-25.0, 50.0, 30.0, 72.0), label_en="Europe")
 NORTH_AMERICA = Region(
-    "north_america", "北米 / N. America", "platecarree", (-170.0, -50.0, 15.0, 75.0),
+    "north_america", "北米", "platecarree", (-170.0, -50.0, 15.0, 75.0),
+    label_en="N. America",
 )
 
 # Continental presets for the overseas chart set (time-j.net worldtime
@@ -65,12 +73,13 @@ NORTH_AMERICA = Region(
 # plate-carrée boxes chosen so each continent fits with synoptic
 # context; the Japan EEZ blank (_blank.py) applies on top when the
 # publisher renders these.
-ASIA = Region("asia", "アジア / Asia", "platecarree", (25.0, 150.0, -10.0, 60.0))
-AFRICA = Region("africa", "アフリカ / Africa", "platecarree", (-25.0, 60.0, -40.0, 40.0))
+ASIA = Region("asia", "アジア", "platecarree", (25.0, 150.0, -10.0, 60.0), label_en="Asia")
+AFRICA = Region("africa", "アフリカ", "platecarree", (-25.0, 60.0, -40.0, 40.0), label_en="Africa")
 SOUTH_AMERICA = Region(
-    "south_america", "南米 / S. America", "platecarree", (-95.0, -30.0, -60.0, 15.0),
+    "south_america", "南米", "platecarree", (-95.0, -30.0, -60.0, 15.0),
+    label_en="S. America",
 )
-OCEANIA = Region("oceania", "オセアニア / Oceania", "platecarree", (100.0, 180.0, -50.0, 0.0))
+OCEANIA = Region("oceania", "オセアニア", "platecarree", (100.0, 180.0, -50.0, 0.0), label_en="Oceania")
 
 
 PRESETS: tuple[Region, ...] = (
@@ -103,11 +112,15 @@ def custom_region(
     return Region(
         key="custom",
         label=(
-            f"任意 / Custom ({lon_min:.0f}, {lon_max:.0f}, "
+            f"任意 ({lon_min:.0f}, {lon_max:.0f}, "
             f"{lat_min:.0f}, {lat_max:.0f})"
         ),
         projection="mercator",
         extent=(lon_min, lon_max, lat_min, lat_max),
+        label_en=(
+            f"Custom ({lon_min:.0f}, {lon_max:.0f}, "
+            f"{lat_min:.0f}, {lat_max:.0f})"
+        ),
     )
 
 

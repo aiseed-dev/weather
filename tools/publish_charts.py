@@ -401,7 +401,7 @@ def render_world(model: str, run: datetime, step: int, data: StepData, out: Path
                                      msl_overlay_ds=data["sfc"] if overlay else None)
                 target.write_bytes(finalize(
                     png,
-                    f"{region.label.split(' / ')[-1]}  {product}  {run:%Y-%m-%d %H}Z  "
+                    f"{region.label_en or region.label}  {product}  {run:%Y-%m-%d %H}Z  "
                     f"T+{step}h  {WORLD_BLANK_NOTE}",
                     f"{ATTR[model]} / {ATTR_EEZ}"))
                 n += 1

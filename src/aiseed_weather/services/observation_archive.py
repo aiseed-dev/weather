@@ -170,7 +170,7 @@ class ObservationArchive:
         Only ``elements`` are read: a 20-year block of all stations is ~40 MB
         per element in float32, so callers ask for what they use."""
         say = progress or (lambda _m: None)
-        say("Reading the archive manifest…")
+        say("公開一覧を読み込み中…")
         m = await self.manifest(force=force)
         if start > m.coverage_last or end < m.coverage_first:
             raise ValueError(f"{start}〜{end} の記録はまだありません（公開されているのは "
@@ -181,25 +181,25 @@ class ObservationArchive:
         paths = []
         years = range(start.year, end.year + 1)
         for i, y in enumerate(years, 1):
-            say(f"Fetching daily records · {y} ({i}/{len(years)})…")
+            say(f"日別の記録を取得中 · {y} 年 ({i}/{len(years)})…")
             p = await self.year_path(y, m, force=force)
             if p is None:
-                raise ValueError(f"{y} is not in the archive")
+                raise ValueError(f"{y} 年は公開されていません")
             paths.append(p)
-        say("Reading NetCDF…")
+        say("NetCDF を読み込み中…")
         block = await asyncio.to_thread(_read_years, paths, start, end, elements)
         return block, m
 
     async def load_station(self, code: int, *, force: bool = False,
                            progress: Progress | None = None) -> tuple[StationSeries, Manifest]:
         say = progress or (lambda _m: None)
-        say("Reading the archive manifest…")
+        say("公開一覧を読み込み中…")
         m = await self.manifest(force=force)
-        say(f"Fetching the record of station {code}…")
+        say(f"観測所 {code} の記録を取得中…")
         p = await self.station_path(code, m, force=force)
         if p is None:
-            raise ValueError(f"Station {code} is not in the archive")
-        say("Reading NetCDF…")
+            raise ValueError(f"観測所 {code} は公開されていません")
+        say("NetCDF を読み込み中…")
         return await asyncio.to_thread(_read_station, p, code), m
 
     # ── network ──────────────────────────────────────────────────

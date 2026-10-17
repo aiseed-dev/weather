@@ -257,7 +257,7 @@ class ForecastService:
         """
         if override_source is None and settings.forecast_source == ForecastSource.NONE:
             raise ForecastDisabledError(
-                "Forecast source is not configured. User opted into historical-only mode."
+                "予報ソースが設定されていません（気候値のみを使う設定です）。"
             )
         if override_source is not None:
             client_source = override_source
@@ -268,7 +268,7 @@ class ForecastService:
         if client_source == "mirror":
             if not settings.mirror_url:
                 raise ForecastDisabledError(
-                    "forecast_source = \"mirror\" requires mirror_url in config.toml."
+                    "forecast_source = \"mirror\" には config.toml の mirror_url が必要です。"
                 )
             # No ecmwf-opendata Client: the mirror is plain HTTPS files
             # (latest.json + per-step NetCDF packs). latest_run() reads

@@ -3,7 +3,7 @@
 
 """Map view: ECMWF synoptic chart with timeline animation.
 
-Pipeline (only after the user presses 取得 / Fetch):
+Pipeline (only after the user presses 取得):
   probe latest run via ForecastService.latest_run → download GRIB2 →
   decode via cfgrib → render matplotlib figure → embed as PNG bytes.
 
@@ -454,7 +454,7 @@ def _stitch_plan(
 
 def _step_label(h: int) -> str:
     if h == 0:
-        return "T+0h (analysis)"
+        return "T+0h (解析値)"
     days = h // 24
     rest = h % 24
     return f"T+{h}h (D+{days})" if rest == 0 else f"T+{h}h"
@@ -478,18 +478,18 @@ def _matrix_pressure_levels() -> tuple[int, ...]:
 
 _MATRIX_PRESSURE_LEVELS: tuple[int, ...] = _matrix_pressure_levels()
 
-# Variable prefix → bilingual short label for the matrix row header.
+# Variable prefix → short label for the matrix row header.
 _PRESSURE_VAR_LABELS: dict[str, str] = {
-    "gh":   "高度 / GH",
-    "t":    "気温 / Temp",
-    "w":    "鉛直流 / ω",
-    "r":    "相対湿度 / RH",
-    "u":    "東西風 / U",
-    "v":    "南北風 / V",
-    "q":    "比湿 / SH",
-    "d":    "発散 / Div",
-    "vo":   "渦度 / Vort",
-    "wind": "風速 / Speed",
+    "gh":   "高度",
+    "t":    "気温",
+    "w":    "鉛直流",
+    "r":    "相対湿度",
+    "u":    "東西風",
+    "v":    "南北風",
+    "q":    "比湿",
+    "d":    "発散",
+    "vo":   "渦度",
+    "wind": "風速",
 }
 
 
@@ -593,8 +593,8 @@ def _build_pressure_matrix(
                     tooltip=(
                         f"{_PRESSURE_VAR_LABELS.get(prefix, prefix)} "
                         f"@ {level} hPa\n"
-                        f"key: {f.key}  ·  unit: {f.unit}\n"
-                        f"status: {f.status.name}"
+                        f"キー: {f.key}  ·  単位: {f.unit}\n"
+                        f"状態: {f.status.name}"
                     ),
                     on_click=(
                         (lambda _, k=f.key: on_select(k))
@@ -629,7 +629,7 @@ def _layer_card(field, *, is_selected: bool, on_pick) -> ft.Control:
             else ft.Colors.SURFACE_CONTAINER
         ),
         tooltip=(
-            f"{field.bilingual_label()}{field.level_suffix()}\n"
+            f"{field.label_ja}{field.level_suffix()}\n"
             f"{field.typical_layer}"
         ),
         on_click=lambda _, k=field.key: on_pick(k),
@@ -999,7 +999,7 @@ def MapView(settings: UserSettings, fetch=None):
         if run_time_holder is not None and not force:
             return run_time_holder, False  # (run_time, did_probe)
         set_progress(
-            f"Probing latest fully-published ECMWF run (need T+{MAX_STEP}h)…"
+            f"公開済みの最新 ECMWF ラン（T+{MAX_STEP}h まで揃ったもの）を確認中…"
         )
         # Probe with MSL: it's surface, single-band, and always
         # present, so the HEAD request is fast and doesn't depend on
@@ -1018,7 +1018,7 @@ def MapView(settings: UserSettings, fetch=None):
         region_used = region_ if region_ is not None else region
         set_state("loading")
         set_error(None)
-        set_progress("Initializing forecast service…")
+        set_progress("予報サービスを初期化中…")
         try:
             service = ForecastService(settings, override_source=data_source_key)
         except ForecastDisabledError as e:
@@ -1062,9 +1062,9 @@ def MapView(settings: UserSettings, fetch=None):
             )
             hit_cache = service.is_cached(request)
             set_progress(
-                f"Fetching MSL · {src_cycle:%Y%m%d %Hz} step={src_step}h · "
+                f"MSL を取得中 · {src_cycle:%Y%m%d %Hz} step={src_step}h · "
                 f"{_step_label(step)}"
-                f"{' (cached)' if hit_cache and not force else ''}…"
+                f"{'（キャッシュ済）' if hit_cache and not force else ''}…"
             )
             # Download the GRIB; worker process will decode + render.
             grib_path = await service.download(request, force=force)
@@ -1076,7 +1076,7 @@ def MapView(settings: UserSettings, fetch=None):
                 want_msl=msl_overlay and data_field_key != "msl",
             )
             t_fetch = time.perf_counter()
-            set_progress(f"Rendering chart ({region_used.label})…")
+            set_progress(f"図を描画中（{region_used.label}）…")
             png_bytes = await render_layer_in_pool(
                 grib_path, region_used, label, data_field_key,
                 msl_overlay_path=overlay_path,
@@ -1223,13 +1223,13 @@ def MapView(settings: UserSettings, fetch=None):
                 settings, src_cycle, src_step, kind="sfc",
             )
         # Visible step about to render: transition state so the main
-        # area drops the "press 取得 / Fetch" idle placeholder and shows
+        # area drops the "press 取得" idle placeholder and shows
         # a spinner. Without this, the user sees the misleading idle
         # placeholder for the entire 5-15s cartopy render — even though
         # the GRIB is on disk and we are actually rendering from cache.
         if display_step == step_hours:
             set_state("loading")
-            set_progress("キャッシュ済データから描画中… / Rendering from cache…")
+            set_progress("キャッシュ済データから描画中…")
         try:
             png = await render_layer_in_pool(
                 gpath, cur_region, label, cur_layer,
@@ -1548,8 +1548,8 @@ def MapView(settings: UserSettings, fetch=None):
                     1 for s in per_step_state if not s["remaining"]
                 )
                 msg = (
-                    f"DL step={display_step:>3d}h{ext_tag} · {kind} "
-                    f"({done_so_far}/{total} done)"
+                    f"取得中 T+{display_step}h{ext_tag} · {kind} "
+                    f"（{done_so_far}/{total} 完了）"
                 )
                 set_progress(msg)
                 session.status_text = msg
@@ -1862,7 +1862,7 @@ def MapView(settings: UserSettings, fetch=None):
         # Play only animates frames that are already in the memory
         # cache; it does NOT trigger a download. Per the user-action-
         # fetch skill, network requests happen only on the explicit
-        # 取得 / Fetch button — otherwise switching layer + pressing
+        # 取得 button — otherwise switching layer + pressing
         # Play would surprise the user with a multi-minute fetch.
         # Background renders fill the cache as GRIBs become available
         # on disk, so the animation engine silently skips frames that
@@ -1891,7 +1891,7 @@ def MapView(settings: UserSettings, fetch=None):
             try:
                 parts = [float(p.strip()) for p in draft_bounds_text.split(",")]
                 if len(parts) != 4:
-                    raise ValueError("need 4 comma-separated numbers")
+                    raise ValueError("カンマ区切りの数値が 4 つ必要です")
                 new_region = custom_region(*parts)
             except (ValueError, TypeError) as e:
                 logger.warning("Invalid custom region bounds: %s", e)
@@ -1940,13 +1940,13 @@ def MapView(settings: UserSettings, fetch=None):
         # this product offers without leaving the model picker.
         if p.sources:
             sources_summary = ft.Text(
-                "取得元 / Sources: " + ", ".join(s.key for s in p.sources)
-                + f"  (default: {p.default_source_key})",
+                "取得元: " + ", ".join(s.key for s in p.sources)
+                + f"  (既定: {p.default_source_key})",
                 size=10, color=ft.Colors.GREY,
             )
         else:
             sources_summary = ft.Text(
-                "取得元未登録 / no sources registered",
+                "取得元未登録",
                 size=10, color=ft.Colors.GREY, italic=True,
             )
 
@@ -1967,7 +1967,7 @@ def MapView(settings: UserSettings, fetch=None):
                                 border_radius=2,
                             ),
                             ft.Text(
-                                p.bilingual_label(),
+                                p.label_ja,
                                 size=13, weight=ft.FontWeight.BOLD,
                                 expand=True,
                             ),
@@ -1984,7 +1984,7 @@ def MapView(settings: UserSettings, fetch=None):
                         size=10, color=ft.Colors.GREY,
                     ),
                     ft.Text(
-                        f"License: {p.license_info} · {p.source_url}",
+                        f"ライセンス: {p.license_info} · {p.source_url}",
                         size=10, color=ft.Colors.GREY,
                     ),
                     ft.Text(
@@ -1996,7 +1996,7 @@ def MapView(settings: UserSettings, fetch=None):
                         alignment=ft.MainAxisAlignment.END,
                         controls=[
                             ft.FilledTonalButton(
-                                "選択中 / Current" if is_current else "選択 / Select",
+                                "選択中" if is_current else "選択",
                                 disabled=(not is_selectable) or is_current,
                                 on_click=(
                                     (lambda _, k=p.key: _select_product(k))
@@ -2025,7 +2025,7 @@ def MapView(settings: UserSettings, fetch=None):
 
     catalog_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("気象モデル選択 / Select weather model"),
+        title=ft.Text("気象モデルの選択"),
         content=ft.Container(
             width=620,
             height=520,
@@ -2037,7 +2037,7 @@ def MapView(settings: UserSettings, fetch=None):
         ),
         actions=[
             ft.TextButton(
-                "閉じる / Close",
+                "閉じる",
                 on_click=lambda _: set_show_catalog_dialog(False),
             ),
         ],
@@ -2086,7 +2086,7 @@ def MapView(settings: UserSettings, fetch=None):
                                 border_radius=2,
                             ),
                             ft.Text(
-                                f.bilingual_label() + f.level_suffix(),
+                                f.label_ja + f.level_suffix(),
                                 size=13, weight=ft.FontWeight.BOLD,
                                 expand=True,
                             ),
@@ -2112,7 +2112,7 @@ def MapView(settings: UserSettings, fetch=None):
                         alignment=ft.MainAxisAlignment.END,
                         controls=[
                             ft.FilledTonalButton(
-                                "選択中 / Current" if is_current else "選択 / Select",
+                                "選択中" if is_current else "選択",
                                 disabled=(not is_selectable) or is_current,
                                 on_click=(
                                     (lambda _, k=f.key: _select_data_field(k))
@@ -2148,7 +2148,7 @@ def MapView(settings: UserSettings, fetch=None):
     if surface_fields:
         data_sections.append(
             ft.Text(
-                "地表面 / Surface", size=12, weight=ft.FontWeight.BOLD,
+                "地表面", size=12, weight=ft.FontWeight.BOLD,
                 color=ft.Colors.GREY,
             )
         )
@@ -2157,7 +2157,7 @@ def MapView(settings: UserSettings, fetch=None):
     if pressure_fields:
         data_sections.append(
             ft.Text(
-                "気圧面 / Pressure levels", size=12, weight=ft.FontWeight.BOLD,
+                "気圧面", size=12, weight=ft.FontWeight.BOLD,
                 color=ft.Colors.GREY,
             )
         )
@@ -2173,7 +2173,7 @@ def MapView(settings: UserSettings, fetch=None):
     if derived_fields:
         data_sections.append(
             ft.Text(
-                "導出量 / Derived", size=12, weight=ft.FontWeight.BOLD,
+                "導出量", size=12, weight=ft.FontWeight.BOLD,
                 color=ft.Colors.GREY,
             )
         )
@@ -2181,7 +2181,7 @@ def MapView(settings: UserSettings, fetch=None):
 
     layer_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("レイヤー / Layer (field + style)"),
+        title=ft.Text("レイヤー（場 + 描画スタイル）"),
         content=ft.Container(
             width=600,
             height=520,
@@ -2191,7 +2191,7 @@ def MapView(settings: UserSettings, fetch=None):
                 spacing=8,
                 controls=[
                     ft.Text(
-                        f"気象モデル: {selected_product.bilingual_label()}",
+                        f"気象モデル: {selected_product.label_ja}",
                         size=11, color=ft.Colors.GREY,
                     ),
                     ft.Text(
@@ -2206,7 +2206,7 @@ def MapView(settings: UserSettings, fetch=None):
         ),
         actions=[
             ft.TextButton(
-                "閉じる / Close",
+                "閉じる",
                 on_click=lambda _: set_show_data_dialog(False),
             ),
         ],
@@ -2214,7 +2214,7 @@ def MapView(settings: UserSettings, fetch=None):
 
     region_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("地域設定 / Region Settings"),
+        title=ft.Text("地域設定"),
         content=ft.Column(
             tight=True,
             width=420,
@@ -2233,7 +2233,7 @@ def MapView(settings: UserSettings, fetch=None):
                             ft.Radio(value=r.key, label=r.label)
                             for r in REGION_PRESETS
                         ] + [
-                            ft.Radio(value="custom", label="任意 / Custom bounds"),
+                            ft.Radio(value="custom", label="任意の範囲"),
                         ],
                     ),
                 ),
@@ -2244,8 +2244,8 @@ def MapView(settings: UserSettings, fetch=None):
                         spacing=4,
                         controls=[
                             ft.Text(
-                                "lon_min, lon_max, lat_min, lat_max  "
-                                "(degrees, PlateCarree)",
+                                "西端経度, 東端経度, 南端緯度, 北端緯度  "
+                                "（度、正距円筒）",
                                 size=10, color=ft.Colors.GREY,
                             ),
                             ft.TextField(
@@ -2266,7 +2266,7 @@ def MapView(settings: UserSettings, fetch=None):
                 "キャンセル",
                 on_click=lambda _: set_show_region_dialog(False),
             ),
-            ft.FilledButton("適用 / Apply", on_click=_commit_region),
+            ft.FilledButton("適用", on_click=_commit_region),
         ],
     )
 
@@ -2397,10 +2397,10 @@ def MapView(settings: UserSettings, fetch=None):
         set_show_time_dialog(False)
 
     cycle_now_display = (
-        manual_cycle.strftime("%Y-%m-%d %H:%M UTC") + " (manual)"
+        manual_cycle.strftime("%Y-%m-%d %H:%M UTC") + "（手動）"
         if manual_cycle else (
-            run_time_holder.strftime("%Y-%m-%d %H:%M UTC") + " (auto)"
-            if run_time_holder else "未取得 / not yet probed"
+            run_time_holder.strftime("%Y-%m-%d %H:%M UTC") + "（自動）"
+            if run_time_holder else "未確認"
         )
     )
 
@@ -2461,7 +2461,7 @@ def MapView(settings: UserSettings, fetch=None):
         ft.Radio(
             value="auto",
             label=(
-                "Auto: 公開済みの最新 base time を自動選択 "
+                "自動: 公開済みの最新 base time を選ぶ "
                 "(06z/18z の場合は前 00z/12z で T+144h 以降を延長; 推奨)"
             ),
         ),
@@ -2475,7 +2475,7 @@ def MapView(settings: UserSettings, fetch=None):
 
     time_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("GPV データ / GPV (base time + range)"),
+        title=ft.Text("GPV データ（base time と範囲）"),
         content=ft.Container(
             width=560,
             height=540,
@@ -2493,7 +2493,7 @@ def MapView(settings: UserSettings, fetch=None):
                         size=14, weight=ft.FontWeight.BOLD,
                     ),
                     ft.Text(
-                        "Base time は予報の初期値時刻 (model initialization)。"
+                        "Base time は予報の初期値時刻。"
                         "00z/12z は T+240h まで、06z/18z は T+90h まで配信。"
                         "06z/18z 選択時は T+90h 以降を直前の 00z/12z で自動補完 "
                         "(stitching)。ECMWF Open Data は直近 ~5 日分のみ保持。",
@@ -2502,7 +2502,7 @@ def MapView(settings: UserSettings, fetch=None):
                     ft.Divider(height=10),
 
                     ft.Text(
-                        "Base time の選択 / Choose base time",
+                        "Base time の選択",
                         size=11, color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                     ),
                     ft.RadioGroup(
@@ -2517,7 +2517,7 @@ def MapView(settings: UserSettings, fetch=None):
 
                     ft.Divider(height=10),
                     ft.Text(
-                        "予報範囲 / Forecast range",
+                        "予報範囲",
                         size=11, color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                     ),
                     ft.Text(
@@ -2529,7 +2529,7 @@ def MapView(settings: UserSettings, fetch=None):
                         spacing=10,
                         controls=[
                             ft.Dropdown(
-                                label="最大予報時刻 / Horizon",
+                                label="最大予報時刻",
                                 value=str(draft_horizon_h),
                                 width=200,
                                 dense=True,
@@ -2548,7 +2548,7 @@ def MapView(settings: UserSettings, fetch=None):
                                 ),
                             ),
                             ft.Dropdown(
-                                label="粒度 / Cadence",
+                                label="粒度",
                                 value=str(draft_cadence_h),
                                 width=140,
                                 dense=True,
@@ -2565,7 +2565,7 @@ def MapView(settings: UserSettings, fetch=None):
                         ],
                     ),
                     ft.Text(
-                        f"= {_preview_frame_count} frames"
+                        f"= {_preview_frame_count} フレーム"
                         + (
                             "  (デフォルト 65 と同じ)"
                             if _preview_frame_count == 65 else ""
@@ -2585,7 +2585,7 @@ def MapView(settings: UserSettings, fetch=None):
                 "キャンセル",
                 on_click=lambda _: set_show_time_dialog(False),
             ),
-            ft.FilledButton("適用 / Apply", on_click=_commit_cycle),
+            ft.FilledButton("適用", on_click=_commit_cycle),
         ],
     )
 
@@ -2625,7 +2625,7 @@ def MapView(settings: UserSettings, fetch=None):
 
     fetch_confirm_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("GPV データ取得 / Fetch GPV"),
+        title=ft.Text("GPV データの取得"),
         content=ft.Container(
             width=440,
             content=ft.Column(
@@ -2639,7 +2639,7 @@ def MapView(settings: UserSettings, fetch=None):
                         size=14, weight=ft.FontWeight.BOLD,
                     ),
                     ft.Text(
-                        f"気象モデル: {selected_product.bilingual_label()}",
+                        f"気象モデル: {selected_product.label_ja}",
                         size=11, color=ft.Colors.GREY,
                     ),
                     ft.Text(
@@ -2649,7 +2649,7 @@ def MapView(settings: UserSettings, fetch=None):
                     ),
                     ft.Text(
                         f"範囲: T+0..T+{MAX_STEP}h, 粒度 {cadence_h}h "
-                        f"({len(step_options)} frames × {len(_ACTIVE_KINDS)} kinds "
+                        f"({len(step_options)} フレーム × {len(_ACTIVE_KINDS)} 種 "
                         f"= {len(step_options) * len(_ACTIVE_KINDS)} GRIB)",
                         size=11, color=ft.Colors.GREY,
                     ),
@@ -2672,7 +2672,7 @@ def MapView(settings: UserSettings, fetch=None):
                 ] + ([
                     ft.Divider(height=8),
                     ft.Checkbox(
-                        label="ext も取得（全変数・全気圧面, +約150MB/步）",
+                        label="ext も取得（全変数・全気圧面, 1 ステップあたり +約150MB）",
                         value=include_ext,
                         on_change=lambda e: set_include_ext(bool(e.control.value)),
                     ),
@@ -2690,7 +2690,7 @@ def MapView(settings: UserSettings, fetch=None):
                 on_click=lambda _: set_show_fetch_confirm(False),
             ),
             ft.FilledButton(
-                "取得開始 / Start fetch",
+                "取得開始",
                 icon=ft.Icons.DOWNLOAD,
                 on_click=_confirm_fetch,
                 disabled=(primary_cycle is None or to_fetch_count == 0),
@@ -2724,13 +2724,13 @@ def MapView(settings: UserSettings, fetch=None):
                 alignment=ft.MainAxisAlignment.CENTER,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                 controls=[
-                    ft.Text("Map View (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
+                    ft.Text("地図 (ECMWF)", size=18, weight=ft.FontWeight.BOLD),
                     ft.Text(
-                        error or "Forecast source is not configured.",
+                        error or "予報ソースが設定されていません。",
                         color=ft.Colors.GREY,
                     ),
                     ft.Text(
-                        "Set forecast_source in config.toml to enable map views.",
+                        "config.toml の forecast_source を設定すると地図を使えます。",
                         color=ft.Colors.GREY,
                     ),
                 ],
@@ -2755,11 +2755,11 @@ def MapView(settings: UserSettings, fetch=None):
     # (Left panel previously had a "取得 / 再取得 / 停止" button block
     # at the bottom. Removed per user direction: the fetch lifecycle
     # is now driven from the GPV card ("GPV データ変更…" → confirm
-    # dialog) and the bottom panel ("停止 / Stop" in the tab header),
+    # dialog) and the bottom panel ("停止" in the tab header),
     # so the per-view duplicate was just noise.)
 
     region_dropdown = ft.Dropdown(
-        label="地域 / Region",
+        label="地域",
         value=(region.key if region.key != "custom" else None),
         hint_text=region.label if region.key == "custom" else None,
         dense=True,
@@ -2776,7 +2776,7 @@ def MapView(settings: UserSettings, fetch=None):
 
     # Newer-cycle detection: any cycle the mount-time probe verified
     # as published, strictly newer than what we're currently showing.
-    # Triggers the "更新 / Update" button in the GPV card. Short
+    # Triggers the "更新" button in the GPV card. Short
     # cycles (06z/18z) qualify too — stitching extends them past
     # T+144h via the prior 00z/12z when the user crosses the boundary.
     from datetime import datetime as _dt
@@ -2874,7 +2874,7 @@ def MapView(settings: UserSettings, fetch=None):
         cache_rendered = cache_grib = 0
         cache_none = len(step_options)
         cache_bar = ft.Text(
-            "未取得 / not loaded yet",
+            "未取得",
             size=10, color=ft.Colors.GREY, italic=True,
         )
 
@@ -2887,7 +2887,7 @@ def MapView(settings: UserSettings, fetch=None):
             scroll=ft.ScrollMode.ADAPTIVE,
             controls=[
                 # ───────────────────────────────────────────────
-                # 1. 気象モデル / Weather model
+                # 1. 気象モデル
                 # Pick this first — base time is meaningless without
                 # knowing which model's cycle we're talking about.
                 # Only implemented models are ever displayed here, so
@@ -2896,7 +2896,7 @@ def MapView(settings: UserSettings, fetch=None):
                 # one model and rarely change.
                 # ───────────────────────────────────────────────
                 ft.Text(
-                    "気象モデル / Weather model", size=11,
+                    "気象モデル", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Row(
@@ -2915,23 +2915,23 @@ def MapView(settings: UserSettings, fetch=None):
                                 size=14, color=ft.Colors.GREY,
                             ),
                             tooltip=(
-                                f"{selected_product.bilingual_label()}\n"
+                                f"{selected_product.label_ja}\n"
                                 f"{selected_product.spec}\n"
                                 f"{selected_product.agency} · "
                                 f"{selected_product.backend}\n"
-                                f"License: {selected_product.license_info}"
+                                f"ライセンス: {selected_product.license_info}"
                             ),
                         ),
                     ],
                 ),
                 ft.TextButton(
-                    content=ft.Text("モデル変更 / Change…", size=12),
+                    content=ft.Text("モデルを変更…", size=12),
                     icon=ft.Icons.LIST_ALT,
                     on_click=lambda _: set_show_catalog_dialog(True),
                 ),
 
                 # ───────────────────────────────────────────────
-                # 2. 地域 / Region — single-line summary that opens
+                # 2. 地域 — single-line summary that opens
                 # the full region dialog (presets + custom bounds).
                 # Sits above GPV so users pick "where" before "when".
                 # ───────────────────────────────────────────────
@@ -2944,7 +2944,7 @@ def MapView(settings: UserSettings, fetch=None):
                         spacing=4,
                         controls=[
                             ft.Text(
-                                "地域 / Region:",
+                                "地域:",
                                 size=11, color=ft.Colors.GREY,
                             ),
                             ft.Text(
@@ -2977,7 +2977,7 @@ def MapView(settings: UserSettings, fetch=None):
                         spacing=4,
                         controls=[
                             ft.Text(
-                                "GPV データ / GPV (base time)",
+                                "GPV データ (base time)",
                                 size=12, weight=ft.FontWeight.BOLD,
                                 color=ft.Colors.ON_PRIMARY_CONTAINER,
                             ),
@@ -2987,20 +2987,20 @@ def MapView(settings: UserSettings, fetch=None):
                                     if manual_cycle
                                     else (
                                         f"{run_time_holder:%Y-%m-%d %H:%M UTC}"
-                                        if run_time_holder else "未取得 / not loaded"
+                                        if run_time_holder else "未取得"
                                     )
                                 ),
                                 size=16, weight=ft.FontWeight.BOLD,
                                 color=ft.Colors.ON_PRIMARY_CONTAINER,
                             ),
                             ft.Text(
-                                "manual" if manual_cycle else "auto (latest available)",
+                                "手動" if manual_cycle else "自動（公開済みの最新）",
                                 size=10,
                                 color=ft.Colors.ON_PRIMARY_CONTAINER,
                             ),
                             ft.Text(
                                 (
-                                    f"+ {_prior_long_cycle(primary_cycle):%Hz} 延長 (stitched)"
+                                    f"+ {_prior_long_cycle(primary_cycle):%Hz} 延長 (stitching)"
                                     if (
                                         primary_cycle is not None
                                         and _is_short_cycle(primary_cycle)
@@ -3016,7 +3016,7 @@ def MapView(settings: UserSettings, fetch=None):
                             ),
                             ft.Text(
                                 f"範囲: T+0..T+{MAX_STEP}h, 粒度 {cadence_h}h "
-                                f"({len(step_options)} frames)",
+                                f"({len(step_options)} フレーム)",
                                 size=10,
                                 color=ft.Colors.ON_PRIMARY_CONTAINER,
                             ),
@@ -3024,7 +3024,7 @@ def MapView(settings: UserSettings, fetch=None):
                     ),
                 ),
                 ft.Text(
-                    "取得状況 / Cache status:",
+                    "取得状況:",
                     size=10, color=ft.Colors.GREY,
                 ),
                 cache_bar,
@@ -3036,7 +3036,7 @@ def MapView(settings: UserSettings, fetch=None):
                 # immutable cycle is pointless; the user switches cycle
                 # via 更新 (newer cycle) or GPV データ変更.
                 ft.FilledButton(
-                    content=ft.Text("取得 / Fetch", size=12),
+                    content=ft.Text("取得", size=12),
                     icon=ft.Icons.CLOUD_DOWNLOAD,
                     on_click=lambda _: _request_fetch(),
                     disabled=(
@@ -3064,7 +3064,7 @@ def MapView(settings: UserSettings, fetch=None):
                             size=14, color=ft.Colors.GREEN,
                         ),
                         ft.Text(
-                            f"キャッシュ済 / Cached · {len(step_options)} frames",
+                            f"キャッシュ済 · {len(step_options)} フレーム",
                             size=11, color=ft.Colors.GREEN,
                         ),
                     ],
@@ -3075,7 +3075,7 @@ def MapView(settings: UserSettings, fetch=None):
                 ft.FilledTonalButton(
                     content=ft.Text(
                         (
-                            f"更新 / Update → {newer_cycle:%m-%d %Hz}"
+                            f"更新 → {newer_cycle:%m-%d %Hz}"
                             if newer_cycle else ""
                         ),
                         size=12,
@@ -3088,7 +3088,7 @@ def MapView(settings: UserSettings, fetch=None):
                     ),
                 ),
                 ft.TextButton(
-                    content=ft.Text("GPV データ変更 / Change GPV…", size=12),
+                    content=ft.Text("GPV データを変更…", size=12),
                     icon=ft.Icons.SCHEDULE,
                     on_click=lambda _: _open_time_dialog(),
                 ),
@@ -3106,7 +3106,7 @@ def MapView(settings: UserSettings, fetch=None):
                 # from the "もっと…" button.
                 ft.Divider(height=14),
                 ft.Text(
-                    "レイヤー / Layer", size=11,
+                    "レイヤー", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Row(
@@ -3124,7 +3124,7 @@ def MapView(settings: UserSettings, fetch=None):
                     ],
                 ),
                 ft.TextButton(
-                    content=ft.Text("もっと / More layers…", size=11),
+                    content=ft.Text("ほかのレイヤー…", size=11),
                     icon=ft.Icons.LAYERS,
                     on_click=lambda _: set_show_data_dialog(True),
                 ),
@@ -3132,7 +3132,7 @@ def MapView(settings: UserSettings, fetch=None):
                 # ── Overlay: optional contour/vector on top of the base ──
                 ft.Divider(height=14),
                 ft.Text(
-                    "オーバーレイ / Overlay", size=11,
+                    "オーバーレイ", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Checkbox(
@@ -3149,7 +3149,7 @@ def MapView(settings: UserSettings, fetch=None):
                 # ── Time: valid time = base time + lead time (slider-driven) ──
                 ft.Divider(height=14),
                 ft.Text(
-                    "時間 / Time (valid time = base + lead)", size=11,
+                    "時間（valid time = base time + リード）", size=11,
                     color=ft.Colors.GREY, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Text(
@@ -3157,7 +3157,7 @@ def MapView(settings: UserSettings, fetch=None):
                     size=12, weight=ft.FontWeight.BOLD,
                 ),
                 ft.Text(
-                    f"Lead: {_step_label(step_hours)}",
+                    f"リード: {_step_label(step_hours)}",
                     size=10, color=ft.Colors.GREY,
                 ),
             ],
@@ -3178,7 +3178,7 @@ def MapView(settings: UserSettings, fetch=None):
             "キャッシュ済 GPV から描画準備中…\n"
             "(初回は cartopy + matplotlib のインポートで数秒〜十数秒)"
             if any_cached
-            else "左側 GPV カードの「取得 / Fetch」を押してください。"
+            else "左側 GPV カードの「取得」を押してください。"
         )
         idle_controls = [
             ft.Icon(
@@ -3212,7 +3212,7 @@ def MapView(settings: UserSettings, fetch=None):
                 spacing=12,
                 controls=[
                     ft.ProgressRing(width=20, height=20),
-                    ft.Text(progress or "Loading…", color=ft.Colors.GREY),
+                    ft.Text(progress or "読み込み中…", color=ft.Colors.GREY),
                 ],
             ),
         )
@@ -3228,7 +3228,7 @@ def MapView(settings: UserSettings, fetch=None):
                         ft.Icons.ERROR_OUTLINE, size=48, color=ft.Colors.RED,
                     ),
                     ft.Text(
-                        f"Could not render map: {error}",
+                        f"地図を描画できませんでした: {error}",
                         color=ft.Colors.RED, size=13,
                     ),
                 ],
@@ -3355,14 +3355,14 @@ def MapView(settings: UserSettings, fetch=None):
         status_primary = ft.Text(progress, size=12)
     elif state == "ready" and is_playing:
         status_primary = ft.Text(
-            f"Playing · {_step_label(step_hours)}", size=12,
+            f"再生中 · {_step_label(step_hours)}", size=12,
         )
     elif state == "ready":
         status_primary = ft.Text(
-            f"Ready · viewing {_step_label(step_hours)}", size=12,
+            f"表示中 · {_step_label(step_hours)}", size=12,
         )
     else:
-        status_primary = ft.Text("Idle", size=12, color=ft.Colors.GREY)
+        status_primary = ft.Text("待機中", size=12, color=ft.Colors.GREY)
 
     status_bar = ft.Container(
         height=90,
@@ -3384,14 +3384,14 @@ def MapView(settings: UserSettings, fetch=None):
                     alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     controls=[
                         ft.Text(
-                            f"Frames cached: {loaded_count}/{total_count}",
+                            f"取得済フレーム: {loaded_count}/{total_count}",
                             size=11, color=ft.Colors.GREY,
                         ),
                         ft.Text(
                             (
-                                f"Cycle: {(manual_cycle or run_time_holder):%Y-%m-%d %H:%M UTC}"
-                                f"{' (manual)' if manual_cycle else ' (auto)'}"
-                                if (manual_cycle or run_time_holder) else "Cycle: —"
+                                f"サイクル: {(manual_cycle or run_time_holder):%Y-%m-%d %H:%M UTC}"
+                                f"{'（手動）' if manual_cycle else '（自動）'}"
+                                if (manual_cycle or run_time_holder) else "サイクル: —"
                             ),
                             size=11, color=ft.Colors.GREY,
                         ),

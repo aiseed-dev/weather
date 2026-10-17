@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Yasuhiro / AIseed
 
-"""降水ナウキャスト / Nowcast — JMA's high-resolution precipitation nowcast.
+"""降水ナウキャスト — JMA's high-resolution precipitation nowcast.
 
-Stays idle on mount; fetches only when the user presses 取得 / Fetch, picks
+Stays idle on mount; fetches only when the user presses 取得, picks
 another time, or switches 図 / 動く地図 (parameter changes — see the
 `user-action-fetch` skill). JMA is asked for at most four tiles a second.
 
@@ -151,10 +151,10 @@ def RadarView(settings: UserSettings):
 
     async def show(frame: RadarFrame, t: RadarTimes, a: JapanArea):
         def on_progress(done: int, total: int):
-            set_progress(f"Fetching radar tiles from JMA… {done}/{total}")
+            set_progress(f"気象庁からレーダータイルを取得中… {done}/{total}")
 
         mosaic = await service.mosaic(frame, a.extent, a.figure_zoom, on_progress=on_progress)
-        set_progress("Rendering radar map…")
+        set_progress("レーダー図を描画中…")
         jst = frame.valid.astimezone(JST)
         stem = f"nowcast_{a.key}_{jst:%Y%m%d%H%M}" + (f"_base{frame.base.astimezone(JST):%H%M}"
                                                        if frame.is_forecast else "")
@@ -172,7 +172,7 @@ def RadarView(settings: UserSettings):
         set_state("loading")
         set_error(None)
         try:
-            set_progress("Fetching the nowcast time index from JMA…")
+            set_progress("気象庁からナウキャストの時刻一覧を取得中…")
             t = await service.times(force=force)
             frame = t.latest_observation
             set_times(t)
@@ -327,7 +327,7 @@ def RadarView(settings: UserSettings):
                  "届いたコマから表示します。")
     footer = ft.Text(f"{jma_endpoints.ATTRIBUTION}。高解像度降水ナウキャストの地図タイルを"
                      "取得して編集・加工しています。", size=10, color=ft.Colors.GREY)
-    header = ft.Text("降水ナウキャスト / Nowcast (JMA)", size=18, weight=ft.FontWeight.BOLD)
+    header = ft.Text("降水ナウキャスト (JMA)", size=18, weight=ft.FontWeight.BOLD)
 
     if mode == "gpu" and state == "ready" and times is not None:
         frame = times.find(frame_key) if frame_key else None

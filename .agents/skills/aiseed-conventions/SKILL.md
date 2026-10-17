@@ -122,6 +122,8 @@ Every `.py` source file starts with:
 - Time: always show UTC and local side by side; never display local alone
   on a figure intended for sharing
 
+画面と図の文字は日本語。固有名・単位・略号・帰属文はそのまま。
+
 ## Forbidden
 
 - `from xyz import *`

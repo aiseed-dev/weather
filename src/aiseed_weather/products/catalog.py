@@ -72,15 +72,15 @@ CATEGORY_ORDER: tuple[Category, ...] = (
 
 
 CATEGORY_LABELS: dict[Category, str] = {
-    Category.SHORT_RANGE: "数値予報・短期 / Short-range forecast",
-    Category.MEDIUM_RANGE: "数値予報・中期 / Medium-range forecast",
-    Category.EXTENDED: "数値予報・長期 / Extended-range forecast",
-    Category.REANALYSIS: "再解析 / Reanalysis",
-    Category.RADAR: "レーダー / Radar",
-    Category.SATELLITE: "衛星 / Satellite",
-    Category.LIGHTNING: "雷 / Lightning",
-    Category.OBSERVATION: "観測 / Observations",
-    Category.POINT_FORECAST: "地点予報 / Point forecast",
+    Category.SHORT_RANGE: "数値予報・短期",
+    Category.MEDIUM_RANGE: "数値予報・中期",
+    Category.EXTENDED: "数値予報・長期",
+    Category.REANALYSIS: "再解析",
+    Category.RADAR: "レーダー",
+    Category.SATELLITE: "衛星",
+    Category.LIGHTNING: "雷",
+    Category.OBSERVATION: "観測",
+    Category.POINT_FORECAST: "地点予報",
 }
 
 
@@ -92,10 +92,10 @@ class Status(Enum):
 
 
 STATUS_LABELS: dict[Status, str] = {
-    Status.IMPLEMENTED: "✓ 実装済み / Implemented",
-    Status.PLANNED: "◐ 計画中 / Planned",
-    Status.EXTERNAL_DEP: "⋯ 要外部連携 / External dependency",
-    Status.OUT_OF_SCOPE: "✗ 対象外 / Out of scope",
+    Status.IMPLEMENTED: "✓ 実装済み",
+    Status.PLANNED: "◐ 計画中",
+    Status.EXTERNAL_DEP: "⋯ 要外部連携",
+    Status.OUT_OF_SCOPE: "✗ 対象外",
 }
 
 
@@ -110,7 +110,7 @@ class DataSource:
     """
 
     key: str            # stable identifier; ecmwf-opendata Client source name when applicable
-    label: str          # short bilingual label for dropdown display
+    label: str          # short label for dropdown display
     endpoint: str       # URL or S3 bucket path
     transport: str      # "s3" | "http" | "zarr" | "opendap" | "websocket" | "ftp"
     region: str         # AWS region or geographic hint; empty if N/A
@@ -131,7 +131,7 @@ class DataSource:
 _ECMWF_OPENDATA_SOURCES: tuple[DataSource, ...] = (
     DataSource(
         key="google",
-        label="GCP (Google Cloud mirror, edge-cached)",
+        label="GCP (Google Cloud のミラー、エッジキャッシュ)",
         endpoint="https://storage.googleapis.com/ecmwf-open-data",
         transport="http",
         region="global-edge",
@@ -155,7 +155,7 @@ _ECMWF_OPENDATA_SOURCES: tuple[DataSource, ...] = (
     ),
     DataSource(
         key="azure",
-        label="Azure (Microsoft mirror, West Europe)",
+        label="Azure (Microsoft のミラー、西ヨーロッパ)",
         endpoint="https://ai4edataeuwest.blob.core.windows.net",
         transport="http",
         region="west-europe",
@@ -311,17 +311,10 @@ class Product:
     # publication time; for progressive ones it's the time the LAST
     # step appears.
     publication_lag_h: float | None = None
-    # Compact label for the left-panel display. The full bilingual
-    # label_ja / label_en stays available for the catalog dialog and
-    # the info-icon tooltip. Empty → display_name() falls back to
-    # label_ja.
+    # Compact label for the left-panel display. Empty → display_name()
+    # falls back to label_ja. label_en is kept as catalogue data but is
+    # no longer shown on screen.
     short_label: str = ""
-
-    def bilingual_label(self) -> str:
-        # Display "日本語 / English" while we don't have language settings.
-        if self.label_ja == self.label_en:
-            return self.label_ja
-        return f"{self.label_ja} / {self.label_en}"
 
     def display_name(self) -> str:
         """Short, single-line name for the prominent UI slot."""
@@ -716,7 +709,7 @@ CATALOG: tuple[Product, ...] = (
         sources=(
             DataSource(
                 key="ws_community",
-                label="Blitzortung WebSocket (community)",
+                label="Blitzortung WebSocket (コミュニティ)",
                 endpoint="wss://ws.blitzortung.org/",
                 transport="websocket",
                 region="global",
@@ -833,7 +826,7 @@ CATALOG: tuple[Product, ...] = (
     ),
     Product(
         key="open_meteo",
-        label_ja="Open-Meteo 地点予報 (multi-model)",
+        label_ja="Open-Meteo 地点予報 (複数モデル)",
         label_en="Open-Meteo point forecast (multi-model)",
         tab=Tab.POINTS,
         category=Category.POINT_FORECAST,
@@ -901,11 +894,6 @@ class DataField:
     # readability. Empty string for derived fields with no single param.
     ecmwf_param: str = ""
     notes: str = ""
-
-    def bilingual_label(self) -> str:
-        if self.label_ja == self.label_en:
-            return self.label_ja
-        return f"{self.label_ja} / {self.label_en}"
 
     def level_suffix(self) -> str:
         return "" if self.level is None else f" @ {self.level} hPa"
@@ -1175,7 +1163,7 @@ _SURFACE_NEW: tuple[tuple[str, str, str, str, str, Status, str], ...] = (
     # ── Radiation (累積 J/m²; ECMWF Open Data 仕様) ──
     ("ssr",   "ssr",   "正味短波 (累積)", "Surface net SW",        "J/m²",  Status.IMPLEMENTED, ""),
     ("ssrd",  "ssrd",  "下向き短波 (累積)", "Surface SW down",     "J/m²",  Status.IMPLEMENTED, ""),
-    ("str",   "str_lw","正味長波 (累積)", "Surface net LW",        "J/m²",  Status.IMPLEMENTED, "ECMWF 'str' but key avoids Python str() collision in dict access"),
+    ("str",   "str_lw","正味長波 (累積)", "Surface net LW",        "J/m²",  Status.IMPLEMENTED, "ECMWF の 'str'。キーは Python の str() と紛れないよう str_lw にしている"),
     ("strd",  "strd",  "下向き長波 (累積)", "Surface LW down",     "J/m²",  Status.IMPLEMENTED, ""),
     ("ttr",   "ttr",   "OLR 上端長波 (累積)", "TOA net LW (OLR)",  "J/m²",  Status.IMPLEMENTED, ""),
     # ── Turbulent stress (時間積分) ──
@@ -1193,13 +1181,13 @@ _SURFACE_NEW: tuple[tuple[str, str, str, str, str, Status, str], ...] = (
     ("sithick","sithick","海氷厚",        "Sea ice thickness",     "m",     Status.IMPLEMENTED, ""),
     ("zos",   "zos",   "海面高度",        "Sea surface height",    "m",     Status.IMPLEMENTED, ""),
     # ── Static (step=0) — fetch handling differs, keep PLANNED ──
-    ("z",     "z_sfc", "ジオポテンシャル (地表)", "Geopotential (sfc)","m²/s²", Status.IMPLEMENTED, "static field (step=0 のみ実値); 山岳=高,海=0"),
-    ("lsm",   "lsm",   "海陸マスク",      "Land-sea mask",         "0..1",  Status.IMPLEMENTED, "static field (0=海, 1=陸)"),
-    ("sdor",  "sdor",  "地形標準偏差",    "Sub-grid orog. stddev", "m",     Status.IMPLEMENTED, "static field (粗格子内の地形ばらつき)"),
-    ("slor",  "slor",  "地形傾斜",        "Sub-grid orog. slope",  "—",     Status.IMPLEMENTED, "static field (粗格子内の代表傾斜)"),
+    ("z",     "z_sfc", "ジオポテンシャル (地表)", "Geopotential (sfc)","m²/s²", Status.IMPLEMENTED, "静的場 (step=0 のみ実値); 山岳=高,海=0"),
+    ("lsm",   "lsm",   "海陸マスク",      "Land-sea mask",         "0..1",  Status.IMPLEMENTED, "静的場 (0=海, 1=陸)"),
+    ("sdor",  "sdor",  "地形標準偏差",    "Sub-grid orog. stddev", "m",     Status.IMPLEMENTED, "静的場 (粗格子内の地形ばらつき)"),
+    ("slor",  "slor",  "地形傾斜",        "Sub-grid orog. slope",  "—",     Status.IMPLEMENTED, "静的場 (粗格子内の代表傾斜)"),
     # ── Currently unavailable ──
-    ("t20d",  "t20d",  "20°C 等温面深さ", "Depth of 20°C isotherm","m",     Status.PLANNED,     "currently unavailable (2024-03-11 per ECMWF docs)"),
-    ("sav300","sav300","300m 平均塩分",   "Avg salinity (top 300m)","psu",  Status.PLANNED,     "currently unavailable"),
+    ("t20d",  "t20d",  "20°C 等温面深さ", "Depth of 20°C isotherm","m",     Status.PLANNED,     "現在は配信されていません（ECMWF の文書では 2024-03-11 以降）"),
+    ("sav300","sav300","300m 平均塩分",   "Avg salinity (top 300m)","psu",  Status.PLANNED,     "現在は配信されていません"),
 )
 
 _SURFACE_FIELDS = tuple(

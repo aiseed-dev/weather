@@ -11,7 +11,7 @@ crop**. None of these three concerns reach into the others.
 
 User flow consequences:
 
-* Pressing 取得 / Fetch downloads **every implemented layer's data for
+* Pressing 取得 downloads **every implemented layer's data for
   every step of the chosen cycle, in one batch**. After that, switching
   layer or region never touches the network. Only switching cycle does.
 * Switching layer redraws from the GRIBs already on disk. If the
@@ -129,7 +129,7 @@ for each step in plan, for each kind in _ACTIVE_KINDS:
 Every kind is fetched; there is no per-kind toggle. With the mirror
 source, the confirm dialog offers one checkbox for the ext tier.
 
-`更新 / Update` button is the same flow against a newer cycle.
+`更新` button is the same flow against a newer cycle.
 
 ## Open questions to confirm with the user
 
