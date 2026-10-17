@@ -1,3 +1,10 @@
 # robotstxt.org/
 
+# Baidu の巡回（とくに描画用の Baiduspider-render）が 10-15 から日ごとに倍に増え、
+# 10-17 は表示の 56% を占めた。baidu から来る人はいないので止める（2026-10-18）。
+User-agent: Baiduspider
+User-agent: Baiduspider-render
+Disallow: /
+
 User-agent: *
+Disallow:
