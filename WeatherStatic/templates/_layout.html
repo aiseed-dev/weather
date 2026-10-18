@@ -47,6 +47,9 @@
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <meta property="og:image:alt" content="{{ share_image_alt }}">
+    {# 目印は generate.py の write() が、書き出すパスから作った URL に置き換える（weatherlib/siteurl.py） #}
+    <meta property="og:url" content="__PAGE_URL__">
+    <link rel="canonical" href="__PAGE_URL__">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="shortcut icon" href="/favicon.ico"/>
     <link href="/css/site-base.css?v={{ css_version }}" rel="stylesheet"/>

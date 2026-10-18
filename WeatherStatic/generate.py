@@ -331,6 +331,9 @@ def write(path_rel: str, html: str, quiet: bool = False) -> None:
     """ページを書き出す。パスとページ内のサイト内リンクは小文字にする（weatherlib.siteurl）。"""
     out = PUBLIC / siteurl.path(path_rel)
     out.parent.mkdir(parents=True, exist_ok=True)
+    # og:url と canonical の目印（_layout.html）を、このページ自身の URL にする
+    html = siteurl.with_page_url(path_rel, html)
+    assert siteurl.PAGE_URL_MARK not in html, f"{path_rel}: 目印が残っています"
     out.write_text(siteurl.links(html), encoding="utf-8")
     if not quiet:
         print(f"  [html] {siteurl.path(path_rel)}  ({len(html):,} bytes)")

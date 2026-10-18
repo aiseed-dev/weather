@@ -105,3 +105,29 @@
 5. 公開の後に、Facebook の「シェアデバッガー」（https://developers.facebook.com/tools/debug/）で
    URL を読み直させる。前に共有を試した URL は、古い表示が残っているため。
    これは利用者に案内する（Facebook へのログインが要るため）。
+
+---
+
+## 追加: og:url と canonical（2026-10-18）
+
+Facebook のシェアデバッガーで「og:url がありません」と出た。利用者の指示: 「og:url を入れて」。
+og:url があると、Facebook は URL の書き方が違っても（大文字と小文字、末尾の / の有無など）同じページとして数える。
+同じ値を `<link rel="canonical">` にも入れて、検索エンジンにも正規の URL を知らせる。
+
+- 値: `https://weather.time-j.net/` + 公開のパス（小文字）。
+  - `index.html` は落として `/` で終える。例: `App/Forecast/index.html` → `https://weather.time-j.net/app/forecast/`。
+  - `index.html` 以外の html はそのまま（例 `…/foo.html`）。
+- 作り方:
+  - `_layout.html` には目印だけを置く。
+    - `<meta property="og:url" content="__PAGE_URL__">`
+    - `<link rel="canonical" href="__PAGE_URL__">`
+  - `generate.py` の `write()` が、書き出すパスから値を作って目印を置き換える。`write()` は書き出すパスを知っていて、もう `siteurl.path()` で小文字にしている。
+  - テンプレートごとに引数を足すことはしない。
+- 置き換えないもの:
+  - `404.html` からは、2 行とも消す。404 は正規の URL を持たないため。
+  - 目印が残ったまま書き出されないことを、`write()` の中で確かめる（`assert "__PAGE_URL__" not in` の形）。
+- `fb:app_id` は入れない。Facebook のアプリを作る必要があり、リンクの絵と説明には要らないため。
+- 確かめ方:
+  - dev で生成して、`/`・`/app/`・`/app/forecast/`・地点のページ・`404.html` の 2 行を見る。
+  - 試験と `check_legacy_urls.py` が、今と同じ結果になること。
+  - コミットは利用者の指示を待つ。公開は Opus が行う。

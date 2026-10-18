@@ -224,7 +224,11 @@ status/_submenu.html          実況ページのサブメニュー
   JPEG もコミットし、generate のたびには作らない。東京の雨温図は気象庁の平年値（1991–2020）
 - 説明文の既定は `_layout.html` の `default_description`。ページ側は `{% extends %}` の下に
   `{% set og_image = "app" %}`・`{% set description = "…" %}` を書いて上書きする（`/app/` 系 3 枚が使っている）
-- `og:url` は入れない（共有された URL を Facebook がそのまま使う）
+- `og:url` と `<link rel="canonical">` は、同じ値（`https://weather.time-j.net/` ＋ 公開のパス。
+  `index.html` は落として `/` で終える）。`_layout.html` には目印 `__PAGE_URL__` だけを書き、
+  `generate.py` の `write()` が書き出すパスから作った URL に置き換える（`weatherlib/siteurl.py` の
+  `with_page_url`）。目印が残ったままなら `write()` の assert で止まる。`404.html` は正規の URL を
+  持たないので、2 行とも出さない。`fb:app_id` は入れない（Facebook のアプリが要るため）
 - 出ないページ: `404.html` と `status/` の下（レイアウトを使わない別の生成物）
 - 公開の後、Facebook の「シェアデバッガー」（https://developers.facebook.com/tools/debug/）で
   URL を読み直させる。前に共有を試した URL は古い表示が残る
