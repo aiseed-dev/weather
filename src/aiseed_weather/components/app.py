@@ -7,12 +7,15 @@ from typing import Callable
 
 import flet as ft
 
+from aiseed_weather.components.about_button import AboutButton
 from aiseed_weather.components.map_view import MapView
 from aiseed_weather.components.observation_view import ObservationView
 from aiseed_weather.components.point_forecast_view import PointForecastView
 from aiseed_weather.components.radar_view import RadarView
+from aiseed_weather.components.usage_notice import UsageNotice
 from aiseed_weather.models import user_settings
 from aiseed_weather.models.user_settings import LoadResult
+from aiseed_weather.services import usage_report
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +88,21 @@ def App():
     # the only way to change sources — see the `first-run-setup` skill.
     result, _ = ft.use_state(user_settings.load_or_init())
 
+    # Read before the effect below records it, so the banner shows on the
+    # one start where an existing config.toml has not been told yet.
+    show_usage_notice, _ = ft.use_state(
+        lambda: result.status == "ok" and usage_report.notice_due(result.settings),
+    )
+
+    # The one thing the app sends at startup: a once-a-day usage note
+    # (see services/usage_report). It fetches nothing and runs after the
+    # first paint. The run that created config.toml and the run that shows
+    # the notice send nothing: the user has not read the notice yet.
+    def _start_usage_report():
+        if result.status == "ok":
+            ft.context.page.run_task(usage_report.start, result.settings)
+    ft.use_effect(_start_usage_report, [])
+
     # ──────────────────────────────────────────────────────────
     # App-level GPV fetch session.
     #
@@ -130,7 +148,10 @@ def App():
     # arguments, so a closure is the canonical way to inject settings
     # and the shared fetch controller.
     def render_shell():
-        return AppShell(settings=settings, fetch=controller)
+        return AppShell(
+            settings=settings, fetch=controller,
+            usage_notice=show_usage_notice,
+        )
 
     def render_map():
         return MapView(settings=settings, fetch=controller)
@@ -164,7 +185,7 @@ def App():
 
 
 @ft.component
-def AppShell(settings, fetch: FetchController):
+def AppShell(settings, fetch: FetchController, usage_notice: bool = False):
     """Parent-route layout: outlet body + bottom panel + nav.
 
     Renders the matched child route into the central area. Reads
@@ -258,6 +279,7 @@ def AppShell(settings, fetch: FetchController):
                 ft.Row(
                     spacing=4,
                     controls=[
+                        AboutButton(settings=settings),
                         # Stop visible in the header whenever a fetch
                         # is running, regardless of which tab is open
                         # or whether the body is expanded.
@@ -591,6 +613,7 @@ def AppShell(settings, fetch: FetchController):
             expand=True,
             spacing=0,
             controls=[
+                UsageNotice() if usage_notice else ft.Container(),
                 ft.Container(content=outlet, expand=True),
                 bottom_panel,
                 nav,
@@ -614,6 +637,8 @@ def ConfigStatusPanel(result: LoadResult):
             "point_source（地点予報）を書き換えて保存し、アプリを起動し直してください。"
             "選べる値は、ファイルの中の説明にあります。",
             '気象庁のレーダー（ナウキャスト）とアメダスは、すべて "none" のままでも使えます。',
+            "起動した日に 1 回、アプリの版と OS だけを作者の解析へ送ります（使われている台数を知るためです）。"
+            "止めるには、設定ファイルの usage_report を false にしてください。",
         ]
     else:  # "invalid"
         title = "設定ファイルに誤りがあります"

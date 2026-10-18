@@ -35,7 +35,14 @@ restart. This is the standard Linux pattern: dotfile, not wizard.
   template ships with every source set to `"none"`.
 - Does **not** write the config after the first template-creation. The
   user owns the file from that point on.
-- Does **not** call any data source APIs during startup.
+- Does **not** call any data source APIs during startup. The one thing sent
+  is the usage report (`services/usage_report.py`): after the first paint,
+  once a day, version + OS + build kind, nothing received. It is skipped on
+  the run that creates the template (the user has not read the notice yet)
+  and when `usage_report = false`. An existing config.toml without the key
+  gets a dismissible notice on its first start instead (recorded as
+  `notice_shown` in `usage.json`), and the report starts from the next
+  start.
 - Does **not** watch the file for changes — restart is the contract.
 
 ## Config schema
@@ -53,6 +60,7 @@ with the dataclass; do not introduce a second source of truth.
 | `accept_attribution` | bool | `false` | `true` gates export features |
 | `data_dir` | string \| omitted | omitted → `user_cache_dir("aiseed-weather")` | absolute path (e.g. `/mnt/wxdata/aiseed`); tilde and `$HOME` are expanded |
 | `mirror_url` | string \| omitted | omitted | base URL of the aiseed redistribution packs; required when `forecast_source = "mirror"` (see `docs/forecast-distribution.md`) |
+| `usage_report` | bool | `true` | `false` stops the once-a-day usage note (version + OS + build kind); anything but `true` / `false` is a config error |
 
 ## Data directory layout
 

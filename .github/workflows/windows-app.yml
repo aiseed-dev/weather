@@ -36,6 +36,14 @@ jobs:
         with:
           python-version: "3.13"
 
+      # 配布版の版は git のタグ（app-vX.Y.Z）だけで決まる。タグなら X.Y.Z を _build_version.py に書き、
+      # 組み立てに --build-version で渡す（形が違うタグはここで失敗させる）。タグでなければ 0.0.0.dev0+<短い sha>
+      - name: 版を決める
+        shell: python
+        run: |
+          import subprocess, sys
+          sys.exit(subprocess.call([sys.executable, "tools/write_build_version.py"]))
+
       - name: アプリの部品と試験の道具
         run: |
           python -m pip install --upgrade pip
@@ -49,7 +57,7 @@ jobs:
         working-directory: desktop
         run: |
           python -m pip install "flet-cli==1.0.4"
-          flet build windows --yes
+          if ($env:BUILD_VERSION) { flet build windows --yes --build-version $env:BUILD_VERSION } else { flet build windows --yes }
 
       - uses: actions/upload-artifact@v4
         with:

@@ -6,6 +6,8 @@
   コンテキスト: shots（画面の例。無ければ出さない）/ app_js_v
 #}
 {% extends "_layout.html" %}
+{% set og_image = "app" %}
+{% set description = "旧 GFS の予報図のページの後継。ECMWF の数値予報の天気図を、AIseed Weather で自分のパソコンに描く方法。" %}
 
 {% block head_extra %}
 {% include "app/_style.html" %}
@@ -133,6 +135,8 @@ flet run</pre></div>
         防災の判断には、気象庁の警報・注意報などの情報を使ってください。
     </p>
 </div>
+
+{% include "app/_community.html" %}
 
 <div class="app-sec">
     <h3>リンク</h3>

@@ -83,6 +83,26 @@
         <li>合った案内を出す: よく見る地点や季節に合わせて、このサイトや同じ運営者のサービスの案内を出す</li>
     </ul>
 
+    <h3>デスクトップアプリ AIseed Weather</h3>
+    <p>デスクトップアプリ（<a href="/app/">AIseed Weather</a>）は、使われている台数を知るために、
+        <strong>起動した日に 1 回だけ</strong>、次の情報を <strong>analytics.aiseed.dev</strong> に送ります。
+        送り先は、このサイトと同じ運営者が管理するサーバーで、記録をほかのサービスに渡すことはありません。
+        アプリからは何も受け取りません。</p>
+    <table>
+        <tr><th>送る情報</th><td>アプリの版、OS（<code>windows</code>・<code>macos</code>・<code>linux</code>）、
+            配布の種類（配布版か手元の実行か。<code>release</code>・<code>source</code>）、起動した日。
+            例: <code>{"site":"weather.time-j.net","version":"0.1.1","os":"windows","channel":"release"}</code>。
+            通信の User-Agent には、アプリの名前と版・OS を正直に書きます</td></tr>
+        <tr><th>送らない情報</th><td>人や PC を見分ける番号（Cookie や訪問の番号を含みます）、IP アドレスの記録、
+            地点、設定の中身、画面の大きさ、言語、時間帯、アプリで何を見たか</td></tr>
+        <tr><th>目的</th><td>日ごとに、何台のアプリが使われたかを知る（1 台 1 日 1 件。「何人」までは分かりません）</td></tr>
+        <tr><th>止め方</th><td>設定ファイル（Linux では <code>~/.config/aiseed-weather/config.toml</code>）に
+            <code>usage_report = false</code> と書いて、アプリを起動し直します。
+            設定ファイルは、アプリの「このアプリについて」の「設定ファイルを開く」で開けます</td></tr>
+    </table>
+    <p>設定ファイルを最初に作った起動では、送りません。送るかどうかは、アプリの初回の案内と
+        「このアプリについて」にも書いてあります。</p>
+
     <p>このほかの情報の扱いは、<a href="/privacy/">プライバシーポリシー</a>にまとめています。</p>
 </div>
 {% endblock %}

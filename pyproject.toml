@@ -1,6 +1,7 @@
 [project]
 name = "aiseed-weather"
-version = "0.1.0"
+# 配布版の版は git のタグ（app-vX.Y.Z）で決まる。ここは上げない（windows-app.yml が _build_version.py を書く）
+version = "0.0.0"
 description = "Global weather visualization desktop app using ECMWF and Open-Meteo data."
 authors = [{ name = "Yasuhiro", email = "noreply@aiseed.dev" }]
 license = { text = "AGPL-3.0-or-later" }
@@ -42,6 +43,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aiseed_weather"]
+# .gitignore に入っているので、書かないと wheel に入らない（flet build は wheel を作って入れる）
+artifacts = ["src/aiseed_weather/_build_version.py"]
 
 [tool.ruff]
 line-length = 100

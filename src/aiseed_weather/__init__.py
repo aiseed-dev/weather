@@ -10,6 +10,14 @@ from libraries we depend on but don't control is silenced uniformly.
 
 import warnings
 
+# The version of a packaged app is the git tag (app-vX.Y.Z), and nothing in
+# the repository records it. CI writes _build_version.py (git-ignored) from
+# the tag before building; a run from source has none.
+try:
+    from aiseed_weather._build_version import __version__
+except ImportError:
+    __version__ = "0.0.0.dev0"
+
 # cfgrib calls ``xr.merge`` inside ``cfgrib.open_datasets`` when
 # stitching GRIB hypercubes together. xarray ≥ 2026 is preparing to
 # flip the ``compat`` default from 'no_conflicts' to 'override' and

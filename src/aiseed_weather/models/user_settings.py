@@ -50,6 +50,12 @@ class UserSettings:
     accept_attribution: bool = False
     data_dir: str | None = None  # None → default user_cache_dir("aiseed-weather")
     mirror_url: str | None = None  # forecast_source = "mirror" のときの配信 URL
+    # 起動した日に 1 回、版と OS を送る（services/usage_report.py）。鍵が無ければ送る
+    usage_report: bool = True
+    # False only for a config.toml that lacks the key: that user has not been
+    # told about the report (no first-run panel for an existing file), so the
+    # app shows a notice once before it sends anything.
+    usage_report_written: bool = True
 
     def has_forecast(self) -> bool:
         return self.forecast_source != ForecastSource.NONE
@@ -190,6 +196,12 @@ accept_attribution = false
 # Set it explicitly if you want data on a different disk (e.g. an external
 # SSD). Tilde and $HOME are expanded.
 # data_dir = "/mnt/wxdata/aiseed-weather"
+
+# ---- 利用の記録 ----
+# 起動した日に 1 回だけ、アプリの版と OS（Windows など）を作者の解析（analytics.aiseed.dev）へ送ります。
+# 人や PC を見分ける情報・地点・設定・見たものは送りません。使われている台数を知るためです。
+# 送りたくなければ false にしてください。くわしくは https://weather.time-j.net/kaiseki/
+usage_report = true
 """
 
 
@@ -261,6 +273,15 @@ def _enum_field(data: dict, key: str, enum_cls, default):
         ) from exc
 
 
+def _bool_field(data: dict, key: str, default: bool) -> bool:
+    value = data.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(
+            f"{key}: {value!r} は使えない値です。true か false を書いてください"
+        )
+    return value
+
+
 def _from_mapping(data: dict) -> UserSettings:
     raw_data_dir = data.get("data_dir")
     raw_mirror_url = data.get("mirror_url")
@@ -285,4 +306,6 @@ def _from_mapping(data: dict) -> UserSettings:
         ),
         data_dir=str(raw_data_dir) if raw_data_dir else None,
         mirror_url=str(raw_mirror_url).rstrip("/") if raw_mirror_url else None,
+        usage_report=_bool_field(data, "usage_report", _DEFAULTS.usage_report),
+        usage_report_written="usage_report" in data,
     )

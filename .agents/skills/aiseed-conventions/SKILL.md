@@ -67,7 +67,10 @@ Implications for all code and UI:
 - `models/` contains plain dataclasses or `@ft.observable` models. The only
   disk I/O here is the user's own small files: `config.toml` and
   `window.json` (`user_settings.py`) and `locations.json`
-  (`point_location.py`). No network I/O.
+  (`point_location.py`). No network I/O. `usage.json` (the date of the
+  last usage report, next to `config.toml`) is the same kind of small own
+  file, but it is kept by `services/usage_report.py`, the only thing that
+  sends.
 - `figures/` contains renderers that take data and return an image and know
   nothing about views. The map path is numpy + PIL and returns PNG bytes
   (see `chart-base-design`); the point-forecast PNG uses matplotlib.
@@ -139,6 +142,10 @@ Every `.py` source file starts with:
 - **Silently switching data sources** if the user's chosen one fails — report
   the error and let the user decide
 - **Auto-downloading at app start** before the user has explicitly chosen
-  to fetch (loading the config does not trigger any data fetch)
+  to fetch (loading the config does not trigger any data fetch). The one
+  exception is the usage report (`usage_report` in `config.toml`, on unless
+  set to `false`): once a day, at start, it sends the app version, OS and
+  build kind and receives nothing. It sends no ID, location, setting or
+  view, and never fakes an Origin header
 - **Adding an in-app setup screen** — choices live in `config.toml`, not in
   a UI flow

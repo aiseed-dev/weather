@@ -212,6 +212,23 @@ status/_submenu.html          実況ページのサブメニュー
 ナビは配列をループして出す。8 項目それぞれに条件式を手で書き写す形だと、
 片方だけ足し忘れる（`class="active"` は付くのに `aria-current` が無い、など）。
 
+### 共有したときの絵と説明（OGP）
+
+`_layout.html` の `<head>` が、`<meta name="description">`・`og:*`・`twitter:card` を出す
+（Facebook などで URL を共有したときの絵と説明）。
+
+- 絵は `wwwroot/Images/Og/` の 1200×630 の JPEG が 2 枚。`site.jpg`（既定。左に文字、右に東京の
+  雨温図）と `app.jpg`（`/app/` 系 3 枚。アプリの地図の画面と文字）。`og:image` の URL は小文字
+  （`https://weather.time-j.net/images/og/site.jpg`。公開の URL はすべて小文字）
+- 絵は `make_og_images.py`（一度だけ使う道具）が作る。作り直しは `../.venv/bin/python make_og_images.py`。
+  JPEG もコミットし、generate のたびには作らない。東京の雨温図は気象庁の平年値（1991–2020）
+- 説明文の既定は `_layout.html` の `default_description`。ページ側は `{% extends %}` の下に
+  `{% set og_image = "app" %}`・`{% set description = "…" %}` を書いて上書きする（`/app/` 系 3 枚が使っている）
+- `og:url` は入れない（共有された URL を Facebook がそのまま使う）
+- 出ないページ: `404.html` と `status/` の下（レイアウトを使わない別の生成物）
+- 公開の後、Facebook の「シェアデバッガー」（https://developers.facebook.com/tools/debug/）で
+  URL を読み直させる。前に共有を試した URL は古い表示が残る
+
 ## CSS
 
 Bootstrap 3 と jQuery は使わない。2 枚だけ。

@@ -1,0 +1,13 @@
+{# 「最新の知らせ・質問」の節。community_links（generate.py の COMMUNITY_LINKS）の URL があるものだけ出し、無ければ節ごと出さない #}
+{% if community_links %}
+<div class="app-sec">
+    <h3>最新の知らせ・質問</h3>
+    <p style="font-size:14px; line-height:1.8;">
+        新しい版の知らせや、使い方の質問は、次の場で受け付けています。
+    </p>
+    <p class="app-links">
+        {% for label, url in community_links %}<a href="{{ url }}" rel="noopener"><strong>{{ label }}</strong></a>
+        {% endfor %}
+    </p>
+</div>
+{% endif %}

@@ -4,6 +4,8 @@
   色は site.css の CSS 変数だけを使う（ダークモードに自動追従させるため）。
 #}
 {% extends "_layout.html" %}
+{% set og_image = "app" %}
+{% set description = "数値予報の天気図を自分のパソコンで描くデスクトップアプリ AIseed Weather。ECMWF の10日先までの予報、気象庁のナウキャストとアメダス。無料・オープンソース。" %}
 
 {% block head_extra %}
 {% include "app/_style.html" %}
@@ -101,6 +103,8 @@ flet run</pre></div>
         ERA5 気候値など）も同梱しています。
     </p>
 </div>
+
+{% include "app/_community.html" %}
 
 <div class="app-sec">
     <h3>想定している利用者</h3>

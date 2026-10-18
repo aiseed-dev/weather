@@ -9,6 +9,11 @@
   ページ側テンプレートが差し込めるブロック:
     head_extra / content / add_script
 
+  共有（Facebook など）の絵と説明: ページ側は extends の下（ブロックの外）で
+    {% set og_image = "app" %}        … wwwroot/Images/Og/<名前>.jpg（既定は site）
+    {% set description = "…" %}       … 説明文（既定は下の default_description）
+  を上書きできる。og:url は入れない（共有された URL を Facebook がそのまま使う）
+
   グローバル kaiseki（weatherlib/kaiseki.py の settings()）があれば、アクセス解析の
   スクリプトとフッターの知らせのページへのリンクを入れる
 #}<!DOCTYPE html>
@@ -27,6 +32,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <title>{{ page_title }}</title>
+    {# 共有したときの絵と説明（OGP）。og:image の URL は小文字（公開の URL はすべて小文字） #}
+    {% set default_description = "全国のアメダスの今日の気温、10分ごとの実況、暑さ・寒さのランキング、各地の雨温図。1880年からの観測を、個人で集計しています。" %}
+    {% set share_description = description if description is defined else default_description %}
+    {% set share_image = og_image if og_image is defined else "site" %}
+    {% set share_image_alt = "AIseed Weather。数値予報の天気図の画面" if share_image == "app" else "個人開発気象統計。東京の雨温図" %}
+    <meta name="description" content="{{ share_description }}">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="個人開発気象統計">
+    <meta property="og:locale" content="ja_JP">
+    <meta property="og:title" content="{{ page_title }}">
+    <meta property="og:description" content="{{ share_description }}">
+    <meta property="og:image" content="https://weather.time-j.net/images/og/{{ share_image }}.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="{{ share_image_alt }}">
+    <meta name="twitter:card" content="summary_large_image">
     <link rel="shortcut icon" href="/favicon.ico"/>
     <link href="/css/site-base.css?v={{ css_version }}" rel="stylesheet"/>
     {% block head_extra %}{% endblock %}

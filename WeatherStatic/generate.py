@@ -53,6 +53,13 @@ WWWROOT = next((p for p in _candidates if p and p.is_dir()), BASE / "wwwroot")
 # スタイルは assets/site-base.css + assets/site.css の 2 枚だけで足りる。
 ASSET_PATHS = ["Images", "favicon.ico", "robots.txt"]
 
+# /App/・/App/Forecast/ の「最新の知らせ・質問」の節に出すリンク。空の URL は出さず、全部空なら節ごと出さない。
+# アプリ側の同じ値は src/aiseed_weather/models/project_links.py（パッケージが別なので共有せず、両方に書く）
+COMMUNITY_LINKS = [
+    ("Facebook ページ", "https://www.facebook.com/weathertimejnet"),
+    ("Discord（質問・話し合い）", ""),   # Discord のサーバーを作ったら招待リンクを入れる
+]
+
 # /App/・/App/Forecast/ の画面の例（wwwroot/Images/App/）。予報ではなく解析（T+0）と観測だけを写す
 APP_SHOTS = [
     {"src": "/Images/App/forecast-map.jpg", "width": 800, "height": 600,
@@ -278,6 +285,7 @@ def make_env() -> Environment:
     env.globals["winter_month_url"] = winter_url
     # 自前のアクセス解析（WEATHER_KAISEKI_TO があるときだけ。weatherlib/kaiseki.py）
     env.globals["kaiseki"] = kaiseki.settings()
+    env.globals["community_links"] = [(label, url) for label, url in COMMUNITY_LINKS if url]
     # 自分の地点のスクリプトの版（中身のハッシュ。キャッシュよけ）
     env.globals["mine_js_v"] = hashlib.sha256((BASE / "assets" / "js" / "mystations.js").read_bytes()).hexdigest()[:10]
     return env

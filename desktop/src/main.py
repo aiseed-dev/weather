@@ -11,8 +11,12 @@
 import asyncio
 import importlib
 import logging
+import os
 
 import flet as ft
+
+# 利用の記録（services/usage_report.py）が、配布版と手元の実行を見分ける印。本体を読み込む前に置く
+os.environ["AISEED_WEATHER_BUILD"] = "release"
 
 
 async def boot(page: ft.Page) -> None:

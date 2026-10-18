@@ -9,6 +9,7 @@
 # 版の正本は environment.yml。こちらは同じ物を PyPI の名前で並べる。
 [project]
 name = "aiseed-weather-desktop"
+# 配布版の版は git のタグ（app-vX.Y.Z）で決まる。windows-app.yml が flet build --build-version で上書きするので、ここは上げない
 version = "0.1.0"
 description = "AIseed Weather（Python ごとまとめた配布用のアプリ）"
 requires-python = "==3.13.*"

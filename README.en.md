@@ -65,6 +65,14 @@ never auto-updates a displayed value, never pre-fetches. If the cache is
 fresh enough (per the source's update cadence), it is used; otherwise the
 view shows a progress indicator and fetches.
 
+**Usage report (the one exception).** Once a day, at start, the app sends its
+version, the OS and whether it is the packaged build or a source run to the
+author's own analytics (analytics.aiseed.dev), to count how many installs are
+in use. It sends no ID that tells people or PCs apart, no location, setting
+or view, and receives nothing. Set `usage_report = false` in `config.toml` to
+stop it. What is sent is described at <https://weather.time-j.net/kaiseki/>
+and under "このアプリについて" in the app.
+
 ## Status
 
 Early development. The map view (ECMWF forecast charts with timeline
