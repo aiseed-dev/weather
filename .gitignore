@@ -252,3 +252,6 @@ WeatherStatic/stations/.amedastable.prev.adoc
 
 # 配布版の組み立てが、タグから書く版（tools/write_build_version.py）
 src/aiseed_weather/_build_version.py
+
+# Claude のプレビュー用の起動設定（この PC の作業用フォルダーを指す）
+.claude/launch.json

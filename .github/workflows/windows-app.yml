@@ -1,6 +1,7 @@
 # AIseed Weather の Windows 版（Python ごとまとめたアプリ）を、GitHub の Windows の機械で組み立てる。
 # 試験を流してから desktop/ を flet build windows し、成果物（artifact）として 14 日残す。
 # 組み立ての中身は desktop/pyproject.toml。手元では win11（仮想環境）で同じことを確かめている。
+# flet-tools の雛形 recipes/flet-windows-release のもとになった物（https://github.com/aiseed-dev/flet-tools/tree/main/recipes/flet-windows-release）
 name: windows-app
 
 # main ではアプリと組み立ての中身が変わったときだけ流す（サイトの変更では流さない）。

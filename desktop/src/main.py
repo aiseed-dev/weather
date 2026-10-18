@@ -7,6 +7,8 @@
 初回は 40 秒ほどかかる。その間 Flet の画面の側は Python を待ちきれず、白いままになった
 （2026-10-16、win11）。なので先に Flet だけで「起動しています」を出し、本体は別のスレッドで
 読み込んでから画面を差し替える。開発（flet run）は今までどおり本体を直接走らせる。
+
+flet-tools の雛形 recipes/flet-windows-release のもとになった物（https://github.com/aiseed-dev/flet-tools/tree/main/recipes/flet-windows-release）
 """
 import asyncio
 import importlib

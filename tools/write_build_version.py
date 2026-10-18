@@ -9,6 +9,7 @@ src/aiseed_weather/_build_version.py and exports ``BUILD_VERSION`` so the
 step that builds can pass ``--build-version``. For anything else (a push to
 main, a manual run) it writes ``0.0.0.dev0+<short sha>`` and exports nothing.
 Standard library only, so it runs before anything is installed.
+flet-tools の雛形 recipes/flet-windows-release のもとになった物（https://github.com/aiseed-dev/flet-tools/tree/main/recipes/flet-windows-release）
 
     GITHUB_REF=refs/tags/app-v0.1.1 GITHUB_SHA=... python tools/write_build_version.py
 """
