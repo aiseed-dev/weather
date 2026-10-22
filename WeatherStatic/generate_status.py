@@ -115,8 +115,12 @@ _SLUG_CACHE: dict[str, str] = {}
 
 def put(out: Path, html: str) -> None:
     """ページを書き出す。パスとページ内のサイト内リンクは小文字（weatherlib.siteurl）。"""
-    dst = PUBLIC / siteurl.path(out.relative_to(PUBLIC).as_posix())
+    rel = out.relative_to(PUBLIC).as_posix()
+    dst = PUBLIC / siteurl.path(rel)
     dst.parent.mkdir(parents=True, exist_ok=True)
+    # og:url と canonical の目印を、このページの URL にする（generate.write と同じ）
+    html = siteurl.with_page_url(rel, html)
+    assert "__PAGE_URL__" not in html, f"目印が残っています: {rel}"
     dst.write_text(siteurl.links(html), encoding="utf-8")
 
 
